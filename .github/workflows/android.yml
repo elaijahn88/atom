@@ -29,6 +29,4 @@ jobs:
       - name: Install Firebase SDK
         run: npm install firebase
 
-      # 5️⃣ (Optional) Build project
-      - name: Build project
-        run: npm run build
+
