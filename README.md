@@ -1,2 +1,1 @@
-# jsin
-Descriptor
+program x
