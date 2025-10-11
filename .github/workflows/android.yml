@@ -1,1 +1,34 @@
 
+name: Install Firebase Auth
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ Checkout your repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2️⃣ Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      # 3️⃣ Install project dependencies
+      - name: Install dependencies
+        run: npm ci
+
+      # 4️⃣ Install Firebase SDK (for Auth and other services)
+      - name: Install Firebase SDK
+        run: npm install firebase
+
+      # 5️⃣ (Optional) Build project
+      - name: Build project
+        run: npm run build
