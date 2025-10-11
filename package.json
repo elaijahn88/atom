@@ -19,6 +19,7 @@
     "@react-navigation/native": "^7.1.8",
     "@shopify/react-native-skia": "2.2.12",
     "expo": "~54.0.13",
+    "firebase":"11.0.2",
     "expo-constants": "~18.0.9",
     "expo-font": "~14.0.9",
     "expo-haptics": "~15.0.7",
