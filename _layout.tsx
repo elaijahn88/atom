@@ -20,7 +20,7 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
         {/* Main tab navigator */}
-        <Stack.Screen name="explorer" options={{ headerShown: false }} />
+        <Stack.Screen name="atom" options={{ headerShown: false }} />
 
         {/* Not found screen */}
         <Stack.Screen name="+not-found" />
