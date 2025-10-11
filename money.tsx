@@ -23,7 +23,7 @@ import {
   updateDoc,
   setDoc 
 } from "firebase/firestore";
-import { db } from "../firebase";
+import { db } from "./firebase";
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
