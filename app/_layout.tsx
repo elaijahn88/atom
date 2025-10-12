@@ -1,41 +1,21 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
+import React from 'react';
 
-import { useColorScheme } from './hooks/useColorScheme';
-
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const [loaded] = useFonts({
-    SpaceMono: require('../font.ttf'),
-  });
-
-  if (!loaded) {
-    return null; // Wait for fonts to load
-  }
-
+export default function Layout() {
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        {/* Main tab navigator */}
-        <Stack.Screen name="atom" options={{ headerShown: false }} />
-
-        {/* Not found screen */}
-        <Stack.Screen name="money" />
-
-        {/* Additional screens */}
-        <Stack.Screen 
-          name="Atom" 
-          options={{ title: 'D', headerShown: true }} 
-        />
-        <Stack.Screen 
-          name="index" 
-          options={{ title: 'Profile', headerShown: true }} 
-        />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <Stack>
+      <Stack.Screen
+        name="index"
+        options={{ title: 'Home' }}
+      />
+      <Stack.Screen
+        name="money"
+        options={{ title: 'Money' }}
+      />
+      <Stack.Screen
+        name="atom"
+        options={{ title: 'Atom' }}
+      />
+    </Stack>
   );
 }
