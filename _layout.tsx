@@ -9,7 +9,7 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [loaded] = useFonts({
-    SpaceMono: require('./font.ttf'),
+    SpaceMono: require('../font.ttf'),
   });
 
   if (!loaded) {
@@ -23,15 +23,15 @@ export default function RootLayout() {
         <Stack.Screen name="atom" options={{ headerShown: false }} />
 
         {/* Not found screen */}
-        <Stack.Screen name="+not-found" />
+        <Stack.Screen name="money" />
 
         {/* Additional screens */}
         <Stack.Screen 
-          name="DashboardScreen" 
+          name="Atom" 
           options={{ title: 'D', headerShown: true }} 
         />
         <Stack.Screen 
-          name="ProfileScreen" 
+          name="index" 
           options={{ title: 'Profile', headerShown: true }} 
         />
       </Stack>
