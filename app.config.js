@@ -3,7 +3,7 @@ export default {
     name: "jovan",
     slug: "jovan",
       android: {
-      package: "com.mycompany.myapp",
+      package: "com.xlijah.Atom",
     },
     extra: {
       eas: {
