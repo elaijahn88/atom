@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import {
   View,
@@ -11,95 +10,91 @@ import {
   Platform,
   ScrollView,
 } from "react-native";
-import { auth, db } from "../../firebase";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc, getDoc } from "firebase/firestore";
 import { Ionicons } from "@expo/vector-icons";
+import { auth, db } from "../../firebase";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+} from "firebase/auth";
+import { doc, setDoc, getDoc } from "firebase/firestore";
 
 interface IUserData {
   email: string;
   name: string;
   account: number;
   age: number;
-  phone?: string;
-  address?: string;
+  createdAt: Date;
 }
 
 export default function EnhancedAuth() {
-  const [email, setEmail] = useState<string>("");
-  const [password, setPassword] = useState<string>("");
-  const [name, setName] = useState<string>("");
-  const [account, setAccount] = useState<string>("");
-  const [age, setAge] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(false);
-  const [message, setMessage] = useState<string>("");
-  const [isLoginMode, setIsLoginMode] = useState<boolean>(true);
-  const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [confirmPassword, setConfirmPassword] = useState<string>("");
-  const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
+  // 🧩 State
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [name, setName] = useState("");
+  const [account, setAccount] = useState("");
+  const [age, setAge] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const validateEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  };
-
-  const validatePassword = (password: string): boolean => {
-    return password.length >= 6;
-  };
+  // 🧠 Validation
+  const validateEmail = (email: string): boolean =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   const validateForm = (): boolean => {
-    if (!email.trim()) {
-      setMessage("Email is required");
-      return false;
-    }
-
-    if (!validateEmail(email)) {
-      setMessage("Please enter a valid email address");
-      return false;
-    }
-
-    if (!password.trim()) {
-      setMessage("Password is required");
-      return false;
-    }
-
+    if (!email.trim()) return setMsg("Email is required");
+    if (!validateEmail(email)) return setMsg("Enter a valid email");
+    if (!password.trim()) return setMsg("Password is required");
     if (!isLoginMode) {
-      if (!name.trim()) {
-        setMessage("Full name is required");
-        return false;
-      }
-
-      if (confirmPassword && password !== confirmPassword) {
-        setMessage("Passwords do not match");
-        return false;
-      }
+      if (!name.trim()) return setMsg("Full name is required");
+      if (password !== confirmPassword)
+        return setMsg("Passwords do not match");
+      if (isNaN(Number(age)) || Number(age) <= 0)
+        return setMsg("Enter a valid age");
     }
-
     return true;
   };
 
-  const handleSignUp = async (): Promise<void> => {
-    if (!validateForm()) return;
+  const setMsg = (msg: string) => {
+    setMessage(msg);
+    return false;
+  };
 
+  // 🟢 Sign Up
+  const handleSignUp = async () => {
+    if (!validateForm()) return;
     setLoading(true);
     setMessage("");
 
     try {
-      const userRef = doc(db, "users", email);
-      const docSnap = await getDoc(userRef);
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
+      const user = userCredential.user;
 
-      if (docSnap.exists()) {
-        setMessage("User with this email already exists!");
-      } else {
-        const userData: IUserData = {
-          email,
-          name,
-          account: Number(account) || 0,
-          age: Number(age) || 0,
-        };
-        await setDoc(userRef, userData);
-        setMessage("✅ Account created successfully!");
-      }
+      const userData: IUserData = {
+        email: user.email || email,
+        name,
+        account: Number(account) || 0,
+        age: Number(age) || 0,
+        createdAt: new Date(),
+      };
+
+      await setDoc(doc(db, "users", user.uid), userData);
+
+      setMessage("✅ Account created successfully!");
+      setIsLoginMode(true);
+      setEmail("");
+      setPassword("");
+      setConfirmPassword("");
+      setName("");
+      setAccount("");
+      setAge("");
     } catch (err: any) {
       console.error(err);
       setMessage("Error creating account: " + err.message);
@@ -108,15 +103,29 @@ export default function EnhancedAuth() {
     }
   };
 
-  const handleSignIn = async (): Promise<void> => {
+  // 🔵 Sign In
+  const handleSignIn = async () => {
     if (!validateForm()) return;
-
     setLoading(true);
     setMessage("");
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      setMessage("✅ Welcome back!");
+      const userCredential = await signInWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
+      const user = userCredential.user;
+
+      const docRef = doc(db, "users", user.uid);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        const data = docSnap.data() as IUserData;
+        setMessage(`✅ Welcome back, ${data.name || "User"}!`);
+      } else {
+        setMessage("✅ Signed in, but no profile data found.");
+      }
     } catch (err: any) {
       console.error(err);
       setMessage("Error: " + err.message);
@@ -125,13 +134,14 @@ export default function EnhancedAuth() {
     }
   };
 
+  // UI Component
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
-        {/* Header Section */}
+        {/* Header */}
         <View style={styles.header}>
           <View style={styles.iconContainer}>
             <Ionicons name="lock-closed" size={48} color="#007AFF" />
@@ -141,108 +151,90 @@ export default function EnhancedAuth() {
           </Text>
           <Text style={styles.welcomeSubtitle}>
             {isLoginMode
-              ? "Sign in to continue to your account"
-              : "Create your account to get started"}
+              ? "Sign in to continue"
+              : "Fill in your details to register"}
           </Text>
         </View>
 
-        {/* Form Container */}
+        {/* Form */}
         <View style={styles.formContainer}>
-          {/* Email Input */}
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>Email Address</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="you@example.com"
-              placeholderTextColor="#999"
-              value={email}
-              onChangeText={text => {
-                setEmail(text);
+          {/* Email */}
+          <Field
+            label="Email Address"
+            value={email}
+            placeholder="you@example.com"
+            keyboardType="email-address"
+            onChangeText={(t) => {
+              setEmail(t);
+              setMessage("");
+            }}
+          />
+
+          {/* Password */}
+          <PasswordField
+            label="Password"
+            value={password}
+            onChangeText={(t) => {
+              setPassword(t);
+              setMessage("");
+            }}
+            show={showPassword}
+            toggle={() => setShowPassword(!showPassword)}
+          />
+
+          {/* Confirm Password */}
+          {!isLoginMode && (
+            <PasswordField
+              label="Confirm Password"
+              value={confirmPassword}
+              onChangeText={(t) => {
+                setConfirmPassword(t);
                 setMessage("");
               }}
-              autoCapitalize="none"
-              keyboardType="email-address"
+              show={showConfirmPassword}
+              toggle={() => setShowConfirmPassword(!showConfirmPassword)}
             />
-          </View>
-
-          {/* Password Input */}
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>Password</Text>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="Enter your password"
-                placeholderTextColor="#999"
-                value={password}
-                onChangeText={text => {
-                  setPassword(text);
-                  setMessage("");
-                }}
-                secureTextEntry={!showPassword}
-              />
-              <TouchableOpacity
-                style={styles.passwordToggle}
-                onPress={() => setShowPassword(!showPassword)}
-              >
-                <Ionicons
-                  name={showPassword ? "eye-off-outline" : "eye-outline"}
-                  size={20}
-                  color="#666"
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Confirm Password (only for sign up) */}
-          {!isLoginMode && (
-            <View style={styles.inputWrapper}>
-              <Text style={styles.inputLabel}>Confirm Password</Text>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <TextInput
-                  style={[styles.input, { flex: 1 }]}
-                  placeholder="Confirm your password"
-                  placeholderTextColor="#999"
-                  value={confirmPassword}
-                  onChangeText={text => {
-                    setConfirmPassword(text);
-                    setMessage("");
-                  }}
-                  secureTextEntry={!showConfirmPassword}
-                />
-                <TouchableOpacity
-                  style={styles.passwordToggle}
-                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                >
-                  <Ionicons
-                    name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
-                    size={20}
-                    color="#666"
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
           )}
 
-          {/* Name Input for Sign Up */}
+          {/* Full Name */}
           {!isLoginMode && (
-            <View style={styles.inputWrapper}>
-              <Text style={styles.inputLabel}>Full Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your full name"
-                placeholderTextColor="#999"
-                value={name}
-                onChangeText={text => {
-                  setName(text);
-                  setMessage("");
-                }}
-              />
-            </View>
+            <Field
+              label="Full Name"
+              value={name}
+              placeholder="John Doe"
+              onChangeText={(t) => {
+                setName(t);
+                setMessage("");
+              }}
+            />
           )}
 
-          {/* Submit Button */}
+          {/* Account Number & Age (Optional) */}
+          {!isLoginMode && (
+            <>
+              <Field
+                label="Account Number"
+                value={account}
+                placeholder="e.g. 123456"
+                keyboardType="numeric"
+                onChangeText={(t) => setAccount(t)}
+              />
+              <Field
+                label="Age"
+                value={age}
+                placeholder="e.g. 25"
+                keyboardType="numeric"
+                onChangeText={(t) => setAge(t)}
+              />
+            </>
+          )}
+
+          {/* Submit */}
           <TouchableOpacity
-            style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+            style={[
+              styles.submitButton,
+              loading && styles.submitButtonDisabled,
+            ]}
             onPress={isLoginMode ? handleSignIn : handleSignUp}
             disabled={loading}
           >
@@ -251,7 +243,7 @@ export default function EnhancedAuth() {
             </Text>
           </TouchableOpacity>
 
-          {/* Toggle Login/Sign Up */}
+          {/* Switch Mode */}
           <TouchableOpacity
             style={styles.switchModeButton}
             onPress={() => {
@@ -266,19 +258,21 @@ export default function EnhancedAuth() {
             </Text>
           </TouchableOpacity>
 
-          {/* Loading Overlay */}
+          {/* Loading */}
           {loading && (
             <View style={styles.loadingOverlay}>
               <ActivityIndicator size="large" color="#007AFF" />
             </View>
           )}
 
-          {/* Message Display */}
+          {/* Message */}
           {message ? (
             <View
               style={[
                 styles.messageContainer,
-                message.includes("✅") ? styles.successMessage : styles.errorMessage,
+                message.includes("✅")
+                  ? styles.successMessage
+                  : styles.errorMessage,
               ]}
             >
               <Text style={styles.messageText}>{message}</Text>
@@ -289,6 +283,57 @@ export default function EnhancedAuth() {
     </KeyboardAvoidingView>
   );
 }
+
+/* Reusable Input Field */
+const Field = ({
+  label,
+  value,
+  placeholder,
+  onChangeText,
+  keyboardType = "default",
+}: any) => (
+  <View style={styles.inputWrapper}>
+    <Text style={styles.inputLabel}>{label}</Text>
+    <TextInput
+      style={styles.input}
+      placeholder={placeholder}
+      placeholderTextColor="#999"
+      value={value}
+      onChangeText={onChangeText}
+      keyboardType={keyboardType}
+    />
+  </View>
+);
+
+/* Reusable Password Field */
+const PasswordField = ({
+  label,
+  value,
+  onChangeText,
+  show,
+  toggle,
+}: any) => (
+  <View style={styles.inputWrapper}>
+    <Text style={styles.inputLabel}>{label}</Text>
+    <View style={{ flexDirection: "row", alignItems: "center" }}>
+      <TextInput
+        style={[styles.input, { flex: 1 }]}
+        placeholder="Enter your password"
+        placeholderTextColor="#999"
+        value={value}
+        onChangeText={onChangeText}
+        secureTextEntry={!show}
+      />
+      <TouchableOpacity style={styles.passwordToggle} onPress={toggle}>
+        <Ionicons
+          name={show ? "eye-off-outline" : "eye-outline"}
+          size={20}
+          color="#666"
+        />
+      </TouchableOpacity>
+    </View>
+  </View>
+);
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8fafc" },
@@ -308,8 +353,19 @@ const styles = StyleSheet.create({
     elevation: 3,
     marginBottom: 20,
   },
-  welcomeTitle: { fontSize: 28, fontWeight: "700", color: "#1a1a1a", textAlign: "center", marginBottom: 8 },
-  welcomeSubtitle: { fontSize: 16, color: "#6b7280", textAlign: "center", marginBottom: 20 },
+  welcomeTitle: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: "#1a1a1a",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  welcomeSubtitle: {
+    fontSize: 16,
+    color: "#6b7280",
+    textAlign: "center",
+    marginBottom: 20,
+  },
   formContainer: {
     backgroundColor: "#fff",
     borderRadius: 20,
@@ -322,15 +378,37 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   inputWrapper: { marginBottom: 16 },
-  inputLabel: { fontSize: 14, fontWeight: "600", color: "#374151", marginBottom: 4 },
-  input: { flex: 1, fontSize: 16, color: "#1a1a1a" },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 4,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    color: "#1a1a1a",
+    borderBottomWidth: 1,
+    borderColor: "#ddd",
+    paddingVertical: 6,
+  },
   passwordToggle: { padding: 4 },
-  submitButton: { backgroundColor: "#007AFF", paddingVertical: 16, borderRadius: 12, alignItems: "center" },
+  submitButton: {
+    backgroundColor: "#007AFF",
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: "center",
+  },
   submitButtonDisabled: { opacity: 0.6 },
   submitButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
   switchModeButton: { paddingVertical: 12, alignItems: "center" },
   switchModeText: { color: "#007AFF", fontSize: 14, fontWeight: "500" },
-  loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,0.8)", justifyContent: "center", alignItems: "center" },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255,255,255,0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   messageContainer: { padding: 12, borderRadius: 8, marginTop: 16 },
   successMessage: { backgroundColor: "#d1fae5", borderColor: "#a7f3d0" },
   errorMessage: { backgroundColor: "#fee2e2", borderColor: "#fecaca" },
