@@ -55,13 +55,13 @@ export default function App() {
   const videos = [
     {
       id: "1",
-      uri: "https://xlijah/soso.mp4",
+      uri: "https://xlijah.com/soso.mp4",
       likes: 2100,
       comments: 120,
     },
     {
       id: "2",
-      uri: "https://xlijah/soso.mp4",
+      uri: "https://xlijah.com/soso.mp4",
       likes: 980,
       comments: 45,
     },
