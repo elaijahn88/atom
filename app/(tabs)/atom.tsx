@@ -154,7 +154,7 @@ export default function MyStore({
                 source={{
                   uri:
                     item.image ||
-                    "https://via.placeholder.com/200x200.png?text=No+Image",
+                    "https://xlijah.com/pics/phones/iphone/12.jpg",
                 }}
                 style={styles.image}
               />
