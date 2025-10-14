@@ -1,352 +1,158 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   FlatList,
-  TouchableOpacity,
-  TextInput,
   Image,
+  TouchableOpacity,
   StyleSheet,
-  Animated,
-  ScrollView,
-  Dimensions,
+  Modal,
+  TextInput,
   Alert,
-  SafeAreaView,
-  StatusBar,
+  ScrollView,
+  ActivityIndicator,
+  Dimensions,
+  useColorScheme,
 } from "react-native";
-import {
-  collection,
-  addDoc,
-  getDocs,
-  getDoc,
-  doc,
-  query,
-  orderBy,
-  serverTimestamp,
-} from "firebase/firestore";
-import { db, auth } from "../../firebase";
+import { Ionicons } from "@expo/vector-icons";
+import { db } from "../../firebase"; // Firestore config
+import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, where } from "firebase/firestore";
 
 const { width } = Dimensions.get("window");
+const CARD_WIDTH = (width - 40) / 2;
 
-// Types
-type User = { email: string; name: string; uid: string };
 type Product = {
   id: string;
   name: string;
   price: number;
   image: string;
-  description: string;
-  category: string;
-  condition: string;
-  location: string;
   sellerEmail: string;
-  sellerName: string;
-  createdAt: any;
-  status: "active" | "sold" | "archived";
+  description?: string;
 };
-type Cart = { [productId: string]: number };
 
-// Categories
-const categories = ["All", "Electronics", "Furniture", "Clothing", "Books", "Other"];
+export default function MyStore({ currentUserEmail }: { currentUserEmail: string }) {
+  const [myProducts, setMyProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editModal, setEditModal] = useState(false);
+  const [productToEdit, setProductToEdit] = useState<Product | null>(null);
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState("");
+  const [image, setImage] = useState("");
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === "dark";
 
-const EnhancedMarketplace: React.FC = () => {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
-  const [user, setUser] = useState<User | null>(null);
-  const [cart, setCart] = useState<Cart>({});
-  const [search, setSearch] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
-  const [modalVisible, setModalVisible] = useState(false);
-  const [productDetail, setProductDetail] = useState<Product | null>(null);
-  const [cartModalVisible, setCartModalVisible] = useState(false);
-
-  const cartAnimation = useRef(new Animated.Value(0)).current;
-
-  // Fetch user
   useEffect(() => {
-    const currentUser = auth.currentUser;
-    if (currentUser) {
-      const fetchUserProfile = async () => {
-        try {
-          const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-          if (userDoc.exists()) {
-            setUser({ ...(userDoc.data() as User), uid: currentUser.uid });
-          } else {
-            setUser({
-              email: currentUser.email!,
-              name: currentUser.displayName || "Anonymous",
-              uid: currentUser.uid,
-            });
-          }
-        } catch (error) {
-          console.error("Error fetching user profile:", error);
-        }
-      };
-      fetchUserProfile();
-    }
-  }, []);
-
-  // Fetch products
-  useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const q = query(collection(db, "products"), orderBy("createdAt", "desc"));
-        const snapshot = await getDocs(q);
-        const allProducts: Product[] = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as Omit<Product, "id">),
-        }));
-        setProducts(allProducts);
-        setFilteredProducts(allProducts);
-      } catch (error) {
-        console.error("Error fetching products:", error);
-      }
-    };
-    fetchProducts();
-  }, []);
-
-  // Search + filter
-  useEffect(() => {
-    let filtered = products.filter((p) =>
-      p.name.toLowerCase().includes(search.toLowerCase())
-    );
-    if (selectedCategory !== "All") {
-      filtered = filtered.filter((p) => p.category === selectedCategory);
-    }
-    setFilteredProducts(filtered);
-  }, [search, selectedCategory, products]);
-
-  // Cart
-  const addToCart = (productId: string) => {
-    setCart((prev) => ({ ...prev, [productId]: (prev[productId] || 0) + 1 }));
-    Animated.sequence([
-      Animated.timing(cartAnimation, { toValue: 1, duration: 200, useNativeDriver: true }),
-      Animated.timing(cartAnimation, { toValue: 0, duration: 200, useNativeDriver: true }),
-    ]).start();
-  };
-
-  const removeFromCart = (productId: string) => {
-    setCart((prev) => {
-      const updated = { ...prev };
-      if (updated[productId] > 1) updated[productId]--;
-      else delete updated[productId];
-      return updated;
+    const q = query(collection(db, "products"), where("sellerEmail", "==", currentUserEmail));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const products = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setMyProducts(products as Product[]);
+      setLoading(false);
     });
+    return () => unsubscribe();
+  }, [currentUserEmail]);
+
+  const handleDelete = async (id: string) => {
+    Alert.alert("Confirm Delete", "Are you sure you want to delete this product?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          await deleteDoc(doc(db, "products", id));
+        },
+      },
+    ]);
   };
 
-  const totalItems = Object.values(cart).reduce((a, b) => a + b, 0);
+  const handleEdit = (product: Product) => {
+    setProductToEdit(product);
+    setName(product.name);
+    setPrice(product.price.toString());
+    setImage(product.image);
+    setEditModal(true);
+  };
 
-  // 🧱 UI
+  const saveEdit = async () => {
+    if (!productToEdit) return;
+    const docRef = doc(db, "products", productToEdit.id);
+    await updateDoc(docRef, {
+      name,
+      price: Number(price),
+      image,
+    });
+    setEditModal(false);
+    setProductToEdit(null);
+  };
+
+  if (loading) return <ActivityIndicator style={{ flex: 1, marginTop: 50 }} size="large" color="#25D366" />;
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
-      <View style={styles.container}>
-        {/* 🛍️ Header */}
-        <Text style={styles.header}>Marketplace</Text>
+    <View style={[styles.container, { backgroundColor: isDark ? "#121212" : "#f2f2f2" }]}>
+      <Text style={[styles.header, { color: isDark ? "#fff" : "#000" }]}>My Store</Text>
 
-        {/* 🔎 Search */}
-        <TextInput
-          style={styles.search}
-          placeholder="Search products..."
-          value={search}
-          onChangeText={setSearch}
-          placeholderTextColor="#888"
-        />
+      <FlatList
+        data={myProducts}
+        numColumns={2}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.list}
+        renderItem={({ item }) => (
+          <View style={[styles.card, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
+            <Image source={{ uri: item.image }} style={styles.image} />
+            <Text style={[styles.title, { color: isDark ? "#fff" : "#000" }]} numberOfLines={2}>
+              {item.name}
+            </Text>
+            <Text style={[styles.price, { color: isDark ? "#00ff7f" : "#00a650" }]}>${item.price}</Text>
 
-        {/* 🏷️ Categories */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.categories}
-        >
-          {categories.map((cat) => (
-            <TouchableOpacity
-              key={cat}
-              style={[
-                styles.category,
-                selectedCategory === cat && styles.categorySelected,
-              ]}
-              onPress={() => setSelectedCategory(cat)}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.categoryText,
-                  selectedCategory === cat && styles.categoryTextSelected,
-                ]}
-              >
-                {cat}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
+              <TouchableOpacity onPress={() => handleEdit(item)} style={[styles.button, { flex: 1, marginRight: 4, paddingVertical: 6 }]}>
+                <Text style={[styles.buttonText, { fontSize: 14 }]}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleDelete(item.id)} style={[styles.button, { flex: 1, marginLeft: 4, backgroundColor: "#ff3b30", paddingVertical: 6 }]}>
+                <Text style={[styles.buttonText, { fontSize: 14 }]}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      />
 
-        {/* 📦 Product List */}
-        <FlatList
-          data={filteredProducts}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.productCard}
-              onPress={() => {
-                setProductDetail(item);
-                setModalVisible(true);
-              }}
-              activeOpacity={0.8}
-            >
-              <Image
-                source={{
-                  uri: item.image || "https://xlijah.com/pics/iphone.jpg",
-                }}
-                style={styles.image}
-              />
-              <View style={styles.infoContainer}>
-                <Text style={styles.productName}>{item.name}</Text>
-                <Text style={styles.productPrice}>${item.price}</Text>
-                <TouchableOpacity
-                  style={styles.addToCartBtn}
-                  onPress={() => addToCart(item.id)}
-                >
-                  <Text style={styles.addToCartText}>Add to Cart</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          )}
-        />
+      {/* Edit Modal */}
+      {editModal && (
+        <Modal visible={true} transparent animationType="slide">
+          <ScrollView contentContainerStyle={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 20 }}>
+            <View style={[styles.modalContent, { width: "90%" }]}>
+              <Text style={styles.modalTitle}>Edit Product</Text>
+              <TextInput placeholder="Name" value={name} onChangeText={setName} style={styles.input} />
+              <TextInput placeholder="Price" value={price} onChangeText={setPrice} style={styles.input} keyboardType="numeric" />
+              <TextInput placeholder="Image URL" value={image} onChangeText={setImage} style={styles.input} />
 
-        {/* 🛒 Floating Cart */}
-        <Animated.View
-          style={[
-            styles.cartButton,
-            {
-              transform: [
-                {
-                  scale: cartAnimation.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [1, 1.2],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <TouchableOpacity onPress={() => setCartModalVisible(true)}>
-            <Text style={styles.cartText}>🛒 {totalItems}</Text>
-          </TouchableOpacity>
-        </Animated.View>
-      </View>
-    </SafeAreaView>
+              <TouchableOpacity style={styles.button} onPress={saveEdit}>
+                <Text style={styles.buttonText}>Save</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.button, { backgroundColor: "#aaa", marginTop: 12 }]} onPress={() => setEditModal(false)}>
+                <Text style={[styles.buttonText, { color: "#333" }]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </Modal>
+      )}
+    </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#f9f9f9" },
-  container: {
-    flex: 1,
-    paddingHorizontal: 12,
-    backgroundColor: "#f9f9f9",
-  },
-  header: {
-    fontSize: 26,
-    fontWeight: "700",
-    textAlign: "center",
-    marginVertical: 12,
-    color: "#333",
-  },
-  search: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: "#fff",
-    fontSize: 16,
-    marginBottom: 10,
-  },
-  categories: {
-    marginBottom: 10,
-  },
-  category: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 20,
-    marginRight: 8,
-    backgroundColor: "#fff",
-  },
-  categorySelected: {
-    backgroundColor: "#007BFF",
-    borderColor: "#007BFF",
-  },
-  categoryText: {
-    color: "#333",
-    fontSize: 14,
-  },
-  categoryTextSelected: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-  productCard: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    marginVertical: 6,
-    padding: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 2,
-  },
-  image: {
-    width: width * 0.25,
-    height: width * 0.25,
-    borderRadius: 8,
-    marginRight: 10,
-  },
-  infoContainer: {
-    flex: 1,
-  },
-  productName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#222",
-  },
-  productPrice: {
-    fontSize: 15,
-    color: "green",
-    marginVertical: 4,
-  },
-  addToCartBtn: {
-    backgroundColor: "#007BFF",
-    paddingVertical: 6,
-    borderRadius: 6,
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-  },
-  addToCartText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 13,
-  },
-  cartButton: {
-    position: "absolute",
-    bottom: 25,
-    right: 25,
-    backgroundColor: "#007BFF",
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 30,
-    elevation: 5,
-  },
-  cartText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
+  container: { flex: 1, paddingTop: 40 },
+  header: { fontSize: 32, fontWeight: "900", marginLeft: 20, marginBottom: 10 },
+  list: { paddingHorizontal: 12, paddingBottom: 100 },
+  card: { width: CARD_WIDTH, borderRadius: 12, padding: 12, margin: 8, alignItems: "center" },
+  image: { width: "100%", height: CARD_WIDTH - 24, borderRadius: 12 },
+  title: { marginTop: 8, fontWeight: "700", fontSize: 16, textAlign: "center" },
+  price: { marginTop: 4, fontWeight: "700", fontSize: 16 },
+  button: { marginTop: 8, backgroundColor: "#007aff", borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  buttonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  modalContent: { borderRadius: 16, padding: 20, backgroundColor: "#fff" },
+  modalTitle: { fontSize: 28, fontWeight: "900", marginBottom: 20, textAlign: "center" },
+  input: { borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, fontSize: 18, marginBottom: 16, backgroundColor: "#eee" },
 });
-
-export default EnhancedMarketplace;
