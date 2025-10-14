@@ -55,19 +55,19 @@ export default function App() {
   const videos = [
     {
       id: "1",
-      uri: "https://res.cloudinary.com/dtboq6sma/video/upload/v1715086243/sample1.mp4",
+      uri: "https://xlijah/soso.mp4",
       likes: 2100,
       comments: 120,
     },
     {
       id: "2",
-      uri: "https://res.cloudinary.com/dtboq6sma/video/upload/v1715086243/sample2.mp4",
+      uri: "https://xlijah/soso.mp4",
       likes: 980,
       comments: 45,
     },
     {
       id: "3",
-      uri: "https://res.cloudinary.com/dtboq6sma/video/upload/v1715086243/sample3.mp4",
+      uri: "https://xlijah/soso.mp4",
       likes: 5400,
       comments: 322,
     },
