@@ -12,6 +12,14 @@ import {
 import { doc, getDoc, collection, getDocs, addDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 
+type Transaction = {
+  receiver: string;
+  amount: string;
+  timestamp: string;
+  proof?: string;
+  status?: "Pending" | "Completed";
+};
+
 export default function MobileMoneyManager() {
   const [email, setEmail] = useState("");
   const [fetchedEmail, setFetchedEmail] = useState("");
@@ -20,12 +28,10 @@ export default function MobileMoneyManager() {
   const [userAge, setUserAge] = useState<number>(0);
   const [isFrozen, setIsFrozen] = useState<boolean>(false);
 
-  const [transactions, setTransactions] = useState<
-    { receiver: string; amount: string; timestamp: string; proof?: string }[]
-  >([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [topUpAmount, setTopUpAmount] = useState("");
 
-  const quickTopUps = [5, 10, 20, 50, 100]; // quick top-up buttons
+  const quickTopUps = [5, 10, 20, 50, 100]; 
 
   const fetchUserData = async () => {
     if (!email) return;
@@ -42,8 +48,8 @@ export default function MobileMoneyManager() {
 
         const txCol = collection(db, "users", email, "transactions");
         const txSnap = await getDocs(txCol);
-        const txList: typeof transactions = [];
-        txSnap.forEach((doc) => txList.push(doc.data() as any));
+        const txList: Transaction[] = [];
+        txSnap.forEach((doc) => txList.push(doc.data() as Transaction));
         setTransactions(txList.reverse());
       } else resetUser();
     } catch (err) {
@@ -61,34 +67,44 @@ export default function MobileMoneyManager() {
     setIsFrozen(false);
   };
 
-  const topUpAccount = async (amount?: number, method?: string) => {
+  const simulateTopUp = async (amount?: number, method?: string) => {
     const topUpValue = amount ?? Number(topUpAmount);
     if (!topUpValue || !fetchedEmail) return;
 
-    const newBalance = userAccount + topUpValue;
-    setUserAccount(newBalance);
-
-    const newTx = {
+    const newTx: Transaction = {
       receiver: method || "Top-Up",
       amount: topUpValue.toString(),
       timestamp: new Date().toLocaleString(),
       proof: `MM#${Math.floor(Math.random() * 10000)}`,
+      status: "Pending",
     };
+
     setTransactions([newTx, ...transactions]);
     setTopUpAmount("");
 
-    try {
-      const userRef = doc(db, "users", fetchedEmail);
-      await updateDoc(userRef, { account: newBalance });
+    // simulate delay for pending → completed
+    setTimeout(async () => {
+      try {
+        newTx.status = "Completed";
+        setTransactions((prev) =>
+          prev.map((tx) => (tx.proof === newTx.proof ? newTx : tx))
+        );
 
-      const txCol = collection(db, "users", fetchedEmail, "transactions");
-      await addDoc(txCol, newTx);
+        const newBalance = userAccount + topUpValue;
+        setUserAccount(newBalance);
 
-      Alert.alert("Success", `Top-Up $${topUpValue} via ${method} successful!`);
-    } catch (err) {
-      console.error("Error topping up:", err);
-      Alert.alert("Error", "Top-Up failed!");
-    }
+        const userRef = doc(db, "users", fetchedEmail);
+        await updateDoc(userRef, { account: newBalance });
+
+        const txCol = collection(db, "users", fetchedEmail, "transactions");
+        await addDoc(txCol, newTx);
+
+        Alert.alert("Top-Up Success", `$${topUpValue} via ${method} completed!`);
+      } catch (err) {
+        console.error("Error completing top-up:", err);
+        Alert.alert("Error", "Top-Up failed!");
+      }
+    }, 3000); // 3 seconds for simulation
   };
 
   const freezeAccount = async () => {
@@ -151,7 +167,6 @@ export default function MobileMoneyManager() {
 
       {userName ? (
         <>
-          {/* Account Card */}
           <View style={styles.accountCard}>
             <Text style={styles.welcomeText}>👤 {userName}</Text>
             <Text style={styles.accountText}>💰 Balance: ${userAccount.toFixed(2)}</Text>
@@ -159,7 +174,6 @@ export default function MobileMoneyManager() {
             <Text style={[styles.accountText, { color: isFrozen ? "#FF5252" : "#4CAF50" }]}>
               {isFrozen ? "❌ Frozen" : "✅ Active"}
             </Text>
-
             <View style={styles.buttonRow}>
               <TouchableOpacity style={styles.actionButton} onPress={updateBalanceManually}>
                 <Text style={styles.actionButtonText}>Update Balance</Text>
@@ -173,7 +187,6 @@ export default function MobileMoneyManager() {
             </View>
           </View>
 
-          {/* Top-Up Section */}
           <Text style={styles.sectionTitle}>Top-Up Account</Text>
           <View style={styles.card}>
             <TextInput
@@ -184,34 +197,30 @@ export default function MobileMoneyManager() {
               onChangeText={setTopUpAmount}
               keyboardType="numeric"
             />
-
             <View style={styles.quickTopUps}>
               {quickTopUps.map((amt) => (
-                <TouchableOpacity key={amt} style={styles.quickTopUpBtn} onPress={() => topUpAccount(amt, "Manual")}>
+                <TouchableOpacity key={amt} style={styles.quickTopUpBtn} onPress={() => simulateTopUp(amt, "Manual")}>
                   <Text style={styles.quickTopUpText}>${amt}</Text>
                 </TouchableOpacity>
               ))}
             </View>
-
             <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Mobile Money</Text>
             <View style={styles.mmRow}>
               {mobileMoneyProviders.map((provider) => (
                 <TouchableOpacity
                   key={provider.name}
                   style={[styles.mmBtn, { backgroundColor: provider.color }]}
-                  onPress={() => topUpAccount(Number(topUpAmount), provider.name)}
+                  onPress={() => simulateTopUp(Number(topUpAmount), provider.name)}
                 >
                   <Text style={styles.mmText}>{provider.name}</Text>
                 </TouchableOpacity>
               ))}
             </View>
-
-            <TouchableOpacity style={styles.topUpButton} onPress={() => topUpAccount()}>
+            <TouchableOpacity style={styles.topUpButton} onPress={() => simulateTopUp()}>
               <Text style={styles.topUpButtonText}>Top-Up Now</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Transaction History */}
           <Text style={styles.sectionTitle}>Transaction History</Text>
           {transactions.length > 0 ? (
             <FlatList
@@ -223,6 +232,9 @@ export default function MobileMoneyManager() {
                   <Text style={styles.txText}>💲 Amount: {item.amount}</Text>
                   <Text style={styles.txText}>🕒 Time: {item.timestamp}</Text>
                   <Text style={styles.txText}>📄 Proof: {item.proof}</Text>
+                  <Text style={[styles.txText, { color: item.status === "Completed" ? "#4CAF50" : "#FFD700" }]}>
+                    Status: {item.status}
+                  </Text>
                 </View>
               )}
             />
