@@ -1,11 +1,6 @@
 {
   "expo": {
-    "autolinking": {
-      "ignore": [
-        "@react-native-firebase/messaging",
-        "@shopify/react-native-skia"
-      ]
-    },
+   
     "name": "jovan",
     "slug": "jovan",
     "version": "1.0.0",
