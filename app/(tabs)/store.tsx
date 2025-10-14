@@ -9,7 +9,6 @@ import {
   Modal,
   TextInput,
   Alert,
-  ScrollView,
   ActivityIndicator,
   Dimensions,
   TouchableWithoutFeedback,
@@ -21,7 +20,6 @@ import { db } from "../../firebase";
 import {
   collection,
   onSnapshot,
-  addDoc,
   deleteDoc,
   doc,
   updateDoc,
@@ -57,19 +55,40 @@ export default function MyStore({
   const isDark = colorScheme === "dark";
 
   useEffect(() => {
-    const q = query(
-      collection(db, "products"),
-      where("sellerEmail", "==", currentUserEmail)
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const products = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Product[];
-      setMyProducts(products);
+    if (!currentUserEmail) return;
+    try {
+      const q = query(
+        collection(db, "products"),
+        where("sellerEmail", "==", currentUserEmail)
+      );
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const products = snapshot.docs.map((docSnap) => {
+            const data = docSnap.data() as Partial<Product>;
+            return {
+              id: docSnap.id,
+              name: data.name || "Unnamed Product",
+              price: typeof data.price === "number" ? data.price : 0,
+              image: data.image || "",
+              sellerEmail: data.sellerEmail || "",
+              description: data.description || "",
+            } as Product;
+          });
+          setMyProducts(products);
+          setLoading(false);
+        },
+        (error) => {
+          console.error("Snapshot error:", error);
+          Alert.alert("Error", "Failed to load your store items.");
+          setLoading(false);
+        }
+      );
+      return () => unsubscribe();
+    } catch (error) {
+      console.error("Query error:", error);
       setLoading(false);
-    });
-    return () => unsubscribe();
+    }
   }, [currentUserEmail]);
 
   const handleDelete = async (id: string) => {
@@ -78,29 +97,46 @@ export default function MyStore({
       {
         text: "Delete",
         style: "destructive",
-        onPress: async () => await deleteDoc(doc(db, "products", id)),
+        onPress: async () => {
+          try {
+            await deleteDoc(doc(db, "products", id));
+          } catch (err) {
+            console.error("Delete failed:", err);
+            Alert.alert("Error", "Failed to delete product.");
+          }
+        },
       },
     ]);
   };
 
   const handleEdit = (product: Product) => {
     setProductToEdit(product);
-    setName(product.name);
-    setPrice(product.price.toString());
-    setImage(product.image);
+    setName(product.name || "");
+    setPrice(product.price?.toString() || "");
+    setImage(product.image || "");
     setEditModal(true);
   };
 
   const saveEdit = async () => {
     if (!productToEdit) return;
-    const docRef = doc(db, "products", productToEdit.id);
-    await updateDoc(docRef, {
-      name: name.trim(),
-      price: Number(price),
-      image: image.trim(),
-    });
-    setEditModal(false);
-    setProductToEdit(null);
+    if (!name.trim() || !price.trim() || isNaN(Number(price))) {
+      Alert.alert("Error", "Please enter valid name and price.");
+      return;
+    }
+
+    try {
+      const docRef = doc(db, "products", productToEdit.id);
+      await updateDoc(docRef, {
+        name: name.trim(),
+        price: Number(price),
+        image: image.trim(),
+      });
+      setEditModal(false);
+      setProductToEdit(null);
+    } catch (err) {
+      console.error("Update failed:", err);
+      Alert.alert("Error", "Failed to save changes.");
+    }
   };
 
   if (loading)
@@ -153,17 +189,15 @@ export default function MyStore({
               <Image
                 source={{
                   uri:
-                    item.image ||
-                    "https://xlijah.com/pics/phones/iphone/12.jpg",
+                    item.image && item.image.startsWith("http")
+                      ? item.image
+                      : "https://xlijah.com/pics/phones/iphone/12.jpg",
                 }}
                 style={styles.image}
               />
               <View style={styles.cardBody}>
                 <Text
-                  style={[
-                    styles.title,
-                    { color: isDark ? "#fff" : "#111" },
-                  ]}
+                  style={[styles.title, { color: isDark ? "#fff" : "#111" }]}
                   numberOfLines={2}
                 >
                   {item.name}
@@ -259,7 +293,10 @@ export default function MyStore({
       </Modal>
 
       {/* ➕ Floating Add Button */}
-      <TouchableOpacity style={styles.addButton}>
+      <TouchableOpacity
+        style={styles.addButton}
+        onPress={() => Alert.alert("Coming Soon", "Add product feature pending")}
+      >
         <Ionicons name="add-circle" size={64} color="#ff7f00" />
       </TouchableOpacity>
     </View>
@@ -275,7 +312,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   list: { paddingHorizontal: 12, paddingBottom: 120 },
-
   card: {
     width: CARD_WIDTH,
     borderRadius: 14,
@@ -302,7 +338,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
@@ -334,7 +369,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-
   addButton: {
     position: "absolute",
     right: 20,
@@ -343,7 +377,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 6,
   },
-
   emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   emptyText: { marginTop: 10, fontSize: 16 },
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
