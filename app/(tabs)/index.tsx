@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   TextInput,
@@ -9,6 +9,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  FlatList,
+  Dimensions,
+  StatusBar,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase";
@@ -17,6 +20,7 @@ import {
   signInWithEmailAndPassword,
 } from "firebase/auth";
 import { doc, setDoc, getDoc } from "firebase/firestore";
+import Video from "react-native-video";
 
 interface IUserData {
   email: string;
@@ -26,8 +30,10 @@ interface IUserData {
   createdAt: Date;
 }
 
-export default function EnhancedAuth() {
-  // 🧩 State
+const { width, height } = Dimensions.get("window");
+
+export default function App() {
+  // 🧩 Auth State
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -40,7 +46,34 @@ export default function EnhancedAuth() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // 🧠 Validation
+  // 🧩 Video Feed State
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const videoRefs = useRef([]);
+
+  // Sample video URLs
+  const videos = [
+    {
+      id: "1",
+      uri: "https://res.cloudinary.com/dtboq6sma/video/upload/v1715086243/sample1.mp4",
+      likes: 2100,
+      comments: 120,
+    },
+    {
+      id: "2",
+      uri: "https://res.cloudinary.com/dtboq6sma/video/upload/v1715086243/sample2.mp4",
+      likes: 980,
+      comments: 45,
+    },
+    {
+      id: "3",
+      uri: "https://res.cloudinary.com/dtboq6sma/video/upload/v1715086243/sample3.mp4",
+      likes: 5400,
+      comments: 322,
+    },
+  ];
+
+  // Validation
   const validateEmail = (email: string): boolean =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -50,10 +83,8 @@ export default function EnhancedAuth() {
     if (!password.trim()) return setMsg("Password is required");
     if (!isLoginMode) {
       if (!name.trim()) return setMsg("Full name is required");
-      if (password !== confirmPassword)
-        return setMsg("Passwords do not match");
-      if (isNaN(Number(age)) || Number(age) <= 0)
-        return setMsg("Enter a valid age");
+      if (password !== confirmPassword) return setMsg("Passwords do not match");
+      if (isNaN(Number(age)) || Number(age) <= 0) return setMsg("Enter a valid age");
     }
     return true;
   };
@@ -63,7 +94,7 @@ export default function EnhancedAuth() {
     return false;
   };
 
-  // 🟢 Sign Up
+  // Sign Up
   const handleSignUp = async () => {
     if (!validateForm()) return;
     setLoading(true);
@@ -95,6 +126,7 @@ export default function EnhancedAuth() {
       setName("");
       setAccount("");
       setAge("");
+      setIsLoggedIn(true); // Navigate to video feed
     } catch (err: any) {
       console.error(err);
       setMessage("Error creating account: " + err.message);
@@ -103,7 +135,7 @@ export default function EnhancedAuth() {
     }
   };
 
-  // 🔵 Sign In
+  // Sign In
   const handleSignIn = async () => {
     if (!validateForm()) return;
     setLoading(true);
@@ -126,6 +158,7 @@ export default function EnhancedAuth() {
       } else {
         setMessage("✅ Signed in, but no profile data found.");
       }
+      setIsLoggedIn(true); // Navigate to video feed
     } catch (err: any) {
       console.error(err);
       setMessage("Error: " + err.message);
@@ -134,14 +167,62 @@ export default function EnhancedAuth() {
     }
   };
 
-  // UI Component
+  // Video Feed Helpers
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems.length > 0) {
+      setCurrentIndex(viewableItems[0].index);
+    }
+  });
+
+  const viewConfigRef = useRef({ viewAreaCoveragePercentThreshold: 80 });
+
+  // ✅ Render
+  if (isLoggedIn) {
+    return (
+      <View style={styles.container}>
+        <StatusBar hidden />
+        <FlatList
+          data={videos}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item, index }) => (
+            <View style={{ width, height }}>
+              <Video
+                ref={(ref) => (videoRefs.current[index] = ref)}
+                source={{ uri: item.uri }}
+                style={styles.video}
+                resizeMode="cover"
+                repeat
+                paused={currentIndex !== index}
+                onError={(e) => console.log("Video error:", e)}
+              />
+              <View style={styles.overlay}>
+                <TouchableOpacity style={styles.iconButton}>
+                  <Ionicons name="heart-outline" size={36} color="#fff" />
+                  <Text style={styles.iconText}>{item.likes}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconButton}>
+                  <Ionicons name="chatbubble-outline" size={36} color="#fff" />
+                  <Text style={styles.iconText}>{item.comments}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+          pagingEnabled
+          showsVerticalScrollIndicator={false}
+          onViewableItemsChanged={onViewableItemsChanged.current}
+          viewabilityConfig={viewConfigRef.current}
+        />
+      </View>
+    );
+  }
+
+  // 🔐 Login/Register Screen
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
-        {/* Header */}
         <View style={styles.header}>
           <View style={styles.iconContainer}>
             <Ionicons name="lock-closed" size={48} color="#007AFF" />
@@ -156,9 +237,7 @@ export default function EnhancedAuth() {
           </Text>
         </View>
 
-        {/* Form */}
         <View style={styles.formContainer}>
-          {/* Email */}
           <Field
             label="Email Address"
             value={email}
@@ -170,7 +249,6 @@ export default function EnhancedAuth() {
             }}
           />
 
-          {/* Password */}
           <PasswordField
             label="Password"
             value={password}
@@ -182,7 +260,6 @@ export default function EnhancedAuth() {
             toggle={() => setShowPassword(!showPassword)}
           />
 
-          {/* Confirm Password */}
           {!isLoginMode && (
             <PasswordField
               label="Confirm Password"
@@ -196,7 +273,6 @@ export default function EnhancedAuth() {
             />
           )}
 
-          {/* Full Name */}
           {!isLoginMode && (
             <Field
               label="Full Name"
@@ -209,32 +285,27 @@ export default function EnhancedAuth() {
             />
           )}
 
-          {/* Account Number & Age (Optional) */}
           {!isLoginMode && (
             <>
               <Field
                 label="Account Number"
                 value={account}
-                placeholder="e.g. 123456"
+                placeholder="123456"
                 keyboardType="numeric"
                 onChangeText={(t) => setAccount(t)}
               />
               <Field
                 label="Age"
                 value={age}
-                placeholder="e.g. 25"
+                placeholder="25"
                 keyboardType="numeric"
                 onChangeText={(t) => setAge(t)}
               />
             </>
           )}
 
-          {/* Submit */}
           <TouchableOpacity
-            style={[
-              styles.submitButton,
-              loading && styles.submitButtonDisabled,
-            ]}
+            style={[styles.submitButton, loading && styles.submitButtonDisabled]}
             onPress={isLoginMode ? handleSignIn : handleSignUp}
             disabled={loading}
           >
@@ -243,7 +314,6 @@ export default function EnhancedAuth() {
             </Text>
           </TouchableOpacity>
 
-          {/* Switch Mode */}
           <TouchableOpacity
             style={styles.switchModeButton}
             onPress={() => {
@@ -258,21 +328,17 @@ export default function EnhancedAuth() {
             </Text>
           </TouchableOpacity>
 
-          {/* Loading */}
           {loading && (
             <View style={styles.loadingOverlay}>
               <ActivityIndicator size="large" color="#007AFF" />
             </View>
           )}
 
-          {/* Message */}
           {message ? (
             <View
               style={[
                 styles.messageContainer,
-                message.includes("✅")
-                  ? styles.successMessage
-                  : styles.errorMessage,
+                message.includes("✅") ? styles.successMessage : styles.errorMessage,
               ]}
             >
               <Text style={styles.messageText}>{message}</Text>
@@ -284,14 +350,8 @@ export default function EnhancedAuth() {
   );
 }
 
-/* Reusable Input Field */
-const Field = ({
-  label,
-  value,
-  placeholder,
-  onChangeText,
-  keyboardType = "default",
-}: any) => (
+/* Reusable Input Fields */
+const Field = ({ label, value, placeholder, onChangeText, keyboardType = "default" }: any) => (
   <View style={styles.inputWrapper}>
     <Text style={styles.inputLabel}>{label}</Text>
     <TextInput
@@ -305,14 +365,7 @@ const Field = ({
   </View>
 );
 
-/* Reusable Password Field */
-const PasswordField = ({
-  label,
-  value,
-  onChangeText,
-  show,
-  toggle,
-}: any) => (
+const PasswordField = ({ label, value, onChangeText, show, toggle }: any) => (
   <View style={styles.inputWrapper}>
     <Text style={styles.inputLabel}>{label}</Text>
     <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -325,16 +378,13 @@ const PasswordField = ({
         secureTextEntry={!show}
       />
       <TouchableOpacity style={styles.passwordToggle} onPress={toggle}>
-        <Ionicons
-          name={show ? "eye-off-outline" : "eye-outline"}
-          size={20}
-          color="#666"
-        />
+        <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={20} color="#666" />
       </TouchableOpacity>
     </View>
   </View>
 );
 
+/* Styles */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8fafc" },
   scrollContainer: { flexGrow: 1, justifyContent: "center", padding: 20 },
@@ -353,19 +403,8 @@ const styles = StyleSheet.create({
     elevation: 3,
     marginBottom: 20,
   },
-  welcomeTitle: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: "#1a1a1a",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  welcomeSubtitle: {
-    fontSize: 16,
-    color: "#6b7280",
-    textAlign: "center",
-    marginBottom: 20,
-  },
+  welcomeTitle: { fontSize: 28, fontWeight: "700", color: "#1a1a1a", textAlign: "center", marginBottom: 8 },
+  welcomeSubtitle: { fontSize: 16, color: "#6b7280", textAlign: "center", marginBottom: 20 },
   formContainer: {
     backgroundColor: "#fff",
     borderRadius: 20,
@@ -378,39 +417,21 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   inputWrapper: { marginBottom: 16 },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#374151",
-    marginBottom: 4,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: "#1a1a1a",
-    borderBottomWidth: 1,
-    borderColor: "#ddd",
-    paddingVertical: 6,
-  },
+  inputLabel: { fontSize: 14, fontWeight: "600", color: "#374151", marginBottom: 4 },
+  input: { flex: 1, fontSize: 16, color: "#1a1a1a", borderBottomWidth: 1, borderColor: "#ddd", paddingVertical: 6 },
   passwordToggle: { padding: 4 },
-  submitButton: {
-    backgroundColor: "#007AFF",
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: "center",
-  },
+  submitButton: { backgroundColor: "#007AFF", paddingVertical: 16, borderRadius: 12, alignItems: "center" },
   submitButtonDisabled: { opacity: 0.6 },
   submitButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
   switchModeButton: { paddingVertical: 12, alignItems: "center" },
   switchModeText: { color: "#007AFF", fontSize: 14, fontWeight: "500" },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(255,255,255,0.8)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,0.8)", justifyContent: "center", alignItems: "center" },
   messageContainer: { padding: 12, borderRadius: 8, marginTop: 16 },
   successMessage: { backgroundColor: "#d1fae5", borderColor: "#a7f3d0" },
   errorMessage: { backgroundColor: "#fee2e2", borderColor: "#fecaca" },
   messageText: { fontSize: 14, textAlign: "center" },
+  video: { width: "100%", height: "100%" },
+  overlay: { position: "absolute", right: 20, bottom: 120, alignItems: "center" },
+  iconButton: { marginBottom: 25, alignItems: "center" },
+  iconText: { color: "#fff", fontSize: 14, marginTop: 4 },
 });
