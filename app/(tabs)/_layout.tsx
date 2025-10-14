@@ -37,14 +37,14 @@ export default function TabLayout() {
         name="account"
         options={{
           title: 'account',
-          tabBarIcon: ({ color }) => <IconSymbol size={20} name="house.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={20} name="person.fill" color={color} />,
         }}
       />
       <Tabs.Screen
         name="music"
         options={{
           title: 'music',
-          tabBarIcon: ({ color }) => <IconSymbol size={20} name="paperplane.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={20} name="musical-notes.circle.fill" color={color} />,
         }}
       />
 
@@ -53,14 +53,14 @@ export default function TabLayout() {
         name="paid"
         options={{
           title: 'pay',
-          tabBarIcon: ({ color }) => <IconSymbol size={20} name="house.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={20} name="cash.fill" color={color} />,
         }}
       />
       <Tabs.Screen
         name="atom"
         options={{
           title: 'atom',
-          tabBarIcon: ({ color }) => <IconSymbol size={20} name="paperplane.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={20} name="swap-horizontal.fill" color={color} />,
         }}
       />
     </Tabs>
