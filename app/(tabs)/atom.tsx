@@ -30,7 +30,7 @@ import {
 } from "firebase/firestore";
 
 const { width } = Dimensions.get("window");
-const CARD_WIDTH = (width - 40) / 2;
+const CARD_WIDTH = (width - 48) / 2;
 
 type Product = {
   id: string;
@@ -56,7 +56,6 @@ export default function MyStore({
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
 
-  // 🧩 Listen to Firestore for products
   useEffect(() => {
     const q = query(
       collection(db, "products"),
@@ -73,7 +72,6 @@ export default function MyStore({
     return () => unsubscribe();
   }, [currentUserEmail]);
 
-  // 🗑 Delete product
   const handleDelete = async (id: string) => {
     Alert.alert("Delete Product", "Are you sure you want to delete this item?", [
       { text: "Cancel", style: "cancel" },
@@ -85,7 +83,6 @@ export default function MyStore({
     ]);
   };
 
-  // ✏️ Open edit modal
   const handleEdit = (product: Product) => {
     setProductToEdit(product);
     setName(product.name);
@@ -94,7 +91,6 @@ export default function MyStore({
     setEditModal(true);
   };
 
-  // 💾 Save edited product
   const saveEdit = async () => {
     if (!productToEdit) return;
     const docRef = doc(db, "products", productToEdit.id);
@@ -110,7 +106,8 @@ export default function MyStore({
   if (loading)
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#25D366" />
+        <ActivityIndicator size="large" color="#ff7f00" />
+        <Text style={{ marginTop: 12, color: "#888" }}>Loading store...</Text>
       </View>
     );
 
@@ -118,10 +115,10 @@ export default function MyStore({
     <View
       style={[
         styles.container,
-        { backgroundColor: isDark ? "#121212" : "#f7f7f7" },
+        { backgroundColor: isDark ? "#121212" : "#fafafa" },
       ]}
     >
-      <Text style={[styles.header, { color: isDark ? "#fff" : "#000" }]}>
+      <Text style={[styles.header, { color: isDark ? "#fff" : "#111" }]}>
         My Store
       </Text>
 
@@ -129,8 +126,8 @@ export default function MyStore({
         <View style={styles.emptyContainer}>
           <Ionicons
             name="cube-outline"
-            size={64}
-            color={isDark ? "#777" : "#ccc"}
+            size={80}
+            color={isDark ? "#555" : "#ccc"}
           />
           <Text style={[styles.emptyText, { color: isDark ? "#aaa" : "#777" }]}>
             You haven’t added any products yet.
@@ -143,194 +140,211 @@ export default function MyStore({
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => (
-            <View
+            <TouchableOpacity
+              activeOpacity={0.9}
               style={[
                 styles.card,
                 {
                   backgroundColor: isDark ? "#1c1c1e" : "#fff",
-                  shadowColor: isDark ? "#000" : "#999",
+                  shadowColor: isDark ? "#000" : "#ddd",
                 },
               ]}
             >
-              <Image source={{ uri: item.image }} style={styles.image} />
-              <Text
-                style={[
-                  styles.title,
-                  { color: isDark ? "#fff" : "#000" },
-                ]}
-                numberOfLines={2}
-              >
-                {item.name}
-              </Text>
-              <Text
-                style={[
-                  styles.price,
-                  { color: isDark ? "#00ff7f" : "#00a650" },
-                ]}
-              >
-                ${item.price}
-              </Text>
+              <Image
+                source={{
+                  uri:
+                    item.image ||
+                    "https://via.placeholder.com/200x200.png?text=No+Image",
+                }}
+                style={styles.image}
+              />
+              <View style={styles.cardBody}>
+                <Text
+                  style={[
+                    styles.title,
+                    { color: isDark ? "#fff" : "#111" },
+                  ]}
+                  numberOfLines={2}
+                >
+                  {item.name}
+                </Text>
+                <Text
+                  style={[
+                    styles.price,
+                    { color: isDark ? "#00ff88" : "#ff7f00" },
+                  ]}
+                >
+                  ${item.price}
+                </Text>
+              </View>
 
               <View style={styles.buttonRow}>
                 <TouchableOpacity
                   onPress={() => handleEdit(item)}
-                  style={[styles.button, styles.editButton]}
+                  style={[styles.smallBtn, { backgroundColor: "#007aff" }]}
                 >
-                  <Text style={styles.buttonText}>Edit</Text>
+                  <Ionicons name="create-outline" size={18} color="#fff" />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => handleDelete(item.id)}
-                  style={[styles.button, styles.deleteButton]}
+                  style={[styles.smallBtn, { backgroundColor: "#ff3b30" }]}
                 >
-                  <Text style={styles.buttonText}>Delete</Text>
+                  <Ionicons name="trash-outline" size={18} color="#fff" />
                 </TouchableOpacity>
               </View>
-            </View>
+            </TouchableOpacity>
           )}
         />
       )}
 
       {/* ✏️ Edit Modal */}
       <Modal visible={editModal} transparent animationType="slide">
-        <TouchableWithoutFeedback
-          onPress={() => {
-            Keyboard.dismiss();
-            setEditModal(false);
-          }}
-        >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.modalOverlay}>
-            <TouchableWithoutFeedback>
-              <ScrollView
-                contentContainerStyle={styles.modalScroll}
-                keyboardShouldPersistTaps="handled"
+            <View
+              style={[
+                styles.modalContent,
+                { backgroundColor: isDark ? "#222" : "#fff" },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.modalTitle,
+                  { color: isDark ? "#fff" : "#000" },
+                ]}
               >
-                <View style={styles.modalContent}>
-                  <Text style={styles.modalTitle}>Edit Product</Text>
+                Edit Product
+              </Text>
 
-                  <TextInput
-                    placeholder="Product Name"
-                    value={name}
-                    onChangeText={setName}
-                    style={styles.input}
-                  />
-                  <TextInput
-                    placeholder="Price"
-                    value={price}
-                    onChangeText={setPrice}
-                    keyboardType="numeric"
-                    style={styles.input}
-                  />
-                  <TextInput
-                    placeholder="Image URL"
-                    value={image}
-                    onChangeText={setImage}
-                    style={styles.input}
-                  />
+              <TextInput
+                placeholder="Product Name"
+                value={name}
+                onChangeText={setName}
+                style={styles.input}
+                placeholderTextColor="#999"
+              />
+              <TextInput
+                placeholder="Price"
+                value={price}
+                onChangeText={setPrice}
+                keyboardType="numeric"
+                style={styles.input}
+                placeholderTextColor="#999"
+              />
+              <TextInput
+                placeholder="Image URL"
+                value={image}
+                onChangeText={setImage}
+                style={styles.input}
+                placeholderTextColor="#999"
+              />
 
-                  <TouchableOpacity
-                    style={[styles.button, styles.saveButton]}
-                    onPress={saveEdit}
-                  >
-                    <Text style={styles.buttonText}>Save Changes</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.button, styles.cancelButton]}
-                    onPress={() => setEditModal(false)}
-                  >
-                    <Text style={[styles.buttonText, { color: "#333" }]}>
-                      Cancel
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
-            </TouchableWithoutFeedback>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: "#ff7f00" }]}
+                onPress={saveEdit}
+              >
+                <Text style={styles.modalBtnText}>Save Changes</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: "#ddd" }]}
+                onPress={() => setEditModal(false)}
+              >
+                <Text style={[styles.modalBtnText, { color: "#333" }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+
+      {/* ➕ Floating Add Button */}
+      <TouchableOpacity style={styles.addButton}>
+        <Ionicons name="add-circle" size={64} color="#ff7f00" />
+      </TouchableOpacity>
     </View>
   );
 }
 
-// 🧱 Styles
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 50 },
-  header: { fontSize: 28, fontWeight: "900", marginLeft: 20, marginBottom: 12 },
-  list: { paddingHorizontal: 12, paddingBottom: 100 },
+  container: { flex: 1, paddingTop: 40 },
+  header: {
+    fontSize: 26,
+    fontWeight: "900",
+    marginLeft: 20,
+    marginBottom: 16,
+  },
+  list: { paddingHorizontal: 12, paddingBottom: 120 },
 
-  // Cards
   card: {
     width: CARD_WIDTH,
-    borderRadius: 16,
-    padding: 12,
+    borderRadius: 14,
+    padding: 10,
     margin: 8,
-    alignItems: "center",
     elevation: 3,
-    shadowOpacity: 0.15,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
     shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
   },
-  image: { width: "100%", height: CARD_WIDTH - 24, borderRadius: 12 },
-  title: { marginTop: 8, fontWeight: "700", fontSize: 16, textAlign: "center" },
-  price: { marginTop: 4, fontWeight: "700", fontSize: 16 },
-
-  // Buttons
-  buttonRow: { flexDirection: "row", width: "100%", marginTop: 10 },
-  button: {
-    flex: 1,
-    borderRadius: 10,
-    alignItems: "center",
+  image: { width: "100%", height: CARD_WIDTH, borderRadius: 10 },
+  cardBody: { marginTop: 8 },
+  title: { fontWeight: "700", fontSize: 15, textAlign: "left" },
+  price: { fontWeight: "800", marginTop: 4, fontSize: 16 },
+  buttonRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 8,
+    gap: 6,
+  },
+  smallBtn: {
+    padding: 6,
+    borderRadius: 8,
     justifyContent: "center",
-    paddingVertical: 8,
-    marginHorizontal: 4,
+    alignItems: "center",
   },
-  editButton: { backgroundColor: "#007aff" },
-  deleteButton: { backgroundColor: "#ff3b30" },
-  saveButton: { backgroundColor: "#25D366", marginTop: 12 },
-  cancelButton: {
-    backgroundColor: "#ddd",
-    marginTop: 10,
-  },
-  buttonText: { color: "#fff", fontWeight: "700", fontSize: 15 },
 
-  // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "center",
-    paddingHorizontal: 20,
+    padding: 20,
   },
-  modalScroll: { justifyContent: "center", alignItems: "center", flexGrow: 1 },
   modalContent: {
-    width: "100%",
-    backgroundColor: "#fff",
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
   },
   modalTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "900",
-    marginBottom: 20,
     textAlign: "center",
+    marginBottom: 16,
   },
   input: {
-    borderRadius: 12,
-    paddingHorizontal: 16,
+    backgroundColor: "#f2f2f2",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+    fontSize: 15,
+  },
+  modalBtn: {
+    borderRadius: 10,
     paddingVertical: 12,
-    fontSize: 16,
-    marginBottom: 14,
-    backgroundColor: "#f0f0f0",
-  },
-
-  // Empty
-  emptyContainer: {
-    flex: 1,
+    marginTop: 10,
     alignItems: "center",
-    justifyContent: "center",
-    paddingTop: 100,
   },
-  emptyText: { marginTop: 12, fontSize: 16 },
+  modalBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 
-  // Loading
+  addButton: {
+    position: "absolute",
+    right: 20,
+    bottom: 30,
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+  },
+
+  emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  emptyText: { marginTop: 10, fontSize: 16 },
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
 });
