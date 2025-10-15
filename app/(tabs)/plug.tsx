@@ -9,11 +9,11 @@ import {
   Animated,
   Linking,
   AppState,
+  useColorScheme,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Video from "react-native-video";
 import * as Haptics from "expo-haptics";
-import { useColorScheme } from "react-native";
 
 const { width } = Dimensions.get("window");
 
@@ -62,22 +62,25 @@ export default function AdBanner() {
 
   const appState = useRef(AppState.currentState);
 
+  // Handle app state change to pause/resume video
   useEffect(() => {
     const subscription = AppState.addEventListener("change", handleAppStateChange);
     return () => subscription.remove();
   }, []);
 
   const handleAppStateChange = (nextAppState: string) => {
-    if (nextAppState !== "active") {
-      setPaused(true); // Stop video when leaving page
-    } else {
-      setPaused(false);
-    }
+    if (nextAppState !== "active") setPaused(true);
+    else setPaused(false);
   };
 
+  // Animate each ad
   useEffect(() => {
+    fadeAnim.setValue(0);
+    progressAnim.setValue(0);
+
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
     Animated.timing(progressAnim, { toValue: 1, duration: 10000, useNativeDriver: false }).start();
+
     setCountdown(10);
     setShowSkip(false);
 
@@ -87,16 +90,12 @@ export default function AdBanner() {
     return () => {
       clearTimeout(skipTimer);
       clearInterval(countInterval);
-      progressAnim.setValue(0);
     };
   }, [currentIndex]);
 
   const handleEnd = () => {
-    if (currentIndex < ads.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-    } else {
-      setShowMain(true);
-    }
+    if (currentIndex < ads.length - 1) setCurrentIndex(currentIndex + 1);
+    else setShowMain(true);
   };
 
   const handleSkip = () => {
@@ -114,7 +113,13 @@ export default function AdBanner() {
   if (showMain) {
     return (
       <View style={styles.container}>
-        <Video source={{ uri: mainVideo.video }} style={styles.video} resizeMode="cover" repeat paused={paused} />
+        <Video
+          source={{ uri: mainVideo.video }}
+          style={styles.video}
+          resizeMode="cover"
+          repeat
+          paused={paused}
+        />
         <View style={styles.mainOverlay}>
           <Text style={styles.mainTitle}>{mainVideo.title}</Text>
           <Text style={styles.mainDesc}>{mainVideo.description}</Text>
@@ -128,11 +133,17 @@ export default function AdBanner() {
 
   return (
     <Animated.View style={[styles.container, { opacity: fadeAnim, backgroundColor: isDark ? "#000" : "#fff" }]}>
-      <Video source={{ uri: currentAd.video }} style={styles.video} resizeMode="cover" paused={paused} onEnd={handleEnd} />
+      <Video
+        source={{ uri: currentAd.video }}
+        style={styles.video}
+        resizeMode="cover"
+        paused={paused}
+        onEnd={handleEnd}
+      />
 
       {/* Overlay */}
       <View style={styles.overlay}>
-        {/* Top Row: Profile & Skip */}
+        {/* Top Row: Profile avatar & Skip */}
         <View style={styles.topRow}>
           <View style={styles.profileContainer}>
             <Image source={{ uri: currentAd.profile }} style={styles.profilePic} />
@@ -154,7 +165,7 @@ export default function AdBanner() {
           <Animated.View style={[styles.progressBar, { width: progressWidth }]} />
         </View>
 
-        {/* Tools for Ads Monetization */}
+        {/* Tools for Ad Monetization */}
         <View style={styles.toolsContainer}>
           <Text style={styles.toolsTitle}>Ad Tools & Monetization</Text>
           <TouchableOpacity style={styles.toolButton} activeOpacity={0.8}>
@@ -183,9 +194,26 @@ export default function AdBanner() {
 }
 
 const styles = StyleSheet.create({
-  container: { width, height: 300, borderRadius: 16, overflow: "hidden", justifyContent: "center", alignItems: "center", position: "relative" },
+  container: {
+    width,
+    height: 300,
+    borderRadius: 16,
+    overflow: "hidden",
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+  },
   video: { width: "100%", height: "100%" },
-  overlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, padding: 12, justifyContent: "space-between", backgroundColor: "rgba(0,0,0,0.35)" },
+  overlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: 12,
+    justifyContent: "space-between",
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
   topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   profileContainer: { flexDirection: "row", alignItems: "center" },
   profilePic: { width: 40, height: 40, borderRadius: 20 },
@@ -200,8 +228,11 @@ const styles = StyleSheet.create({
   toolButton: { backgroundColor: "#222", paddingHorizontal: 16, paddingVertical: 6, borderRadius: 8, marginVertical: 3 },
   toolText: { color: "#fff", fontSize: 13 },
   learnMore: { flexDirection: "row", alignItems: "center", marginTop: 8, justifyContent: "center" },
+
   learnText: { color: "#00cc66", fontWeight: "600" },
   indicatorContainer: { position: "absolute", bottom: 6, flexDirection: "row", justifyContent: "center", width: "100%" },
   indicator: { width: 10, height: 10, borderRadius: 5, marginHorizontal: 4 },
   mainOverlay: { position: "absolute", bottom: 20, left: 20 },
-  mainTitle: { color: "#fff", fontSize: 20, font
+  mainTitle: { color: "#fff", fontSize: 20, fontWeight: "800" },
+  mainDesc: { color: "#ddd", fontSize: 14, marginTop: 4 },
+});
