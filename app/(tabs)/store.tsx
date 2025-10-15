@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   useColorScheme,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -27,15 +28,19 @@ type Product = {
 };
 
 export default function MyStore() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === "dark";
+
+  // 🧾 Cart + Edit modals
+  const [cart, setCart] = useState<Product[]>([]);
+  const [cartVisible, setCartVisible] = useState(false);
   const [editModal, setEditModal] = useState(false);
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [image, setImage] = useState("");
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
 
-  // ✅ Static demo data with images 12–16
+  // 🛒 Demo Data
   const myProducts: Product[] = [
     {
       id: "1",
@@ -75,6 +80,19 @@ export default function MyStore() {
     },
   ];
 
+  // 🛍️ Add to Cart
+  const addToCart = (product: Product) => {
+    setCart((prev) => [...prev, product]);
+    Alert.alert("Added to Cart", `${product.name} added successfully.`);
+  };
+
+  const removeFromCart = (id: string) => {
+    setCart((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const cartTotal = cart.reduce((sum, item) => sum + item.price, 0);
+
+  // ✏️ Edit Feature
   const handleEdit = (product: Product) => {
     setProductToEdit(product);
     setName(product.name);
@@ -88,8 +106,14 @@ export default function MyStore() {
     setEditModal(false);
   };
 
-  const handleDelete = (id: string) => {
-    Alert.alert("Delete Product", `Would delete product ID: ${id}`);
+  // 💳 Payment
+  const handlePayment = () => {
+    Alert.alert(
+      "Proceeding to Payment",
+      `Total $${cartTotal} — connect Stripe, Flutterwave, or Mobile Money here.`
+    );
+    setCart([]);
+    setCartVisible(false);
   };
 
   return (
@@ -99,10 +123,25 @@ export default function MyStore() {
         { backgroundColor: isDark ? "#121212" : "#fafafa" },
       ]}
     >
-      <Text style={[styles.header, { color: isDark ? "#fff" : "#111" }]}>
-        My Store
-      </Text>
+      <View style={styles.headerRow}>
+        <Text style={[styles.header, { color: isDark ? "#fff" : "#111" }]}>
+          My Store
+        </Text>
+        <TouchableOpacity onPress={() => setCartVisible(true)}>
+          <Ionicons
+            name="cart-outline"
+            size={32}
+            color={isDark ? "#00ff88" : "#ff7f00"}
+          />
+          {cart.length > 0 && (
+            <View style={styles.cartBadge}>
+              <Text style={styles.cartBadgeText}>{cart.length}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
 
+      {/* 🛍️ Product List */}
       <FlatList
         data={myProducts}
         numColumns={2}
@@ -139,13 +178,19 @@ export default function MyStore() {
 
             <View style={styles.buttonRow}>
               <TouchableOpacity
+                onPress={() => addToCart(item)}
+                style={[styles.smallBtn, { backgroundColor: "#34c759" }]}
+              >
+                <Ionicons name="cart" size={18} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity
                 onPress={() => handleEdit(item)}
                 style={[styles.smallBtn, { backgroundColor: "#007aff" }]}
               >
                 <Ionicons name="create-outline" size={18} color="#fff" />
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => handleDelete(item.id)}
+                onPress={() => Alert.alert("Delete Product", "Confirm deletion")}
                 style={[styles.smallBtn, { backgroundColor: "#ff3b30" }]}
               >
                 <Ionicons name="trash-outline" size={18} color="#fff" />
@@ -216,6 +261,67 @@ export default function MyStore() {
         </TouchableWithoutFeedback>
       </Modal>
 
+      {/* 🛒 Cart Modal */}
+      <Modal visible={cartVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.modalContent,
+              { backgroundColor: isDark ? "#222" : "#fff", height: "70%" },
+            ]}
+          >
+            <Text
+              style={[styles.modalTitle, { color: isDark ? "#fff" : "#000" }]}
+            >
+              My Cart ({cart.length})
+            </Text>
+            <ScrollView>
+              {cart.map((item) => (
+                <View key={item.id} style={styles.cartItem}>
+                  <Image source={{ uri: item.image }} style={styles.cartImage} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={{ fontWeight: "700", color: isDark ? "#fff" : "#000" }}>
+                      {item.name}
+                    </Text>
+                    <Text style={{ color: "#ff7f00" }}>${item.price}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => removeFromCart(item.id)}>
+                    <Ionicons name="trash-outline" size={22} color="#ff3b30" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: "900",
+                color: isDark ? "#00ff88" : "#ff7f00",
+                marginTop: 10,
+              }}
+            >
+              Total: ${cartTotal.toFixed(2)}
+            </Text>
+
+            <TouchableOpacity
+              onPress={handlePayment}
+              style={[styles.modalBtn, { backgroundColor: "#34c759", marginTop: 20 }]}
+            >
+              <Text style={styles.modalBtnText}>Proceed to Payment</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setCartVisible(false)}
+              style={[styles.modalBtn, { backgroundColor: "#ddd" }]}
+            >
+              <Text style={[styles.modalBtnText, { color: "#000" }]}>
+                Close
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* ➕ Floating Add Button */}
       <TouchableOpacity
         style={styles.addButton}
@@ -229,11 +335,16 @@ export default function MyStore() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: 40 },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginHorizontal: 20,
+    marginBottom: 10,
+  },
   header: {
     fontSize: 26,
     fontWeight: "900",
-    marginLeft: 20,
-    marginBottom: 16,
   },
   list: { paddingHorizontal: 12, paddingBottom: 120 },
   card: {
@@ -301,4 +412,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 6,
   },
+  cartItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 10,
+    padding: 8,
+  },
+  cartImage: { width: 60, height: 60, borderRadius: 10 },
+  cartBadge: {
+    position: "absolute",
+    right: -6,
+    top: -4,
+    backgroundColor: "red",
+    borderRadius: 10,
+    paddingHorizontal: 6,
+  },
+  cartBadgeText: { color: "#fff", fontSize: 12, fontWeight: "700" },
 });
