@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -8,8 +8,9 @@ import {
   StyleSheet,
   Modal,
   ScrollView,
+  Image,
   useColorScheme,
-  Alert,
+  Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { db, auth, database, ref, push, onValue } from "../../firebase";
@@ -19,276 +20,401 @@ import {
   doc,
   updateDoc,
   getDocs,
-  query,
+  onSnapshot,
 } from "firebase/firestore";
 
-type Sacco = {
+/* --- Types --- */
+type Account = {
   id: string;
   name: string;
+  type: "Bank" | "SACCO" | "Mobile Money";
   description: string;
   balance: number;
+  createdBy?: string;
 };
 
 type Transaction = {
   id?: string;
   user: string;
-  saccoId?: string;
-  recipientEmail?: string;
+  accountId?: string;
   amount: number;
-  type: "sacco" | "gift";
+  type: string;
   timestamp: number;
 };
 
-export default function SaccoManager() {
+/* --- Component --- */
+export default function MoneyManager() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
 
-  const [saccos, setSaccos] = useState<Sacco[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
+  const [creatingType, setCreatingType] = useState<Account["type"]>("SACCO");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [deposit, setDeposit] = useState("");
 
-  const [selectedSacco, setSelectedSacco] = useState<Sacco | null>(null);
+  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
-  const [giftEmail, setGiftEmail] = useState("");
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [historyVisible, setHistoryVisible] = useState(false);
 
-  const currentUserEmail = auth.currentUser?.email || "guest";
+  // message label
+  const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"info" | "success" | "error">("info");
+  const msgAnim = useRef(new Animated.Value(0)).current;
 
-  // 🔄 Load SACCOs from Firestore
+  const currentUserEmail = auth.currentUser?.email || "guest@example.com";
+
+  // --- helper: show message label for 5s ---
+  const showMessage = (text: string, type: "info" | "success" | "error" = "info") => {
+    setMessage(text);
+    setMessageType(type);
+    Animated.timing(msgAnim, { toValue: 1, duration: 280, useNativeDriver: true }).start();
+
+    setTimeout(() => {
+      Animated.timing(msgAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
+        setMessage("");
+      });
+    }, 5000);
+  };
+
+  // --- Load accounts initially & set realtime listener for balance changes ---
   useEffect(() => {
-    const loadSaccos = async () => {
-      const saccoSnapshot = await getDocs(collection(db, "saccos"));
-      const loadedSaccos = saccoSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Sacco[];
-      setSaccos(loadedSaccos);
-    };
-    loadSaccos();
+    // keep a map of balances to detect changes
+    let prevBalances: Record<string, number> = {};
+
+    const accountsCol = collection(db, "accounts");
+    const unsubscribe = onSnapshot(accountsCol, (snap) => {
+      const loaded: Account[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      // detect balance changes
+      loaded.forEach((acc) => {
+        const prev = prevBalances[acc.id];
+        if (prev !== undefined && prev !== acc.balance) {
+          showMessage(`${acc.name} balance changed: $${prev.toFixed(2)} → $${acc.balance.toFixed(2)}`, "info");
+        }
+        prevBalances[acc.id] = acc.balance;
+      });
+      // initial populate prevBalances
+      if (Object.keys(prevBalances).length === 0) {
+        loaded.forEach((a) => (prevBalances[a.id] = a.balance));
+      }
+      setAccounts(loaded);
+    }, (err) => {
+      console.error("accounts listener error", err);
+      showMessage("Failed to listen to accounts.", "error");
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  // 🔄 Load user transactions from Realtime Database
+  // --- Load user's transactions from Realtime DB (path: transactions/{userEmail}) ---
   useEffect(() => {
-    const userRef = ref(database, "transactions/" + currentUserEmail.replace(".", "_"));
-    onValue(userRef, (snapshot) => {
+    const safeEmail = currentUserEmail.replace(".", "_");
+    const txRef = ref(database, "transactions/" + safeEmail);
+    const unsub = onValue(txRef, (snapshot) => {
       const data = snapshot.val() || {};
-      const loaded: Transaction[] = Object.entries(data).map(([key, value]: any) => ({
-        id: key,
-        ...value,
-      }));
-      setTransactions(loaded.reverse());
+      const entries: Transaction[] = Object.entries(data).map(([k, v]: any) => ({ id: k, ...v }));
+      // newest first
+      setTransactions(entries.reverse());
+    }, (err) => {
+      console.error("rtdb tx load error", err);
+      showMessage("Failed to load transactions.", "error");
     });
-  }, []);
 
-  // Create SACCO
-  const createSacco = async () => {
+    return () => unsub();
+  }, [currentUserEmail]);
+
+  // --- Create unified account (Bank / SACCO / MM) ---
+  const createAccount = async () => {
     if (!name.trim() || !description.trim() || !deposit.trim()) {
-      Alert.alert("Incomplete", "Please fill all fields.");
+      showMessage("Please fill all fields.", "error");
+      return;
+    }
+    const initial = parseFloat(deposit);
+    if (isNaN(initial) || initial < 0) {
+      showMessage("Enter a valid initial deposit.", "error");
       return;
     }
 
-    const newSacco = {
-      name,
-      description,
-      balance: parseFloat(deposit),
-      createdBy: currentUserEmail,
-    };
-
-    const docRef = await addDoc(collection(db, "saccos"), newSacco);
-    setSaccos([...saccos, { id: docRef.id, ...newSacco }]);
-    logActivity("Created SACCO: " + name);
-    setName(""); setDescription(""); setDeposit("");
-    setModalVisible(false);
+    try {
+      const payload = {
+        name,
+        description,
+        type: creatingType,
+        balance: initial,
+        createdBy: currentUserEmail,
+      };
+      const docRef = await addDoc(collection(db, "accounts"), payload as any);
+      setAccounts((prev) => [...prev, { id: docRef.id, ...(payload as any) }]);
+      logActivity(`Created ${creatingType} "${name}"`);
+      showMessage(`${creatingType} "${name}" created.`, "success");
+      // reset modal
+      setModalVisible(false);
+      setName(""); setDescription(""); setDeposit("");
+    } catch (err) {
+      console.error("createAccount error", err);
+      showMessage("Failed to create account.", "error");
+    }
   };
 
-  // Send payment to SACCO
+  // --- Send deposit / payment to selected account ---
   const sendPayment = async () => {
-    if (!selectedSacco || !paymentAmount.trim()) return;
-
-    const amount = parseFloat(paymentAmount);
-    if (isNaN(amount) || amount <= 0) {
-      Alert.alert("Invalid amount", "Enter a valid payment amount.");
+    if (!selectedAccount) return;
+    if (!paymentAmount.trim()) {
+      showMessage("Enter an amount to deposit.", "error");
+      return;
+    }
+    const amt = parseFloat(paymentAmount);
+    if (isNaN(amt) || amt <= 0) {
+      showMessage("Enter a valid amount.", "error");
       return;
     }
 
-    const saccoRef = doc(db, "saccos", selectedSacco.id);
-    await updateDoc(saccoRef, { balance: selectedSacco.balance + amount });
+    try {
+      // update firestore account balance
+      const accRef = doc(db, "accounts", selectedAccount.id);
+      const newBalance = selectedAccount.balance + amt;
+      await updateDoc(accRef, { balance: newBalance });
 
-    setSaccos(
-      saccos.map((sacco) =>
-        sacco.id === selectedSacco.id
-          ? { ...sacco, balance: sacco.balance + amount }
-          : sacco
-      )
-    );
+      // update local state
+      setAccounts((prev) => prev.map((a) => (a.id === selectedAccount.id ? { ...a, balance: newBalance } : a)));
 
-    push(ref(database, "transactions/" + currentUserEmail.replace(".", "_")), {
-      user: currentUserEmail,
-      saccoId: selectedSacco.id,
-      amount,
-      type: "sacco",
-      timestamp: Date.now(),
-    });
+      // push a transaction to Realtime DB for the current user
+      const safeEmail = currentUserEmail.replace(".", "_");
+      await push(ref(database, "transactions/" + safeEmail), {
+        user: currentUserEmail,
+        accountId: selectedAccount.id,
+        amount: amt,
+        type: selectedAccount.type,
+        timestamp: Date.now(),
+      });
 
-    logActivity(`Sent $${amount} to ${selectedSacco.name}`);
-    Alert.alert("Success", `$${amount.toFixed(2)} sent to ${selectedSacco.name}`);
-    setPaymentAmount(""); setSelectedSacco(null);
+      logActivity(`Deposited $${amt.toFixed(2)} to ${selectedAccount.name}`);
+      showMessage(`Deposited $${amt.toFixed(2)} to ${selectedAccount.name}`, "success");
+      setPaymentAmount("");
+      setSelectedAccount(null);
+    } catch (err) {
+      console.error("sendPayment error", err);
+      showMessage("Payment failed.", "error");
+    }
   };
 
-  // Send gift payment to another user
-  const sendGift = async () => {
-    if (!giftEmail.trim() || !paymentAmount.trim()) {
-      Alert.alert("Incomplete", "Enter recipient email and amount.");
-      return;
-    }
-
-    const amount = parseFloat(paymentAmount);
-    if (isNaN(amount) || amount <= 0) {
-      Alert.alert("Invalid amount", "Enter a valid amount.");
-      return;
-    }
-
-    push(ref(database, "transactions/" + currentUserEmail.replace(".", "_")), {
-      user: currentUserEmail,
-      recipientEmail: giftEmail,
-      amount,
-      type: "gift",
-      timestamp: Date.now(),
-    });
-
-    push(ref(database, "transactions/" + giftEmail.replace(".", "_")), {
-      user: currentUserEmail,
-      recipientEmail: giftEmail,
-      amount,
-      type: "gift",
-      timestamp: Date.now(),
-    });
-
-    logActivity(`Sent gift $${amount} to ${giftEmail}`);
-    Alert.alert("Success", `Sent $${amount.toFixed(2)} gift to ${giftEmail}`);
-    setGiftEmail(""); setPaymentAmount("");
-  };
-
-  // Track activity
+  // --- Activity logger to RTDB ---
   const logActivity = (action: string) => {
-    push(ref(database, "activity/" + currentUserEmail.replace(".", "_")), { action, timestamp: Date.now() });
+    const safeEmail = currentUserEmail.replace(".", "_");
+    push(ref(database, "activity/" + safeEmail), { action, timestamp: Date.now() });
   };
 
-  return (
-    <View style={[styles.container, { backgroundColor: isDark ? "#121212" : "#f9f9f9" }]}>
-      <Text style={[styles.header, { color: isDark ? "#fff" : "#000" }]}>SACCO Manager</Text>
+  /* --- Avatar: using ui-avatars.com (email-based) --- */
+  const avatarUri = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUserEmail)}&background=111827&color=fff&size=128`;
 
-      <TouchableOpacity style={styles.createBtn} onPress={() => setModalVisible(true)}>
-        <Ionicons name="add-circle-outline" size={20} color="#fff" />
-        <Text style={styles.createBtnText}>Create New SACCO</Text>
+  /* --- UI --- */
+  return (
+    <View style={[styles.container, { backgroundColor: isDark ? "#0b0b0b" : "#f7f7f8" }]}>
+      {/* Message label */}
+      {message ? (
+        <Animated.View
+          style={[
+            styles.messageBox,
+            {
+              opacity: msgAnim,
+              transform: [{ translateY: msgAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
+              backgroundColor: messageType === "error" ? "#EF4444" : messageType === "success" ? "#10B981" : "#3B82F6",
+            },
+          ]}
+        >
+          <Text style={styles.messageText}>{message}</Text>
+        </Animated.View>
+      ) : null}
+
+      {/* Header */}
+      <View style={styles.headerRow}>
+        <View>
+          <Text style={[styles.title, { color: isDark ? "#fff" : "#111" }]}>Money</Text>
+          <Text style={{ color: isDark ? "#bbb" : "#666" }}>{currentUserEmail}</Text>
+        </View>
+        <Image source={{ uri: avatarUri }} style={styles.avatar} />
+      </View>
+
+      {/* Create Buttons */}
+      <View style={styles.buttonRow}>
+        {(["Bank", "SACCO", "Mobile Money"] as Account["type"][]).map((t) => (
+          <TouchableOpacity
+            key={t}
+            style={[styles.typeBtn, { backgroundColor: t === "Bank" ? "#3B82F6" : t === "SACCO" ? "#10B981" : "#F59E0B" }]}
+            onPress={() => {
+              setCreatingType(t);
+              setModalVisible(true);
+            }}
+          >
+            <Ionicons name="add-circle-outline" size={16} color="#fff" />
+            <Text style={styles.typeBtnText}>Create {t}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* History toggle */}
+      <TouchableOpacity
+        style={[styles.historyBtn, { backgroundColor: isDark ? "#111827" : "#007AFF" }]}
+        onPress={() => setHistoryVisible(true)}
+      >
+        <Ionicons name="time-outline" size={18} color="#fff" />
+        <Text style={styles.historyText}>Show Transaction History</Text>
       </TouchableOpacity>
 
+      {/* Accounts list */}
       <FlatList
-        data={saccos}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingVertical: 20 }}
+        data={accounts}
+        keyExtractor={(i) => i.id}
+        contentContainerStyle={{ paddingVertical: 18 }}
         renderItem={({ item }) => (
-          <View style={[styles.saccoCard, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
-            <Text style={[styles.saccoName, { color: isDark ? "#fff" : "#000" }]}>{item.name}</Text>
-            <Text style={[styles.saccoDesc, { color: isDark ? "#aaa" : "#555" }]}>{item.description}</Text>
-            <Text style={[styles.saccoBalance, { color: "#00a650" }]}>Balance: ${item.balance.toFixed(2)}</Text>
-
-            <TouchableOpacity style={styles.payBtn} onPress={() => setSelectedSacco(item)}>
-              <Text style={styles.payBtnText}>Send Payment</Text>
-            </TouchableOpacity>
+          <View style={[styles.accountCard, { backgroundColor: isDark ? "#111" : "#fff" }]}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={[styles.accountName, { color: isDark ? "#fff" : "#111" }]}>
+                  {item.name} • <Text style={{ fontWeight: "800" }}>{item.type}</Text>
+                </Text>
+                <Text style={{ color: isDark ? "#aaa" : "#555" }}>{item.description}</Text>
+              </View>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={{ color: "#00a650", fontWeight: "800" }}>${item.balance.toFixed(2)}</Text>
+                <TouchableOpacity style={styles.payBtn} onPress={() => setSelectedAccount(item)}>
+                  <Text style={styles.payBtnText}>Deposit</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
         )}
       />
 
-      {/* Transaction History */}
-      <Text style={[styles.sectionHeader, { color: isDark ? "#fff" : "#000" }]}>Transaction History</Text>
-      <FlatList
-        data={transactions}
-        keyExtractor={(item) => item.id || Math.random().toString()}
-        contentContainerStyle={{ paddingBottom: 100 }}
-        renderItem={({ item }) => (
-          <View style={[styles.transactionCard, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
-            <Text style={{ color: isDark ? "#fff" : "#000" }}>
-              {item.type === "sacco"
-                ? `Paid $${item.amount} to SACCO`
-                : `Gifted $${item.amount} to ${item.recipientEmail}`}
-            </Text>
-            <Text style={{ color: "#888", fontSize: 12 }}>{new Date(item.timestamp).toLocaleString()}</Text>
-          </View>
-        )}
-      />
-
-      {/* Create SACCO Modal */}
+      {/* Create Account Modal */}
       <Modal visible={modalVisible} transparent animationType="slide">
         <ScrollView contentContainerStyle={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
-            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#000" }]}>Create SACCO</Text>
-            <TextInput placeholder="SACCO Name" placeholderTextColor={isDark ? "#888" : "#aaa"} value={name} onChangeText={setName} style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]} />
-            <TextInput placeholder="Description" placeholderTextColor={isDark ? "#888" : "#aaa"} value={description} onChangeText={setDescription} style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]} />
-            <TextInput placeholder="Initial Deposit" placeholderTextColor={isDark ? "#888" : "#aaa"} value={deposit} onChangeText={setDeposit} keyboardType="numeric" style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]} />
+          <View style={[styles.modalContent, { backgroundColor: isDark ? "#111" : "#fff" }]}>
+            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#111" }]}>Create {creatingType}</Text>
 
-            <TouchableOpacity style={styles.modalBtn} onPress={createSacco}>
-              <Text style={styles.modalBtnText}>Create SACCO</Text>
+            <TextInput
+              placeholder={`${creatingType} Name`}
+              placeholderTextColor={isDark ? "#666" : "#999"}
+              style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]}
+              value={name}
+              onChangeText={setName}
+            />
+            <TextInput
+              placeholder="Description"
+              placeholderTextColor={isDark ? "#666" : "#999"}
+              style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]}
+              value={description}
+              onChangeText={setDescription}
+            />
+            <TextInput
+              placeholder="Initial Deposit"
+              placeholderTextColor={isDark ? "#666" : "#999"}
+              style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]}
+              value={deposit}
+              onChangeText={setDeposit}
+              keyboardType="numeric"
+            />
+
+            <TouchableOpacity style={styles.modalBtn} onPress={createAccount}>
+              <Text style={styles.modalBtnText}>Create {creatingType}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ccc" }]} onPress={() => setModalVisible(false)}>
-              <Text style={[styles.modalBtnText, { color: "#333" }]}>Cancel</Text>
+            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#6b7280" }]} onPress={() => setModalVisible(false)}>
+              <Text style={styles.modalBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
       </Modal>
 
-      {/* SACCO Payment Modal */}
-      <Modal visible={!!selectedSacco} transparent animationType="fade">
+      {/* Deposit Modal */}
+      <Modal visible={!!selectedAccount} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
-            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#000" }]}>
-              Send Payment to {selectedSacco?.name}
-            </Text>
-            <TextInput placeholder="Amount" placeholderTextColor={isDark ? "#888" : "#aaa"} value={paymentAmount} onChangeText={setPaymentAmount} keyboardType="numeric" style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]} />
-
+          <View style={[styles.modalContent, { backgroundColor: isDark ? "#111" : "#fff" }]}>
+            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#111" }]}>Deposit to {selectedAccount?.name}</Text>
+            <TextInput
+              placeholder="Amount"
+              placeholderTextColor={isDark ? "#666" : "#999"}
+              style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]}
+              value={paymentAmount}
+              onChangeText={setPaymentAmount}
+              keyboardType="numeric"
+            />
             <TouchableOpacity style={styles.modalBtn} onPress={sendPayment}>
-              <Text style={styles.modalBtnText}>Send Payment</Text>
+              <Text style={styles.modalBtnText}>Deposit</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ccc" }]} onPress={() => setSelectedSacco(null)}>
-              <Text style={[styles.modalBtnText, { color: "#333" }]}>Cancel</Text>
+            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#6b7280" }]} onPress={() => setSelectedAccount(null)}>
+              <Text style={styles.modalBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Gift Payment */}
-      <View style={{ marginTop: 20 }}>
-        <Text style={[styles.sectionHeader, { color: isDark ? "#fff" : "#000" }]}>Send Gift</Text>
-        <TextInput placeholder="Recipient Email" placeholderTextColor={isDark ? "#888" : "#aaa"} value={giftEmail} onChangeText={setGiftEmail} style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]} />
-        <TextInput placeholder="Amount" placeholderTextColor={isDark ? "#888" : "#aaa"} value={paymentAmount} onChangeText={setPaymentAmount} keyboardType="numeric" style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]} />
-        <TouchableOpacity style={styles.modalBtn} onPress={sendGift}>
-          <Text style={styles.modalBtnText}>Send Gift</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Transaction History Modal */}
+      <Modal visible={historyVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: isDark ? "#111" : "#fff" }]}>
+            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#111" }]}>Transaction History</Text>
+
+            <ScrollView style={{ maxHeight: 420, marginTop: 8 }}>
+              {transactions.length === 0 && <Text style={{ color: isDark ? "#aaa" : "#666", textAlign: "center", padding: 20 }}>No transactions yet.</Text>}
+              {transactions.map((t) => (
+                <View key={t.id} style={[styles.transactionCard, { backgroundColor: isDark ? "#0b0b0b" : "#f3f3f3" }]}>
+                  <Text style={{ color: isDark ? "#fff" : "#111" }}>{t.type} • ${t.amount.toFixed(2)}</Text>
+                  <Text style={{ color: "#888", fontSize: 12 }}>{new Date(t.timestamp).toLocaleString()}</Text>
+                </View>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity style={[styles.modalBtn, { marginTop: 12 }]} onPress={() => setHistoryVisible(false)}>
+              <Text style={styles.modalBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
+/* --- Styles --- */
 const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: 50, paddingHorizontal: 16 },
-  header: { fontSize: 28, fontWeight: "900", marginBottom: 20 },
-  createBtn: { flexDirection: "row", backgroundColor: "#25D366", padding: 12, borderRadius: 12, alignItems: "center", justifyContent: "center", marginBottom: 10 },
-  createBtnText: { color: "#fff", fontWeight: "700", marginLeft: 8 },
-  saccoCard: { padding: 16, borderRadius: 16, marginBottom: 16, shadowColor: "#000", shadowOpacity: 0.1, shadowOffset: { width: 0, height: 2 }, shadowRadius: 5 },
-  saccoName: { fontSize: 20, fontWeight: "900", marginBottom: 4 },
-  saccoDesc: { fontSize: 14, marginBottom: 8 },
-  saccoBalance: { fontSize: 16, fontWeight: "700", marginBottom: 8 },
-  payBtn: { backgroundColor: "#007aff", padding: 10, borderRadius: 12, alignItems: "center" },
+  messageBox: {
+    position: "absolute",
+    top: 12,
+    left: 20,
+    right: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+    zIndex: 999,
+  },
+  messageText: { color: "#fff", textAlign: "center", fontWeight: "600" },
+
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 18 },
+  title: { fontSize: 28, fontWeight: "900" },
+  avatar: { width: 48, height: 48, borderRadius: 24 },
+
+  buttonRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
+  typeBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 10, borderRadius: 10, marginHorizontal: 6 },
+  typeBtnText: { color: "#fff", marginLeft: 8, fontWeight: "700" },
+
+  historyBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 12, borderRadius: 10, marginBottom: 12 },
+  historyText: { color: "#fff", marginLeft: 8, fontWeight: "700" },
+
+  accountCard: { padding: 14, borderRadius: 12, marginBottom: 12, shadowColor: "#000", shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 2 },
+  accountName: { fontSize: 16, fontWeight: "800", marginBottom: 4 },
+
+  payBtn: { marginTop: 8, backgroundColor: "#111827", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8 },
   payBtnText: { color: "#fff", fontWeight: "700" },
-  sectionHeader: { fontSize: 22, fontWeight: "900", marginVertical: 10 },
-  transactionCard: { padding: 12, borderRadius: 12, marginBottom: 8 },
-  modalOverlay: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.7)", padding: 20 },
-  modalContent: { width: "100%", borderRadius: 16, padding: 20 },
-  modalTitle: { fontSize: 22, fontWeight: "900", marginBottom: 12, textAlign: "center" },
-  input: { borderRadius: 12, padding: 14, fontSize: 16, marginBottom: 12 },
-  modalBtn: { backgroundColor: "#25D366", padding: 14, borderRadius: 12, alignItems: "center", marginTop: 8 },
-  modalBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+
+  modalOverlay: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.6)", padding: 20 },
+  modalContent: { width: "100%", borderRadius: 14, padding: 18 },
+  modalTitle: { fontSize: 20, fontWeight: "900", marginBottom: 12, textAlign: "center" },
+  input: { borderRadius: 10, padding: 12, fontSize: 16, marginBottom: 12 },
+
+  modalBtn: { backgroundColor: "#10B981", padding: 12, borderRadius: 10, alignItems: "center", marginTop: 8 },
+  modalBtnText: { color: "#fff", fontWeight: "800" },
+
+  transactionCard: { padding: 12, borderRadius: 10, marginBottom: 10 },
 });
