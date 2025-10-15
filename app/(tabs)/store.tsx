@@ -9,7 +9,6 @@ import {
   Modal,
   TextInput,
   Alert,
-  ActivityIndicator,
   Dimensions,
   TouchableWithoutFeedback,
   Keyboard,
@@ -45,7 +44,6 @@ export default function MyStore({
   currentUserEmail: string;
 }) {
   const [myProducts, setMyProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
   const [editModal, setEditModal] = useState(false);
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
   const [name, setName] = useState("");
@@ -76,18 +74,15 @@ export default function MyStore({
             } as Product;
           });
           setMyProducts(products);
-          setLoading(false);
         },
         (error) => {
           console.error("Snapshot error:", error);
           Alert.alert("Error", "Failed to load your store items.");
-          setLoading(false);
         }
       );
       return () => unsubscribe();
     } catch (error) {
       console.error("Query error:", error);
-      setLoading(false);
     }
   }, [currentUserEmail]);
 
@@ -139,14 +134,6 @@ export default function MyStore({
     }
   };
 
-  if (loading)
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ff7f00" />
-        <Text style={{ marginTop: 12, color: "#888" }}>Loading store...</Text>
-      </View>
-    );
-
   return (
     <View
       style={[
@@ -191,7 +178,7 @@ export default function MyStore({
                   uri:
                     item.image && item.image.startsWith("http")
                       ? item.image
-                      : "https://xlijah.com/pics/phones/iphone/12.jpg",
+                      : "https://xlijah.com/pics/phones/iphones/14.jpg",
                 }}
                 style={styles.image}
               />
@@ -379,5 +366,4 @@ const styles = StyleSheet.create({
   },
   emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   emptyText: { marginTop: 10, fontSize: 16 },
-  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
 });
