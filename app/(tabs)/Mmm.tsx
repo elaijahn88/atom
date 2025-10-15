@@ -2,14 +2,13 @@ import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
+  FlatList,
   Image,
   TouchableOpacity,
   StyleSheet,
   Modal,
   TextInput,
   Alert,
-  ScrollView,
-  ActivityIndicator,
   Dimensions,
   TouchableWithoutFeedback,
   Keyboard,
@@ -29,7 +28,6 @@ import {
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 48) / 2;
-const ITEMS_PER_PAGE = 6; // 2 columns × 3 rows
 
 type Product = {
   id: string;
@@ -46,7 +44,6 @@ export default function MyStore({
   currentUserEmail: string;
 }) {
   const [myProducts, setMyProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
   const [editModal, setEditModal] = useState(false);
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
   const [name, setName] = useState("");
@@ -74,21 +71,18 @@ export default function MyStore({
               image: data.image || "",
               sellerEmail: data.sellerEmail || "",
               description: data.description || "",
-            };
-          }) as Product[];
+            } as Product;
+          });
           setMyProducts(products);
-          setLoading(false);
         },
         (error) => {
           console.error("Snapshot error:", error);
-          Alert.alert("Error", "Failed to load store items.");
-          setLoading(false);
+          Alert.alert("Error", "Failed to load your store items.");
         }
       );
       return () => unsubscribe();
-    } catch (err) {
-      console.error("Query error:", err);
-      setLoading(false);
+    } catch (error) {
+      console.error("Query error:", error);
     }
   }, [currentUserEmail]);
 
@@ -102,7 +96,7 @@ export default function MyStore({
           try {
             await deleteDoc(doc(db, "products", id));
           } catch (err) {
-            console.error("Delete error:", err);
+            console.error("Delete failed:", err);
             Alert.alert("Error", "Failed to delete product.");
           }
         },
@@ -112,16 +106,16 @@ export default function MyStore({
 
   const handleEdit = (product: Product) => {
     setProductToEdit(product);
-    setName(product.name);
-    setPrice(product.price.toString());
-    setImage(product.image);
+    setName(product.name || "");
+    setPrice(product.price?.toString() || "");
+    setImage(product.image || "");
     setEditModal(true);
   };
 
   const saveEdit = async () => {
     if (!productToEdit) return;
     if (!name.trim() || !price.trim() || isNaN(Number(price))) {
-      Alert.alert("Invalid Input", "Enter a valid product name and price.");
+      Alert.alert("Error", "Please enter valid name and price.");
       return;
     }
 
@@ -135,34 +129,41 @@ export default function MyStore({
       setEditModal(false);
       setProductToEdit(null);
     } catch (err) {
-      console.error("Update error:", err);
+      console.error("Update failed:", err);
       Alert.alert("Error", "Failed to save changes.");
     }
   };
 
-  if (loading)
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ff7f00" />
-        <Text style={{ marginTop: 12, color: "#888" }}>Loading store...</Text>
-      </View>
-    );
-
-  const pages: Product[][] = [];
-  for (let i = 0; i < myProducts.length; i += ITEMS_PER_PAGE) {
-    pages.push(myProducts.slice(i, i + ITEMS_PER_PAGE));
-  }
-
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: isDark ? "#121212" : "#fafafa" }]}
-      pagingEnabled
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: isDark ? "#121212" : "#fafafa" },
+      ]}
     >
-      {pages.map((pageItems, pageIndex) => (
-        <View key={pageIndex} style={styles.page}>
-          {pageItems.map((item) => (
+      <Text style={[styles.header, { color: isDark ? "#fff" : "#111" }]}>
+        My Store
+      </Text>
+
+      {myProducts.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons
+            name="cube-outline"
+            size={80}
+            color={isDark ? "#555" : "#ccc"}
+          />
+          <Text style={[styles.emptyText, { color: isDark ? "#aaa" : "#777" }]}>
+            You haven’t added any products yet.
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={myProducts}
+          numColumns={2}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
+          renderItem={({ item }) => (
             <TouchableOpacity
-              key={item.id}
               activeOpacity={0.9}
               style={[
                 styles.card,
@@ -177,7 +178,7 @@ export default function MyStore({
                   uri:
                     item.image && item.image.startsWith("http")
                       ? item.image
-                      : "https://xlijah.com/pics/phones/iphone/12.jpg",
+                      : "https://xlijah.com/pics/phones/iphone/14.jpg",
                 }}
                 style={styles.image}
               />
@@ -189,11 +190,15 @@ export default function MyStore({
                   {item.name}
                 </Text>
                 <Text
-                  style={[styles.price, { color: isDark ? "#00ff88" : "#ff7f00" }]}
+                  style={[
+                    styles.price,
+                    { color: isDark ? "#00ff88" : "#ff7f00" },
+                  ]}
                 >
                   ${item.price}
                 </Text>
               </View>
+
               <View style={styles.buttonRow}>
                 <TouchableOpacity
                   onPress={() => handleEdit(item)}
@@ -209,9 +214,9 @@ export default function MyStore({
                 </TouchableOpacity>
               </View>
             </TouchableOpacity>
-          ))}
-        </View>
-      ))}
+          )}
+        />
+      )}
 
       {/* ✏️ Edit Modal */}
       <Modal visible={editModal} transparent animationType="slide">
@@ -231,6 +236,7 @@ export default function MyStore({
               >
                 Edit Product
               </Text>
+
               <TextInput
                 placeholder="Product Name"
                 value={name}
@@ -253,6 +259,7 @@ export default function MyStore({
                 style={styles.input}
                 placeholderTextColor="#999"
               />
+
               <TouchableOpacity
                 style={[styles.modalBtn, { backgroundColor: "#ff7f00" }]}
                 onPress={saveEdit}
@@ -263,30 +270,40 @@ export default function MyStore({
                 style={[styles.modalBtn, { backgroundColor: "#ddd" }]}
                 onPress={() => setEditModal(false)}
               >
-                <Text style={[styles.modalBtnText, { color: "#333" }]}>Cancel</Text>
+                <Text style={[styles.modalBtnText, { color: "#333" }]}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
         </TouchableWithoutFeedback>
       </Modal>
-    </ScrollView>
+
+      {/* ➕ Floating Add Button */}
+      <TouchableOpacity
+        style={styles.addButton}
+        onPress={() => Alert.alert("Coming Soon", "Add product feature pending")}
+      >
+        <Ionicons name="add-circle" size={64} color="#ff7f00" />
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: 40 },
-  page: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
+  header: {
+    fontSize: 26,
+    fontWeight: "900",
+    marginLeft: 20,
     marginBottom: 16,
   },
+  list: { paddingHorizontal: 12, paddingBottom: 120 },
   card: {
     width: CARD_WIDTH,
     borderRadius: 14,
     padding: 10,
-    marginBottom: 16,
+    margin: 8,
     elevation: 3,
     shadowOpacity: 0.2,
     shadowRadius: 6,
@@ -314,7 +331,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 20,
   },
-  modalContent: { borderRadius: 20, padding: 20 },
+  modalContent: {
+    borderRadius: 20,
+    padding: 20,
+  },
   modalTitle: {
     fontSize: 22,
     fontWeight: "900",
@@ -336,5 +356,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  addButton: {
+    position: "absolute",
+    right: 20,
+    bottom: 30,
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+  },
+  emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  emptyText: { marginTop: 10, fontSize: 16 },
 });
