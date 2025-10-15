@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   TextInput,
@@ -12,14 +12,23 @@ import {
   FlatList,
   Dimensions,
   StatusBar,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  signOut,
 } from "firebase/auth";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import {
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  onSnapshot,
+  collection,
+} from "firebase/firestore";
 import Video from "react-native-video";
 
 interface IUserData {
@@ -28,12 +37,12 @@ interface IUserData {
   account: number;
   age: number;
   createdAt: Date;
+  avatar?: string;
 }
 
 const { width, height } = Dimensions.get("window");
 
 export default function App() {
-  // 🧩 Auth State
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -45,35 +54,22 @@ export default function App() {
   const [isLoginMode, setIsLoginMode] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-  // 🧩 Video Feed State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState<IUserData | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [videos, setVideos] = useState<any[]>([]);
+
   const videoRefs = useRef([]);
 
-  // Sample video URLs
-  const videos = [
-    {
-      id: "1",
-      uri: "https://xlijah.com/soso.mp4",
-      likes: 2100,
-      comments: 120,
-    },
-    {
-      id: "2",
-      uri: "https://xlijah.com/soso.mp4",
-      likes: 980,
-      comments: 45,
-    },
-    {
-      id: "3",
-      uri: "https://xlijah/soso.mp4",
-      likes: 5400,
-      comments: 322,
-    },
-  ];
+  // ✅ Fetch videos & live likes
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "videos"), (snapshot) => {
+      const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      setVideos(data);
+    });
+    return () => unsubscribe();
+  }, []);
 
-  // Validation
   const validateEmail = (email: string): boolean =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -84,22 +80,22 @@ export default function App() {
     if (!isLoginMode) {
       if (!name.trim()) return setMsg("Full name is required");
       if (password !== confirmPassword) return setMsg("Passwords do not match");
-      if (isNaN(Number(age)) || Number(age) <= 0) return setMsg("Enter a valid age");
+      if (isNaN(Number(age)) || Number(age) <= 0) return setMsg("Enter valid age");
     }
     return true;
   };
 
   const setMsg = (msg: string) => {
     setMessage(msg);
+    setTimeout(() => setMessage(""), 5000);
     return false;
   };
 
-  // Sign Up
+  // ✅ Sign Up
   const handleSignUp = async () => {
     if (!validateForm()) return;
     setLoading(true);
     setMessage("");
-
     try {
       const userCredential = await createUserWithEmailAndPassword(
         auth,
@@ -114,33 +110,26 @@ export default function App() {
         account: Number(account) || 0,
         age: Number(age) || 0,
         createdAt: new Date(),
+        avatar: `https://i.pravatar.cc/150?u=${email}`,
       };
 
       await setDoc(doc(db, "users", user.uid), userData);
-
+      setUser(userData);
       setMessage("✅ Account created successfully!");
-      setIsLoginMode(true);
-      setEmail("");
-      setPassword("");
-      setConfirmPassword("");
-      setName("");
-      setAccount("");
-      setAge("");
-      setIsLoggedIn(true); // Navigate to video feed
+      setIsLoggedIn(true);
     } catch (err: any) {
       console.error(err);
-      setMessage("Error creating account: " + err.message);
+      setMsg("Error: " + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Sign In
+  // ✅ Sign In
   const handleSignIn = async () => {
     if (!validateForm()) return;
     setLoading(true);
     setMessage("");
-
     try {
       const userCredential = await signInWithEmailAndPassword(
         auth,
@@ -148,39 +137,55 @@ export default function App() {
         password
       );
       const user = userCredential.user;
-
       const docRef = doc(db, "users", user.uid);
       const docSnap = await getDoc(docRef);
-
       if (docSnap.exists()) {
         const data = docSnap.data() as IUserData;
+        setUser(data);
         setMessage(`✅ Welcome back, ${data.name || "User"}!`);
-      } else {
-        setMessage("✅ Signed in, but no profile data found.");
       }
-      setIsLoggedIn(true); // Navigate to video feed
+      setIsLoggedIn(true);
     } catch (err: any) {
       console.error(err);
-      setMessage("Error: " + err.message);
+      setMsg("Error: " + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Video Feed Helpers
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) {
-      setCurrentIndex(viewableItems[0].index);
-    }
-  });
+  // ✅ Like toggle
+  const handleLike = async (videoId: string, currentLikes: number) => {
+    const videoRef = doc(db, "videos", videoId);
+    await updateDoc(videoRef, { likes: currentLikes + 1 });
+  };
 
+  const handleLogout = async () => {
+    await signOut(auth);
+    setIsLoggedIn(false);
+    setUser(null);
+  };
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems.length > 0) setCurrentIndex(viewableItems[0].index);
+  });
   const viewConfigRef = useRef({ viewAreaCoveragePercentThreshold: 80 });
 
-  // ✅ Render
-  if (isLoggedIn) {
+  if (isLoggedIn && user) {
     return (
-      <View style={styles.container}>
+      <View style={styles.darkContainer}>
         <StatusBar hidden />
+        {/* Top Bar */}
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={26} color="#fff" />
+          </TouchableOpacity>
+          <View style={styles.userSection}>
+            <Image source={{ uri: user.avatar }} style={styles.avatar} />
+            <Text style={styles.userName}>{user.name}</Text>
+          </View>
+        </View>
+
+        {/* Video Feed */}
         <FlatList
           data={videos}
           keyExtractor={(item) => item.id}
@@ -193,10 +198,12 @@ export default function App() {
                 resizeMode="cover"
                 repeat
                 paused={currentIndex !== index}
-                onError={(e) => console.log("Video error:", e)}
               />
               <View style={styles.overlay}>
-                <TouchableOpacity style={styles.iconButton}>
+                <TouchableOpacity
+                  style={styles.iconButton}
+                  onPress={() => handleLike(item.id, item.likes)}
+                >
                   <Ionicons name="heart-outline" size={36} color="#fff" />
                   <Text style={styles.iconText}>{item.likes}</Text>
                 </TouchableOpacity>
@@ -216,148 +223,107 @@ export default function App() {
     );
   }
 
-  // 🔐 Login/Register Screen
+  // 🔐 Dark Mode Login / Signup
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={styles.darkContainer}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
-          <View style={styles.iconContainer}>
-            <Ionicons name="lock-closed" size={48} color="#007AFF" />
-          </View>
-          <Text style={styles.welcomeTitle}>
-            {isLoginMode ? "Welcome Back" : "Create Account"}
+          <Ionicons name="lock-closed-outline" size={52} color="#00BFFF" />
+          <Text style={styles.darkTitle}>
+            {isLoginMode ? "Welcome Back" : "Join the Community"}
           </Text>
-          <Text style={styles.welcomeSubtitle}>
-            {isLoginMode
-              ? "Sign in to continue"
-              : "Fill in your details to register"}
+          <Text style={styles.darkSubtitle}>
+            {isLoginMode ? "Sign in to continue" : "Create your account below"}
           </Text>
         </View>
 
-        <View style={styles.formContainer}>
-          <Field
-            label="Email Address"
+        <View style={styles.darkForm}>
+          <DarkField
+            label="Email"
             value={email}
             placeholder="you@example.com"
-            keyboardType="email-address"
-            onChangeText={(t) => {
-              setEmail(t);
-              setMessage("");
-            }}
+            onChangeText={setEmail}
           />
-
-          <PasswordField
+          <DarkPasswordField
             label="Password"
             value={password}
-            onChangeText={(t) => {
-              setPassword(t);
-              setMessage("");
-            }}
+            onChangeText={setPassword}
             show={showPassword}
             toggle={() => setShowPassword(!showPassword)}
           />
-
           {!isLoginMode && (
-            <PasswordField
+            <DarkPasswordField
               label="Confirm Password"
               value={confirmPassword}
-              onChangeText={(t) => {
-                setConfirmPassword(t);
-                setMessage("");
-              }}
+              onChangeText={setConfirmPassword}
               show={showConfirmPassword}
               toggle={() => setShowConfirmPassword(!showConfirmPassword)}
             />
           )}
-
-          {!isLoginMode && (
-            <Field
-              label="Full Name"
-              value={name}
-              placeholder="John Doe"
-              onChangeText={(t) => {
-                setName(t);
-                setMessage("");
-              }}
-            />
-          )}
-
           {!isLoginMode && (
             <>
-              <Field
-                label="Account Number"
+              <DarkField label="Full Name" value={name} onChangeText={setName} />
+              <DarkField
+                label="Account"
                 value={account}
-                placeholder="123456"
+                onChangeText={setAccount}
                 keyboardType="numeric"
-                onChangeText={(t) => setAccount(t)}
               />
-              <Field
+              <DarkField
                 label="Age"
                 value={age}
-                placeholder="25"
+                onChangeText={setAge}
                 keyboardType="numeric"
-                onChangeText={(t) => setAge(t)}
               />
             </>
           )}
-
           <TouchableOpacity
-            style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+            style={[styles.darkButton, loading && { opacity: 0.6 }]}
             onPress={isLoginMode ? handleSignIn : handleSignUp}
             disabled={loading}
           >
-            <Text style={styles.submitButtonText}>
-              {isLoginMode ? "Sign In" : "Create Account"}
+            <Text style={styles.darkButtonText}>
+              {isLoginMode ? "Sign In" : "Sign Up"}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.switchModeButton}
-            onPress={() => {
-              setIsLoginMode(!isLoginMode);
-              setMessage("");
-            }}
-          >
-            <Text style={styles.switchModeText}>
+          <TouchableOpacity onPress={() => setIsLoginMode(!isLoginMode)}>
+            <Text style={styles.switchText}>
               {isLoginMode
-                ? "Don't have an account? Sign Up"
-                : "Already have an account? Sign In"}
+                ? "Don’t have an account? Sign Up"
+                : "Already have one? Sign In"}
             </Text>
           </TouchableOpacity>
-
-          {loading && (
-            <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color="#007AFF" />
-            </View>
-          )}
 
           {message ? (
-            <View
+            <Text
               style={[
-                styles.messageContainer,
-                message.includes("✅") ? styles.successMessage : styles.errorMessage,
+                styles.msg,
+                message.includes("✅") ? { color: "#4CAF50" } : { color: "#FF5252" },
               ]}
             >
-              <Text style={styles.messageText}>{message}</Text>
-            </View>
+              {message}
+            </Text>
           ) : null}
         </View>
+
+        {loading && <ActivityIndicator size="large" color="#00BFFF" />}
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-/* Reusable Input Fields */
-const Field = ({ label, value, placeholder, onChangeText, keyboardType = "default" }: any) => (
-  <View style={styles.inputWrapper}>
-    <Text style={styles.inputLabel}>{label}</Text>
+/* 🔹 Dark Mode Reusable Fields */
+const DarkField = ({ label, value, onChangeText, keyboardType = "default", placeholder }: any) => (
+  <View style={{ marginBottom: 14 }}>
+    <Text style={styles.darkLabel}>{label}</Text>
     <TextInput
-      style={styles.input}
+      style={styles.darkInput}
       placeholder={placeholder}
-      placeholderTextColor="#999"
+      placeholderTextColor="#666"
       value={value}
       onChangeText={onChangeText}
       keyboardType={keyboardType}
@@ -365,71 +331,66 @@ const Field = ({ label, value, placeholder, onChangeText, keyboardType = "defaul
   </View>
 );
 
-const PasswordField = ({ label, value, onChangeText, show, toggle }: any) => (
-  <View style={styles.inputWrapper}>
-    <Text style={styles.inputLabel}>{label}</Text>
+const DarkPasswordField = ({ label, value, onChangeText, show, toggle }: any) => (
+  <View style={{ marginBottom: 14 }}>
+    <Text style={styles.darkLabel}>{label}</Text>
     <View style={{ flexDirection: "row", alignItems: "center" }}>
       <TextInput
-        style={[styles.input, { flex: 1 }]}
-        placeholder="Enter your password"
-        placeholderTextColor="#999"
+        style={[styles.darkInput, { flex: 1 }]}
+        placeholder="••••••"
+        placeholderTextColor="#666"
         value={value}
         onChangeText={onChangeText}
         secureTextEntry={!show}
       />
-      <TouchableOpacity style={styles.passwordToggle} onPress={toggle}>
-        <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={20} color="#666" />
+      <TouchableOpacity onPress={toggle} style={{ padding: 4 }}>
+        <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={20} color="#999" />
       </TouchableOpacity>
     </View>
   </View>
 );
 
-/* Styles */
+/* 🎨 Styles */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc" },
+  darkContainer: { flex: 1, backgroundColor: "#0a0a0a" },
   scrollContainer: { flexGrow: 1, justifyContent: "center", padding: 20 },
   header: { alignItems: "center", marginBottom: 30 },
-  iconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#fff",
-    justifyContent: "center",
+  darkTitle: { fontSize: 26, fontWeight: "700", color: "#fff", marginTop: 10 },
+  darkSubtitle: { color: "#999", fontSize: 15, marginTop: 4 },
+  darkForm: { backgroundColor: "#1a1a1a", padding: 24, borderRadius: 20 },
+  darkLabel: { color: "#ccc", fontSize: 14, marginBottom: 4 },
+  darkInput: {
+    backgroundColor: "#111",
+    color: "#fff",
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    fontSize: 16,
+  },
+  darkButton: {
+    backgroundColor: "#00BFFF",
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8,
-    elevation: 3,
-    marginBottom: 20,
+    marginTop: 10,
   },
-  welcomeTitle: { fontSize: 28, fontWeight: "700", color: "#1a1a1a", textAlign: "center", marginBottom: 8 },
-  welcomeSubtitle: { fontSize: 16, color: "#6b7280", textAlign: "center", marginBottom: 20 },
-  formContainer: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 24,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
-    elevation: 4,
-    marginBottom: 20,
+  darkButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  switchText: { color: "#00BFFF", textAlign: "center", marginTop: 16 },
+  msg: { textAlign: "center", marginTop: 12, fontSize: 14 },
+  topBar: {
+    position: "absolute",
+    top: 40,
+    left: 0,
+    right: 0,
+    zIndex: 99,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    alignItems: "center",
   },
-  inputWrapper: { marginBottom: 16 },
-  inputLabel: { fontSize: 14, fontWeight: "600", color: "#374151", marginBottom: 4 },
-  input: { flex: 1, fontSize: 16, color: "#1a1a1a", borderBottomWidth: 1, borderColor: "#ddd", paddingVertical: 6 },
-  passwordToggle: { padding: 4 },
-  submitButton: { backgroundColor: "#007AFF", paddingVertical: 16, borderRadius: 12, alignItems: "center" },
-  submitButtonDisabled: { opacity: 0.6 },
-  submitButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  switchModeButton: { paddingVertical: 12, alignItems: "center" },
-  switchModeText: { color: "#007AFF", fontSize: 14, fontWeight: "500" },
-  loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,0.8)", justifyContent: "center", alignItems: "center" },
-  messageContainer: { padding: 12, borderRadius: 8, marginTop: 16 },
-  successMessage: { backgroundColor: "#d1fae5", borderColor: "#a7f3d0" },
-  errorMessage: { backgroundColor: "#fee2e2", borderColor: "#fecaca" },
-  messageText: { fontSize: 14, textAlign: "center" },
+  userSection: { flexDirection: "row", alignItems: "center" },
+  avatar: { width: 40, height: 40, borderRadius: 20, marginLeft: 10 },
+  userName: { color: "#fff", fontWeight: "600", marginLeft: 8 },
   video: { width: "100%", height: "100%" },
   overlay: { position: "absolute", right: 20, bottom: 120, alignItems: "center" },
   iconButton: { marginBottom: 25, alignItems: "center" },
