@@ -178,7 +178,7 @@ export default function MyStore({
                   uri:
                     item.image && item.image.startsWith("http")
                       ? item.image
-                      : "https://xlijah.com/pics/phones/iphones/14.jpg",
+                      : "https://xlijah.com/pics/phones/iphone/14.jpg",
                 }}
                 style={styles.image}
               />
