@@ -14,6 +14,7 @@ import {
   ScrollView,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import Video from 'react-native-video'; // Import react-native-video
 
 const { height, width } = Dimensions.get("window");
 
@@ -24,7 +25,7 @@ type MediaItem = {
   artwork: string;
   audioUrl: string;
   promoVideo?: string;
-  price?: number; // optional price for gifts
+  price?: number;
 };
 
 const mediaData: MediaItem[] = [
@@ -66,7 +67,7 @@ export default function MediaFeed() {
   const [doubleTapLike, setDoubleTapLike] = useState<{ [key: string]: boolean }>({});
   const [giftModalVisible, setGiftModalVisible] = useState(false);
   const [giftAmount, setGiftAmount] = useState<number>(0);
-  const [promoAccepted, setPromoAccepted] = useState(false); // New state for promo acceptance
+  const [promoAccepted, setPromoAccepted] = useState(false);
 
   const videoRefs = useRef<Array<any>>([]);
   const flatListRef = useRef<FlatList>(null);
@@ -90,7 +91,6 @@ export default function MediaFeed() {
     startSpin();
   }, [currentIndex]);
 
-  // Fade animation for crossfade between items
   useEffect(() => {
     fadeAnim.setValue(0);
     Animated.timing(fadeAnim, {
@@ -100,7 +100,6 @@ export default function MediaFeed() {
     }).start();
   }, [currentIndex]);
 
-  // Double-tap like handler
   const handleDoubleTap = (item: MediaItem) => {
     setLikes({ ...likes, [item.id]: true });
     setDoubleTapLike({ ...doubleTapLike, [item.id]: true });
@@ -327,12 +326,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 12,
   },
-  artwork: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    marginBottom: 12,
-  },
   playPauseBtn: {
     alignSelf: "center",
     marginBottom: 12,
@@ -351,12 +344,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     marginTop: 4,
     fontSize: 12,
-  },
-  heartOverlay: {
-    position: "absolute",
-    top: "40%",
-    left: "40%",
-    opacity: 0.8,
   },
   modalOverlay: {
     flex: 1,
