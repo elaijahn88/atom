@@ -44,6 +44,7 @@ export default function MyStore({
   currentUserEmail: string;
 }) {
   const [myProducts, setMyProducts] = useState<Product[]>([]);
+  const [cart, setCart] = useState<Product[]>([]);
   const [editModal, setEditModal] = useState(false);
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
   const [name, setName] = useState("");
@@ -52,6 +53,53 @@ export default function MyStore({
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
 
+  // 🧠 Sample fallback products
+  const sampleProducts: Product[] = [
+    {
+      id: "12",
+      name: "iPhone 12",
+      price: 799,
+      image: "https://xlijah.com/pics/phones/iphone/12.jpg",
+      sellerEmail: "sample@store.com",
+    },
+    {
+      id: "13",
+      name: "iPhone 13",
+      price: 899,
+      image: "https://xlijah.com/pics/phones/iphone/13.jpg",
+      sellerEmail: "sample@store.com",
+    },
+    {
+      id: "14",
+      name: "iPhone 14",
+      price: 999,
+      image: "https://xlijah.com/pics/phones/iphone/14.jpg",
+      sellerEmail: "sample@store.com",
+    },
+    {
+      id: "15",
+      name: "iPhone 15",
+      price: 1099,
+      image: "https://xlijah.com/pics/phones/iphone/15.jpg",
+      sellerEmail: "sample@store.com",
+    },
+    {
+      id: "16",
+      name: "iPhone 16",
+      price: 1199,
+      image: "https://xlijah.com/pics/phones/iphone/16.jpg",
+      sellerEmail: "sample@store.com",
+    },
+    {
+      id: "17",
+      name: "iPhone 17",
+      price: 1299,
+      image: "https://xlijah.com/pics/phones/iphone/17.jpg",
+      sellerEmail: "sample@store.com",
+    },
+  ];
+
+  // 🧩 Firestore listener
   useEffect(() => {
     if (!currentUserEmail) return;
     try {
@@ -86,8 +134,9 @@ export default function MyStore({
     }
   }, [currentUserEmail]);
 
+  // 🗑 Delete
   const handleDelete = async (id: string) => {
-    Alert.alert("Delete Product", "Are you sure you want to delete this item?", [
+    Alert.alert("Delete Product", "Are you sure?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -104,6 +153,7 @@ export default function MyStore({
     ]);
   };
 
+  // ✏️ Edit
   const handleEdit = (product: Product) => {
     setProductToEdit(product);
     setName(product.name || "");
@@ -134,6 +184,71 @@ export default function MyStore({
     }
   };
 
+  // 🛒 Add to cart
+  const addToCart = (item: Product) => {
+    setCart((prev) => [...prev, item]);
+    Alert.alert("Added to Cart", `${item.name} added successfully`);
+  };
+
+  const totalPrice = cart.reduce((sum, item) => sum + item.price, 0);
+
+  const renderProduct = ({ item }: { item: Product }) => (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      style={[
+        styles.card,
+        {
+          backgroundColor: isDark ? "#1c1c1e" : "#fff",
+          shadowColor: isDark ? "#000" : "#ddd",
+        },
+      ]}
+    >
+      <Image
+        source={{
+          uri:
+            item.image && item.image.startsWith("http")
+              ? item.image
+              : "https://xlijah.com/pics/phones/iphone/14.jpg",
+        }}
+        style={styles.image}
+      />
+      <View style={styles.cardBody}>
+        <Text
+          style={[styles.title, { color: isDark ? "#fff" : "#111" }]}
+          numberOfLines={2}
+        >
+          {item.name}
+        </Text>
+        <Text
+          style={[styles.price, { color: isDark ? "#00ff88" : "#ff7f00" }]}
+        >
+          ${item.price}
+        </Text>
+      </View>
+
+      <View style={styles.buttonRow}>
+        <TouchableOpacity
+          onPress={() => addToCart(item)}
+          style={[styles.smallBtn, { backgroundColor: "#00cc66" }]}
+        >
+          <Ionicons name="cart-outline" size={18} color="#fff" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => handleEdit(item)}
+          style={[styles.smallBtn, { backgroundColor: "#007aff" }]}
+        >
+          <Ionicons name="create-outline" size={18} color="#fff" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => handleDelete(item.id)}
+          style={[styles.smallBtn, { backgroundColor: "#ff3b30" }]}
+        >
+          <Ionicons name="trash-outline" size={18} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
+
   return (
     <View
       style={[
@@ -145,147 +260,31 @@ export default function MyStore({
         My Store
       </Text>
 
-      {myProducts.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Ionicons
-            name="cube-outline"
-            size={80}
-            color={isDark ? "#555" : "#ccc"}
-          />
-          <Text style={[styles.emptyText, { color: isDark ? "#aaa" : "#777" }]}>
-            You haven’t added any products yet.
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={myProducts}
-          numColumns={2}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              activeOpacity={0.9}
-              style={[
-                styles.card,
-                {
-                  backgroundColor: isDark ? "#1c1c1e" : "#fff",
-                  shadowColor: isDark ? "#000" : "#ddd",
-                },
-              ]}
-            >
-              <Image
-                source={{
-                  uri:
-                    item.image && item.image.startsWith("http")
-                      ? item.image
-                      : "https://xlijah.com/pics/phones/iphone/14.jpg",
-                }}
-                style={styles.image}
-              />
-              <View style={styles.cardBody}>
-                <Text
-                  style={[styles.title, { color: isDark ? "#fff" : "#111" }]}
-                  numberOfLines={2}
-                >
-                  {item.name}
-                </Text>
-                <Text
-                  style={[
-                    styles.price,
-                    { color: isDark ? "#00ff88" : "#ff7f00" },
-                  ]}
-                >
-                  ${item.price}
-                </Text>
-              </View>
+      <FlatList
+        data={myProducts.length > 0 ? myProducts : sampleProducts}
+        numColumns={2}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.list}
+        renderItem={renderProduct}
+      />
 
-              <View style={styles.buttonRow}>
-                <TouchableOpacity
-                  onPress={() => handleEdit(item)}
-                  style={[styles.smallBtn, { backgroundColor: "#007aff" }]}
-                >
-                  <Ionicons name="create-outline" size={18} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleDelete(item.id)}
-                  style={[styles.smallBtn, { backgroundColor: "#ff3b30" }]}
-                >
-                  <Ionicons name="trash-outline" size={18} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          )}
-        />
-      )}
-
-      {/* ✏️ Edit Modal */}
-      <Modal visible={editModal} transparent animationType="slide">
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.modalOverlay}>
-            <View
-              style={[
-                styles.modalContent,
-                { backgroundColor: isDark ? "#222" : "#fff" },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.modalTitle,
-                  { color: isDark ? "#fff" : "#000" },
-                ]}
-              >
-                Edit Product
-              </Text>
-
-              <TextInput
-                placeholder="Product Name"
-                value={name}
-                onChangeText={setName}
-                style={styles.input}
-                placeholderTextColor="#999"
-              />
-              <TextInput
-                placeholder="Price"
-                value={price}
-                onChangeText={setPrice}
-                keyboardType="numeric"
-                style={styles.input}
-                placeholderTextColor="#999"
-              />
-              <TextInput
-                placeholder="Image URL"
-                value={image}
-                onChangeText={setImage}
-                style={styles.input}
-                placeholderTextColor="#999"
-              />
-
-              <TouchableOpacity
-                style={[styles.modalBtn, { backgroundColor: "#ff7f00" }]}
-                onPress={saveEdit}
-              >
-                <Text style={styles.modalBtnText}>Save Changes</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalBtn, { backgroundColor: "#ddd" }]}
-                onPress={() => setEditModal(false)}
-              >
-                <Text style={[styles.modalBtnText, { color: "#333" }]}>
-                  Cancel
-                </Text>
-              </TouchableOpacity>
-            </View>
+      {/* 🛒 Floating Payment Cart */}
+      {cart.length > 0 && (
+        <TouchableOpacity
+          style={styles.cartButton}
+          onPress={() =>
+            Alert.alert(
+              "Payment Summary",
+              `Items: ${cart.length}\nTotal: $${totalPrice.toFixed(2)}`
+            )
+          }
+        >
+          <Ionicons name="cart" size={30} color="#fff" />
+          <View style={styles.cartBadge}>
+            <Text style={styles.cartCount}>{cart.length}</Text>
           </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-
-      {/* ➕ Floating Add Button */}
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => Alert.alert("Coming Soon", "Add product feature pending")}
-      >
-        <Ionicons name="add-circle" size={64} color="#ff7f00" />
-      </TouchableOpacity>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -315,55 +314,41 @@ const styles = StyleSheet.create({
   price: { fontWeight: "800", marginTop: 4, fontSize: 16 },
   buttonRow: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
     marginTop: 8,
     gap: 6,
   },
   smallBtn: {
+    flex: 1,
     padding: 6,
     borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    padding: 20,
-  },
-  modalContent: {
-    borderRadius: 20,
-    padding: 20,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: "900",
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  input: {
-    backgroundColor: "#f2f2f2",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 12,
-    fontSize: 15,
-  },
-  modalBtn: {
-    borderRadius: 10,
-    paddingVertical: 12,
-    marginTop: 10,
-    alignItems: "center",
-  },
-  modalBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  addButton: {
+  cartButton: {
     position: "absolute",
     right: 20,
     bottom: 30,
+    backgroundColor: "#ff7f00",
+    padding: 16,
+    borderRadius: 50,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     shadowColor: "#000",
     shadowOpacity: 0.3,
     shadowRadius: 6,
   },
-  emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  emptyText: { marginTop: 10, fontSize: 16 },
+  cartBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    backgroundColor: "#ff3b30",
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  cartCount: { color: "#fff", fontSize: 12, fontWeight: "700" },
 });
