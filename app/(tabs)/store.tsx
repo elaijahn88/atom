@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,12 +8,13 @@ import {
   StyleSheet,
   Modal,
   TextInput,
-  Alert,
   Dimensions,
   TouchableWithoutFeedback,
   Keyboard,
   useColorScheme,
   ScrollView,
+  RefreshControl,
+  Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -25,13 +26,13 @@ type Product = {
   name: string;
   price: number;
   image: string;
+  featured?: boolean;
 };
 
 export default function MyStore() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
 
-  // 🧾 Cart + Edit modals
   const [cart, setCart] = useState<Product[]>([]);
   const [cartVisible, setCartVisible] = useState(false);
   const [editModal, setEditModal] = useState(false);
@@ -39,60 +40,56 @@ export default function MyStore() {
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [image, setImage] = useState("");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // 🛒 Demo Data
-  const myProducts: Product[] = [
-    {
-      id: "1",
-      name: "iPhone 12",
-      price: 699,
-      image: "https://xlijah.com/pics/phones/iphone/12.jpg",
-    },
-    {
-      id: "2",
-      name: "iPhone 13",
-      price: 799,
-      image: "https://xlijah.com/pics/phones/iphone/13.jpg",
-    },
-    {
-      id: "3",
-      name: "iPhone 14",
-      price: 899,
-      image: "https://xlijah.com/pics/phones/iphone/14.jpg",
-    },
-    {
-      id: "4",
-      name: "iPhone 15",
-      price: 999,
-      image: "https://xlijah.com/pics/phones/iphone/15.jpg",
-    },
-    {
-      id: "5",
-      name: "iPhone 16",
-      price: 1099,
-      image: "https://xlijah.com/pics/phones/iphone/16.jpg",
-    },
-    {
-      id: "6",
-      name: "iPhone SE",
-      price: 499,
-      image: "https://xlijah.com/pics/phones/iphone/12.jpg",
-    },
-  ];
+  // Toast state
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const toastAnim = useRef(new Animated.Value(-60)).current; // off-screen at start
 
-  // 🛍️ Add to Cart
+  // 🛍️ Initial Demo Data
+  useEffect(() => {
+    const initialProducts: Product[] = [
+      { id: "1", name: "iPhone 12", price: 699, image: "https://xlijah.com/pics/phones/iphone/12.jpg", featured: true },
+      { id: "2", name: "iPhone 13", price: 799, image: "https://xlijah.com/pics/phones/iphone/13.jpg" },
+      { id: "3", name: "iPhone 14", price: 899, image: "https://xlijah.com/pics/phones/iphone/14.jpg", featured: true },
+      { id: "4", name: "iPhone 15", price: 999, image: "https://xlijah.com/pics/phones/iphone/15.jpg" },
+      { id: "5", name: "iPhone 16", price: 1099, image: "https://xlijah.com/pics/phones/iphone/16.jpg" },
+      { id: "6", name: "iPhone SE", price: 499, image: "https://xlijah.com/pics/phones/iphone/12.jpg" },
+    ];
+    setProducts(initialProducts);
+  }, []);
+
+  // 🛍️ Refresh handler
+  const onRefresh = () => {
+    setRefreshing(true);
+    setTimeout(() => {
+      const newProduct: Product = {
+        id: Math.random().toString(),
+        name: `New Gadget ${Math.floor(Math.random() * 100)}`,
+        price: Math.floor(Math.random() * 1000) + 100,
+        image: "https://picsum.photos/200/300?random=" + Math.floor(Math.random() * 1000),
+      };
+      setProducts((prev) => [newProduct, ...prev]);
+      setRefreshing(false);
+      showToast("New product added 🔥", "success");
+    }, 1500);
+  };
+
+  // 🛒 Cart handlers
   const addToCart = (product: Product) => {
     setCart((prev) => [...prev, product]);
-    Alert.alert("Added to Cart", `${product.name} added successfully.`);
+    showToast(`${product.name} added to cart ✅`, "success");
   };
 
   const removeFromCart = (id: string) => {
     setCart((prev) => prev.filter((item) => item.id !== id));
+    showToast("Item removed from cart 🗑️", "error");
   };
 
   const cartTotal = cart.reduce((sum, item) => sum + item.price, 0);
 
-  // ✏️ Edit Feature
+  // ✏️ Edit handlers
   const handleEdit = (product: Product) => {
     setProductToEdit(product);
     setName(product.name);
@@ -102,37 +99,90 @@ export default function MyStore() {
   };
 
   const saveEdit = () => {
-    Alert.alert("Edit Saved", "Changes would be saved to Firestore here.");
+    // Normally, save to backend
+    showToast("Product changes saved ✏️", "success");
     setEditModal(false);
   };
 
-  // 💳 Payment
+  // 🛒 Payment
   const handlePayment = () => {
-    Alert.alert(
-      "Proceeding to Payment",
-      `Total $${cartTotal} — connect Stripe, Flutterwave, or Mobile Money here.`
-    );
+    showToast(`Checkout $${cartTotal.toFixed(2)} 💰`, "success");
     setCart([]);
     setCartVisible(false);
   };
 
-  return (
-    <View
+  // Delete Product
+  const handleDelete = (productId: string) => {
+    setProducts((prev) => prev.filter((p) => p.id !== productId));
+    setCart((prev) => prev.filter((p) => p.id !== productId));
+    showToast("Product deleted 🗑️", "error");
+  };
+
+  // Toast animation
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    Animated.sequence([
+      Animated.timing(toastAnim, { toValue: 20, duration: 300, useNativeDriver: true }),
+      Animated.delay(1800),
+      Animated.timing(toastAnim, { toValue: -60, duration: 300, useNativeDriver: true }),
+    ]).start(() => setToast(null));
+  };
+
+  const renderProduct = ({ item }: { item: Product }) => (
+    <TouchableOpacity
+      activeOpacity={0.9}
       style={[
-        styles.container,
-        { backgroundColor: isDark ? "#121212" : "#fafafa" },
+        styles.card,
+        { backgroundColor: isDark ? "#1c1c1e" : "#fff", shadowColor: isDark ? "#000" : "#ddd" },
       ]}
     >
-      <View style={styles.headerRow}>
-        <Text style={[styles.header, { color: isDark ? "#fff" : "#111" }]}>
-          My Store
+      {item.featured && (
+        <View style={styles.featuredBadge}>
+          <Text style={styles.featuredText}>FEATURED</Text>
+        </View>
+      )}
+      <Image source={{ uri: item.image }} style={styles.image} />
+      <View style={styles.cardBody}>
+        <Text style={[styles.title, { color: isDark ? "#fff" : "#111" }]} numberOfLines={2}>
+          {item.name}
         </Text>
+        <Text style={[styles.price, { color: isDark ? "#00ff88" : "#ff7f00" }]}>
+          ${item.price}
+        </Text>
+      </View>
+      <View style={styles.buttonRow}>
+        <TouchableOpacity onPress={() => addToCart(item)} style={[styles.smallBtn, { backgroundColor: "#34c759" }]}>
+          <Ionicons name="cart" size={18} color="#fff" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => handleEdit(item)} style={[styles.smallBtn, { backgroundColor: "#007aff" }]}>
+          <Ionicons name="create-outline" size={18} color="#fff" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => handleDelete(item.id)} style={[styles.smallBtn, { backgroundColor: "#ff3b30" }]}>
+          <Ionicons name="trash-outline" size={18} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
+
+  return (
+    <View style={[styles.container, { backgroundColor: isDark ? "#121212" : "#fafafa" }]}>
+      {/* Toast */}
+      {toast && (
+        <Animated.View
+          style={[
+            styles.toast,
+            { backgroundColor: toast.type === "success" ? "#34c759" : "#ff3b30", transform: [{ translateY: toastAnim }] },
+          ]}
+        >
+          <Text style={styles.toastText}>{toast.message}</Text>
+        </Animated.View>
+      )}
+
+      {/* Header */}
+      <View style={styles.headerRow}>
+        <Text style={[styles.header, { color: isDark ? "#fff" : "#111" }]}>My Store</Text>
         <TouchableOpacity onPress={() => setCartVisible(true)}>
-          <Ionicons
-            name="cart-outline"
-            size={32}
-            color={isDark ? "#00ff88" : "#ff7f00"}
-          />
+          <Ionicons name="cart-outline" size={32} color={isDark ? "#00ff88" : "#ff7f00"} />
           {cart.length > 0 && (
             <View style={styles.cartBadge}>
               <Text style={styles.cartBadgeText}>{cart.length}</Text>
@@ -141,120 +191,31 @@ export default function MyStore() {
         </TouchableOpacity>
       </View>
 
-      {/* 🛍️ Product List */}
+      {/* Product List */}
       <FlatList
-        data={myProducts}
+        data={products}
         numColumns={2}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            activeOpacity={0.9}
-            style={[
-              styles.card,
-              {
-                backgroundColor: isDark ? "#1c1c1e" : "#fff",
-                shadowColor: isDark ? "#000" : "#ddd",
-              },
-            ]}
-          >
-            <Image source={{ uri: item.image }} style={styles.image} />
-            <View style={styles.cardBody}>
-              <Text
-                style={[styles.title, { color: isDark ? "#fff" : "#111" }]}
-                numberOfLines={2}
-              >
-                {item.name}
-              </Text>
-              <Text
-                style={[
-                  styles.price,
-                  { color: isDark ? "#00ff88" : "#ff7f00" },
-                ]}
-              >
-                ${item.price}
-              </Text>
-            </View>
-
-            <View style={styles.buttonRow}>
-              <TouchableOpacity
-                onPress={() => addToCart(item)}
-                style={[styles.smallBtn, { backgroundColor: "#34c759" }]}
-              >
-                <Ionicons name="cart" size={18} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => handleEdit(item)}
-                style={[styles.smallBtn, { backgroundColor: "#007aff" }]}
-              >
-                <Ionicons name="create-outline" size={18} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => Alert.alert("Delete Product", "Confirm deletion")}
-                style={[styles.smallBtn, { backgroundColor: "#ff3b30" }]}
-              >
-                <Ionicons name="trash-outline" size={18} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        )}
+        contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 120 }}
+        renderItem={renderProduct}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       />
 
       {/* ✏️ Edit Modal */}
       <Modal visible={editModal} transparent animationType="slide">
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.modalOverlay}>
-            <View
-              style={[
-                styles.modalContent,
-                { backgroundColor: isDark ? "#222" : "#fff" },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.modalTitle,
-                  { color: isDark ? "#fff" : "#000" },
-                ]}
-              >
-                Edit Product
-              </Text>
+            <View style={[styles.modalContent, { backgroundColor: isDark ? "#222" : "#fff" }]}>
+              <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#000" }]}>Edit Product</Text>
+              <TextInput placeholder="Product Name" value={name} onChangeText={setName} style={styles.input} placeholderTextColor="#999" />
+              <TextInput placeholder="Price" value={price} onChangeText={setPrice} keyboardType="numeric" style={styles.input} placeholderTextColor="#999" />
+              <TextInput placeholder="Image URL" value={image} onChangeText={setImage} style={styles.input} placeholderTextColor="#999" />
 
-              <TextInput
-                placeholder="Product Name"
-                value={name}
-                onChangeText={setName}
-                style={styles.input}
-                placeholderTextColor="#999"
-              />
-              <TextInput
-                placeholder="Price"
-                value={price}
-                onChangeText={setPrice}
-                keyboardType="numeric"
-                style={styles.input}
-                placeholderTextColor="#999"
-              />
-              <TextInput
-                placeholder="Image URL"
-                value={image}
-                onChangeText={setImage}
-                style={styles.input}
-                placeholderTextColor="#999"
-              />
-
-              <TouchableOpacity
-                style={[styles.modalBtn, { backgroundColor: "#ff7f00" }]}
-                onPress={saveEdit}
-              >
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ff7f00" }]} onPress={saveEdit}>
                 <Text style={styles.modalBtnText}>Save Changes</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalBtn, { backgroundColor: "#ddd" }]}
-                onPress={() => setEditModal(false)}
-              >
-                <Text style={[styles.modalBtnText, { color: "#333" }]}>
-                  Cancel
-                </Text>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ddd" }]} onPress={() => setEditModal(false)}>
+                <Text style={[styles.modalBtnText, { color: "#333" }]}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -264,170 +225,66 @@ export default function MyStore() {
       {/* 🛒 Cart Modal */}
       <Modal visible={cartVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContent,
-              { backgroundColor: isDark ? "#222" : "#fff", height: "70%" },
-            ]}
-          >
-            <Text
-              style={[styles.modalTitle, { color: isDark ? "#fff" : "#000" }]}
-            >
-              My Cart ({cart.length})
-            </Text>
+          <View style={[styles.modalContent, { backgroundColor: isDark ? "#222" : "#fff", height: "70%" }]}>
+            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#000" }]}>My Cart ({cart.length})</Text>
             <ScrollView>
               {cart.map((item) => (
-                <View key={item.id} style={styles.cartItem}>
+                <View key={item.id} style={[styles.cartItem, { backgroundColor: isDark ? "#333" : "#f2f2f2" }]}>
                   <Image source={{ uri: item.image }} style={styles.cartImage} />
                   <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={{ fontWeight: "700", color: isDark ? "#fff" : "#000" }}>
-                      {item.name}
-                    </Text>
-                    <Text style={{ color: "#ff7f00" }}>${item.price}</Text>
+                    <Text style={{ fontWeight: "700", color: isDark ? "#fff" : "#000" }}>{item.name}</Text>
+                    <Text style={{ color: isDark ? "#00ff88" : "#ff7f00", fontWeight: "600" }}>${item.price}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => removeFromCart(item.id)}>
-                    <Ionicons name="trash-outline" size={22} color="#ff3b30" />
+                  <TouchableOpacity
+                    onPress={() => removeFromCart(item.id)}
+                    style={[styles.smallBtn, { backgroundColor: "#ff3b30" }]}
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#fff" />
                   </TouchableOpacity>
                 </View>
               ))}
             </ScrollView>
-
-            <Text
-              style={{
-                fontSize: 18,
-                fontWeight: "900",
-                color: isDark ? "#00ff88" : "#ff7f00",
-                marginTop: 10,
-              }}
-            >
-              Total: ${cartTotal.toFixed(2)}
-            </Text>
-
-            <TouchableOpacity
-              onPress={handlePayment}
-              style={[styles.modalBtn, { backgroundColor: "#34c759", marginTop: 20 }]}
-            >
-              <Text style={styles.modalBtnText}>Proceed to Payment</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setCartVisible(false)}
-              style={[styles.modalBtn, { backgroundColor: "#ddd" }]}
-            >
-              <Text style={[styles.modalBtnText, { color: "#000" }]}>
-                Close
+            <View style={{ marginTop: 12 }}>
+              <Text style={{ fontSize: 18, fontWeight: "700", color: isDark ? "#fff" : "#000" }}>
+                Total: ${cartTotal.toFixed(2)}
               </Text>
-            </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#34c759" }]} onPress={handlePayment}>
+                <Text style={styles.modalBtnText}>Checkout</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ddd" }]} onPress={() => setCartVisible(false)}>
+                <Text style={[styles.modalBtnText, { color: "#333" }]}>Close</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
-
-      {/* ➕ Floating Add Button */}
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => Alert.alert("Coming Soon", "Add product feature pending")}
-      >
-        <Ionicons name="add-circle" size={64} color="#ff7f00" />
-      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: 40 },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginHorizontal: 20,
-    marginBottom: 10,
-  },
-  header: {
-    fontSize: 26,
-    fontWeight: "900",
-  },
-  list: { paddingHorizontal: 12, paddingBottom: 120 },
-  card: {
-    width: CARD_WIDTH,
-    borderRadius: 14,
-    padding: 10,
-    margin: 8,
-    elevation: 3,
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-  },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginHorizontal: 20, marginBottom: 10 },
+  header: { fontSize: 26, fontWeight: "900" },
+  card: { width: CARD_WIDTH, borderRadius: 14, padding: 10, margin: 8, elevation: 3, shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
   image: { width: "100%", height: CARD_WIDTH, borderRadius: 10 },
   cardBody: { marginTop: 8 },
   title: { fontWeight: "700", fontSize: 15, textAlign: "left" },
   price: { fontWeight: "800", marginTop: 4, fontSize: 16 },
-  buttonRow: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginTop: 8,
-    gap: 6,
-  },
-  smallBtn: {
-    padding: 6,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    padding: 20,
-  },
-  modalContent: {
-    borderRadius: 20,
-    padding: 20,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: "900",
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  input: {
-    backgroundColor: "#f2f2f2",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 12,
-    fontSize: 15,
-  },
-  modalBtn: {
-    borderRadius: 10,
-    paddingVertical: 12,
-    marginTop: 10,
-    alignItems: "center",
-  },
+  buttonRow: { flexDirection: "row", justifyContent: "flex-end", marginTop: 8, gap: 6 },
+  smallBtn: { padding: 6, borderRadius: 8, justifyContent: "center", alignItems: "center" },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 20 },
+  modalContent: { borderRadius: 20, padding: 20 },
+  modalTitle: { fontSize: 22, fontWeight: "900", textAlign: "center", marginBottom: 16 },
+  input: { backgroundColor: "#f2f2f2", borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, fontSize: 15 },
+  modalBtn: { borderRadius: 10, paddingVertical: 12, marginTop: 10, alignItems: "center" },
   modalBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  addButton: {
-    position: "absolute",
-    right: 20,
-    bottom: 30,
-    shadowColor: "#000",
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-  },
-  cartItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    borderRadius: 10,
-    padding: 8,
-  },
+  cartItem: { flexDirection: "row", alignItems: "center", marginBottom: 10, borderRadius: 10, padding: 8 },
   cartImage: { width: 60, height: 60, borderRadius: 10 },
-  cartBadge: {
-    position: "absolute",
-    right: -6,
-    top: -4,
-    backgroundColor: "red",
-    borderRadius: 10,
-    paddingHorizontal: 6,
-  },
+  cartBadge: { position: "absolute", right: -6, top: -4, backgroundColor: "red", borderRadius: 10, paddingHorizontal: 6 },
   cartBadgeText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  toast: { position: "absolute", left: 20, right: 20, padding: 12, borderRadius: 10, zIndex: 999, elevation: 5 },
+  toastText: { color: "#fff", fontWeight: "700", textAlign: "center" },
+  featuredBadge: { position: "absolute", top: 6, left: 6, backgroundColor: "#ff7f00", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  featuredText: { color: "#fff", fontSize: 10, fontWeight: "700" },
 });
