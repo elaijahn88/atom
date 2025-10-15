@@ -16,8 +16,14 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import Video from "react-native-video";
 import { auth, database, ref, onValue, push } from "../../firebase";
-import Animated, { useSharedValue, useAnimatedStyle, withSpring } from "react-native-reanimated";
-import * as Animatable from "react-native-animatable";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  Easing,
+  FadeInDown,
+} from "react-native-reanimated";
 
 const { width, height } = Dimensions.get("window");
 const ITEM_WIDTH = width / 2 - 16;
@@ -47,20 +53,30 @@ const mediaData = [
 export default function MusicGrid() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
-  const [selectedItem, setSelectedItem] = useState(null);
+  const [selectedItem, setSelectedItem] = useState<any>(null);
   const [paused, setPaused] = useState(false);
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
-  const [comments, setComments] = useState([]);
+  const [comments, setComments] = useState<any[]>([]);
   const [commentText, setCommentText] = useState("");
   const [showFloatingHeart, setShowFloatingHeart] = useState(false);
 
   const commentScrollRef = useRef<ScrollView>(null);
 
-  // ❤️ Animation
+  // ❤️ Animations
   const scale = useSharedValue(1);
-  const animatedStyle = useAnimatedStyle(() => ({
+  const floatingHeartY = useSharedValue(0);
+  const floatingHeartOpacity = useSharedValue(0);
+
+  const heartAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
+  }));
+
+  const floatingHeartStyle = useAnimatedStyle(() => ({
+    position: "absolute",
+    top: height / 3 - floatingHeartY.value,
+    alignSelf: "center",
+    opacity: floatingHeartOpacity.value,
   }));
 
   // Fetch likes & comments in real-time
@@ -88,7 +104,6 @@ export default function MusicGrid() {
     };
   }, [selectedItem]);
 
-  // Scroll to latest comment
   useEffect(() => {
     if (commentScrollRef.current) {
       commentScrollRef.current.scrollToEnd({ animated: true });
@@ -100,20 +115,21 @@ export default function MusicGrid() {
     const userId = auth.currentUser?.uid || "guest";
     const likesRef = ref(database, `likes/${selectedItem.id}/${userId}`);
 
-    // 🔥 Pulse animation
+    // Pulse animation
     scale.value = withSpring(1.4, {}, () => {
       scale.value = withSpring(1);
     });
 
-    // 🔥 Floating heart animation
-    setShowFloatingHeart(true);
-    setTimeout(() => setShowFloatingHeart(false), 700);
+    // Floating heart animation
+    floatingHeartY.value = 0;
+    floatingHeartOpacity.value = 1;
+    floatingHeartY.value = withTiming(80, { duration: 700, easing: Easing.out(Easing.exp) });
+    floatingHeartOpacity.value = withTiming(0, { duration: 700 });
 
-    // ✅ Save like
+    // Save like to Firebase
     push(likesRef, liked ? null : true);
   };
 
-  // Add comment
   const handleAddComment = () => {
     if (!commentText.trim()) return;
     const userId = auth.currentUser?.uid || "guest";
@@ -126,7 +142,7 @@ export default function MusicGrid() {
     setCommentText("");
   };
 
-  const renderItem = ({ item }) => (
+  const renderItem = ({ item }: any) => (
     <TouchableOpacity
       activeOpacity={0.8}
       style={styles.card}
@@ -190,10 +206,10 @@ export default function MusicGrid() {
               <Text style={styles.playerArtist}>{selectedItem.artist}</Text>
             </View>
 
-            {/* Controls: ❤️ Like + Play */}
+            {/* Controls */}
             <View style={styles.controls}>
               <TouchableOpacity onPress={handleLike}>
-                <Animated.View style={animatedStyle}>
+                <Animated.View style={heartAnimatedStyle}>
                   <Ionicons
                     name={liked ? "heart" : "heart-outline"}
                     size={34}
@@ -214,32 +230,19 @@ export default function MusicGrid() {
 
             {/* Floating heart */}
             {showFloatingHeart && (
-              <Animatable.View
-                animation="fadeOutUp"
-                duration={700}
-                style={{
-                  position: "absolute",
-                  top: height / 3,
-                  alignSelf: "center",
-                }}
-              >
+              <Animated.View style={floatingHeartStyle}>
                 <Ionicons name="heart" size={64} color="#1DB954" />
-              </Animatable.View>
+              </Animated.View>
             )}
 
             {/* Comments */}
             <ScrollView ref={commentScrollRef} style={styles.commentList}>
               {comments.map((c, i) => (
-                <Animatable.View
-                  key={i}
-                  animation="fadeInUp"
-                  duration={500}
-                  useNativeDriver
-                >
+                <Animated.View key={i} entering={FadeInDown.duration(300)}>
                   <Text style={styles.comment}>
                     {c.userId}: {c.text}
                   </Text>
-                </Animatable.View>
+                </Animated.View>
               ))}
             </ScrollView>
 
@@ -275,74 +278,20 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   video: { ...StyleSheet.absoluteFillObject, borderRadius: 12 },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.25)",
-  },
-  infoContainer: {
-    position: "absolute",
-    bottom: 10,
-    left: 8,
-    right: 8,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  profilePic: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1.5,
-    borderColor: "#fff",
-  },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.25)" },
+  infoContainer: { position: "absolute", bottom: 10, left: 8, right: 8, flexDirection: "row", alignItems: "center" },
+  profilePic: { width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: "#fff" },
   title: { color: "#fff", fontWeight: "700", fontSize: 13 },
   artist: { color: "#ccc", fontSize: 11 },
-
-  playerContainer: {
-    flex: 1,
-    backgroundColor: "#000",
-    paddingTop: 60,
-    alignItems: "center",
-  },
-  closeButton: {
-    position: "absolute",
-    top: 50,
-    left: 20,
-    zIndex: 1,
-  },
-  playerVideo: {
-    width: width * 0.9,
-    height: height * 0.5,
-    borderRadius: 20,
-    marginBottom: 20,
-  },
-  playerInfo: {
-    alignItems: "center",
-    marginBottom: 20,
-  },
+  playerContainer: { flex: 1, backgroundColor: "#000", paddingTop: 60, alignItems: "center" },
+  closeButton: { position: "absolute", top: 50, left: 20, zIndex: 1 },
+  playerVideo: { width: width * 0.9, height: height * 0.5, borderRadius: 20, marginBottom: 20 },
+  playerInfo: { alignItems: "center", marginBottom: 20 },
   playerTitle: { color: "#fff", fontSize: 24, fontWeight: "700" },
   playerArtist: { color: "#aaa", fontSize: 16 },
-  controls: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-    width: "70%",
-    marginBottom: 30,
-  },
-  commentList: {
-    width: "90%",
-    maxHeight: 150,
-    backgroundColor: "#111",
-    borderRadius: 10,
-    padding: 10,
-  },
+  controls: { flexDirection: "row", alignItems: "center", justifyContent: "space-around", width: "70%", marginBottom: 30 },
+  commentList: { width: "90%", maxHeight: 150, backgroundColor: "#111", borderRadius: 10, padding: 10 },
   comment: { color: "#fff", fontSize: 14, marginBottom: 5 },
-  commentBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#111",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    marginTop: 10,
-  },
+  commentBox: { flexDirection: "row", alignItems: "center", backgroundColor: "#111", borderRadius: 10, paddingHorizontal: 10, marginTop: 10 },
   input: { flex: 1, color: "#fff", paddingVertical: 8 },
 });
