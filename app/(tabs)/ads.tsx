@@ -116,6 +116,7 @@ export default function AdBanner() {
         { backgroundColor: isDark ? "#111" : "#f9f9f9" },
       ]}
     >
+      {/* Ad Banner Section */}
       <FlatList
         ref={flatListRef}
         data={ads}
@@ -125,17 +126,38 @@ export default function AdBanner() {
         keyExtractor={(item) => item.id}
         renderItem={renderAd}
       />
+
+      {/* Video Section Below Ads */}
+      <View style={styles.videoContainer}>
+        <Video
+          source={{ uri: ads[currentIndex].video }}
+          style={styles.videoPlayer}
+          resizeMode="cover"
+          repeat
+          muted={false}
+          playInBackground={false}
+          paused={false}
+        />
+        <View style={styles.videoOverlay}>
+          <Text style={[styles.videoTitle, { color: isDark ? "#fff" : "#111" }]}>
+            {ads[currentIndex].title}
+          </Text>
+          <Text style={[styles.videoDesc, { color: isDark ? "#ddd" : "#333" }]}>
+            {ads[currentIndex].description}
+          </Text>
+        </View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    width: "100%",
-    height: 240,
-    borderRadius: 16,
-    overflow: "hidden",
-    marginVertical: 10,
+    flex: 1,
+    justifyContent: "flex-start",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    paddingBottom: 20,
   },
   card: {
     width,
@@ -167,5 +189,32 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  videoContainer: {
+    width: "100%",
+    height: 240,
+    marginTop: 10,
+    position: "relative",
+  },
+  videoPlayer: {
+    width: "100%",
+    height: "100%",
+  },
+  videoOverlay: {
+    position: "absolute",
+    bottom: 10,
+    left: 14,
+    right: 14,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
+  videoTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  videoDesc: {
+    fontSize: 14,
+    marginVertical: 4,
   },
 });
