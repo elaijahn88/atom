@@ -1,7 +1,5 @@
-import { Tabs } from 'expo-router';
 import React from 'react';
 import { View, Text, Animated, StyleSheet } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 
 import { HapticTab } from '../hooks/haptic-tab';
 import { IconSymbol } from '../hooks/icon-symbol';
@@ -39,12 +37,11 @@ const AnimatedTabButton = ({ children, onPress, focused }: any) => {
   );
 };
 
-export default function TabLayout() {
+export default function TabLayout({ Tabs }: any) {
   const colorScheme = useColorScheme();
   const tint = Colors[colorScheme ?? 'light'].tint;
   const textDim = Colors[colorScheme ?? 'light'].textDim;
 
-  // Example badge counts (replace with dynamic data)
   const badges = {
     money: 3,
     music: 7,
@@ -65,12 +62,8 @@ export default function TabLayout() {
           backgroundColor: 'transparent',
           position: 'absolute',
         },
-      }}>
-      <LinearGradient
-        colors={['#6a11cb', '#2575fc']}
-        style={StyleSheet.absoluteFill}
-      />
-
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
@@ -110,7 +103,11 @@ export default function TabLayout() {
           title: 'Transfer',
           tabBarIcon: ({ color, focused }) => (
             <View>
-              <IconSymbol size={28} name={focused ? 'arrow.right.circle.fill' : 'arrow.right.circle'} color={color} />
+              <IconSymbol
+                size={28}
+                name={focused ? 'arrow.right.circle.fill' : 'arrow.right.circle'}
+                color={color}
+              />
               <Badge count={badges.transfer} />
             </View>
           ),
