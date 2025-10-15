@@ -5,17 +5,14 @@ import {
   StyleSheet,
   FlatList,
   Dimensions,
-  Image,
   TouchableOpacity,
   Animated,
-  Easing,
   StatusBar,
   useColorScheme,
   TouchableWithoutFeedback,
   Modal,
   ScrollView,
 } from "react-native";
-import Video from "react-native-video";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 
 const { height, width } = Dimensions.get("window");
@@ -69,8 +66,9 @@ export default function MediaFeed() {
   const [doubleTapLike, setDoubleTapLike] = useState<{ [key: string]: boolean }>({});
   const [giftModalVisible, setGiftModalVisible] = useState(false);
   const [giftAmount, setGiftAmount] = useState<number>(0);
+  const [promoAccepted, setPromoAccepted] = useState(false); // New state for promo acceptance
 
-  const videoRefs = useRef<Array<Video | null>>([]);
+  const videoRefs = useRef<Array<any>>([]);
   const flatListRef = useRef<FlatList>(null);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
@@ -172,26 +170,6 @@ export default function MediaFeed() {
                 <Text style={[styles.title, { color: "#fff" }]}>{item.title}</Text>
                 <Text style={[styles.artist, { color: "#ccc" }]}>{item.artist}</Text>
 
-                {/* Spinning artwork */}
-                {!item.promoVideo && (
-                  <Animated.Image
-                    source={{ uri: item.artwork }}
-                    style={[
-                      styles.artwork,
-                      {
-                        transform: [
-                          {
-                            rotate: spinAnim.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: ["0deg", "360deg"],
-                            }),
-                          },
-                        ],
-                      },
-                    ]}
-                  />
-                )}
-
                 {/* Play/Pause */}
                 <TouchableOpacity
                   style={styles.playPauseBtn}
@@ -203,13 +181,6 @@ export default function MediaFeed() {
                     color="#fff"
                   />
                 </TouchableOpacity>
-
-                {/* Double tap heart animation */}
-                {doubleTapLike[item.id] && (
-                  <Animated.View style={styles.heartOverlay}>
-                    <Ionicons name="heart" size={120} color="red" />
-                  </Animated.View>
-                )}
 
                 {/* Social Buttons */}
                 <View style={styles.socialRow}>
@@ -241,6 +212,15 @@ export default function MediaFeed() {
                   <TouchableOpacity style={styles.socialBtn}>
                     <MaterialIcons name="share" size={32} color="#fff" />
                     <Text style={styles.socialText}>Share</Text>
+                  </TouchableOpacity>
+
+                  {/* Accept Promotions Button */}
+                  <TouchableOpacity
+                    style={styles.socialBtn}
+                    onPress={() => setPromoAccepted(true)}
+                  >
+                    <MaterialIcons name="campaign" size={32} color="#fff" />
+                    <Text style={styles.socialText}>Accept Promotions</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -289,6 +269,24 @@ export default function MediaFeed() {
               <Text style={[styles.modalButtonText, { color: "#333" }]}>
                 Cancel
               </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Promotion Accepted Modal */}
+      <Modal visible={promoAccepted} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Promotions Accepted!</Text>
+            <Text style={styles.modalSubtitle}>
+              You will start receiving exclusive offers, discounts, and special sounds.
+            </Text>
+            <TouchableOpacity
+              style={[styles.modalButton, { backgroundColor: "#25D366" }]}
+              onPress={() => setPromoAccepted(false)}
+            >
+              <Text style={styles.modalButtonText}>Got it!</Text>
             </TouchableOpacity>
           </View>
         </View>
