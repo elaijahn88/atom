@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,8 +8,17 @@ import {
   StyleSheet,
   FlatList,
   Alert,
+  Animated,
 } from "react-native";
-import { doc, getDoc, collection, getDocs, addDoc, updateDoc } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  collection,
+  getDocs,
+  addDoc,
+  updateDoc,
+  onSnapshot,
+} from "firebase/firestore";
 import { db } from "../../firebase";
 
 type Transaction = {
@@ -30,8 +39,35 @@ export default function MobileMoneyManager() {
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [topUpAmount, setTopUpAmount] = useState("");
+  const quickTopUps = [5, 10, 20, 50, 100];
 
-  const quickTopUps = [5, 10, 20, 50, 100]; 
+  // animated values
+  const balanceAnim = useRef(new Animated.Value(0)).current;
+  const txAnimValues = useRef<{ [key: string]: Animated.Value }>({}).current;
+
+  // balance listener
+  useEffect(() => {
+    if (!fetchedEmail) return;
+    const userRef = doc(db, "users", fetchedEmail);
+    const unsubscribe = onSnapshot(userRef, (snap) => {
+      const data = snap.data();
+      if (!data) return;
+      if (data.account !== userAccount) {
+        Alert.alert("Balance Updated", `Your new balance is $${data.account}`);
+        setUserAccount(data.account);
+        flashBalance();
+      }
+    });
+    return () => unsubscribe();
+  }, [fetchedEmail, userAccount]);
+
+  const flashBalance = () => {
+    balanceAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(balanceAnim, { toValue: 1, duration: 300, useNativeDriver: false }),
+      Animated.timing(balanceAnim, { toValue: 0, duration: 300, useNativeDriver: false }),
+    ]).start();
+  };
 
   const fetchUserData = async () => {
     if (!email) return;
@@ -67,6 +103,15 @@ export default function MobileMoneyManager() {
     setIsFrozen(false);
   };
 
+  const animateTransaction = (proof: string) => {
+    if (!txAnimValues[proof]) txAnimValues[proof] = new Animated.Value(0);
+    Animated.timing(txAnimValues[proof], {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true,
+    }).start();
+  };
+
   const simulateTopUp = async (amount?: number, method?: string) => {
     const topUpValue = amount ?? Number(topUpAmount);
     if (!topUpValue || !fetchedEmail) return;
@@ -80,9 +125,9 @@ export default function MobileMoneyManager() {
     };
 
     setTransactions([newTx, ...transactions]);
+    animateTransaction(newTx.proof!);
     setTopUpAmount("");
 
-    // simulate delay for pending → completed
     setTimeout(async () => {
       try {
         newTx.status = "Completed";
@@ -92,19 +137,18 @@ export default function MobileMoneyManager() {
 
         const newBalance = userAccount + topUpValue;
         setUserAccount(newBalance);
+        flashBalance();
 
         const userRef = doc(db, "users", fetchedEmail);
         await updateDoc(userRef, { account: newBalance });
 
         const txCol = collection(db, "users", fetchedEmail, "transactions");
         await addDoc(txCol, newTx);
-
-        Alert.alert("Top-Up Success", `$${topUpValue} via ${method} completed!`);
       } catch (err) {
         console.error("Error completing top-up:", err);
         Alert.alert("Error", "Top-Up failed!");
       }
-    }, 3000); // 3 seconds for simulation
+    }, 2000);
   };
 
   const freezeAccount = async () => {
@@ -113,7 +157,6 @@ export default function MobileMoneyManager() {
       const userRef = doc(db, "users", fetchedEmail);
       await updateDoc(userRef, { isFrozen: !isFrozen });
       setIsFrozen(!isFrozen);
-      Alert.alert("Success", `Account ${!isFrozen ? "frozen" : "unfrozen"}!`);
     } catch (err) {
       console.error("Error updating freeze:", err);
       Alert.alert("Error", "Failed to update account status.");
@@ -132,9 +175,9 @@ export default function MobileMoneyManager() {
             if (!value || isNaN(Number(value))) return;
             const newBalance = Number(value);
             setUserAccount(newBalance);
+            flashBalance();
             const userRef = doc(db, "users", fetchedEmail);
             await updateDoc(userRef, { account: newBalance });
-            Alert.alert("Success", "Balance updated!");
           },
         },
       ],
@@ -148,6 +191,11 @@ export default function MobileMoneyManager() {
     { name: "Airtel Money", color: "#FF4500" },
     { name: "Other MM", color: "#4CAF50" },
   ];
+
+  const balanceColor = balanceAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["#fff", "#4CAF50"],
+  });
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -169,7 +217,9 @@ export default function MobileMoneyManager() {
         <>
           <View style={styles.accountCard}>
             <Text style={styles.welcomeText}>👤 {userName}</Text>
-            <Text style={styles.accountText}>💰 Balance: ${userAccount.toFixed(2)}</Text>
+            <Animated.Text style={[styles.accountText, { color: balanceColor }]}>
+              💰 Balance: ${userAccount.toFixed(2)}
+            </Animated.Text>
             <Text style={styles.accountText}>🎂 Age: {userAge}</Text>
             <Text style={[styles.accountText, { color: isFrozen ? "#FF5252" : "#4CAF50" }]}>
               {isFrozen ? "❌ Frozen" : "✅ Active"}
@@ -187,6 +237,7 @@ export default function MobileMoneyManager() {
             </View>
           </View>
 
+          {/* Top-Up Section */}
           <Text style={styles.sectionTitle}>Top-Up Account</Text>
           <View style={styles.card}>
             <TextInput
@@ -221,22 +272,42 @@ export default function MobileMoneyManager() {
             </TouchableOpacity>
           </View>
 
+          {/* Transaction History */}
           <Text style={styles.sectionTitle}>Transaction History</Text>
           {transactions.length > 0 ? (
             <FlatList
               data={transactions}
-              keyExtractor={(_, idx) => idx.toString()}
-              renderItem={({ item }) => (
-                <View style={styles.txCard}>
-                  <Text style={styles.txText}>➡️ To: {item.receiver}</Text>
-                  <Text style={styles.txText}>💲 Amount: {item.amount}</Text>
-                  <Text style={styles.txText}>🕒 Time: {item.timestamp}</Text>
-                  <Text style={styles.txText}>📄 Proof: {item.proof}</Text>
-                  <Text style={[styles.txText, { color: item.status === "Completed" ? "#4CAF50" : "#FFD700" }]}>
-                    Status: {item.status}
-                  </Text>
-                </View>
-              )}
+              keyExtractor={(item) => item.proof || Math.random().toString()}
+              renderItem={({ item }) => {
+                const anim = txAnimValues[item.proof!] || new Animated.Value(1);
+                return (
+                  <Animated.View
+                    style={{
+                      opacity: anim,
+                      transform: [
+                        {
+                          translateY: anim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [20, 0],
+                          }),
+                        },
+                      ],
+                      marginBottom: 12,
+                      backgroundColor: "#1a1a1a",
+                      borderRadius: 15,
+                      padding: 14,
+                    }}
+                  >
+                    <Text style={styles.txText}>➡️ To: {item.receiver}</Text>
+                    <Text style={styles.txText}>💲 Amount: {item.amount}</Text>
+                    <Text style={styles.txText}>🕒 Time: {item.timestamp}</Text>
+                    <Text style={styles.txText}>📄 Proof: {item.proof}</Text>
+                    <Text style={[styles.txText, { color: item.status === "Completed" ? "#4CAF50" : "#FFD700" }]}>
+                      Status: {item.status}
+                    </Text>
+                  </Animated.View>
+                );
+              }}
             />
           ) : (
             <Text style={styles.noTx}>No transactions yet.</Text>
@@ -275,7 +346,6 @@ const styles = StyleSheet.create({
   topUpButton: { backgroundColor: "#FF5722", paddingVertical: 14, borderRadius: 25, marginTop: 10, alignItems: "center" },
   topUpButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
 
-  txCard: { backgroundColor: "#1a1a1a", borderRadius: 15, padding: 14, marginBottom: 12 },
   txText: { color: "#fff", fontSize: 14, marginBottom: 4 },
   noTx: { color: "#aaa", textAlign: "center", marginVertical: 10, fontSize: 15 },
 });
