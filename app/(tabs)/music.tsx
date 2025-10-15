@@ -37,7 +37,7 @@ const mediaData: MediaItem[] = [
     artist: "DJ Relax",
     artwork: "https://picsum.photos/300/300?random=1",
     audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-    promoVideo: "https://www.w3schools.com/html/mov_bbb.mp4",
+    promoVideo: "https://xlijah.com/soso.mp4",
     price: 2.5,
   },
   {
@@ -50,11 +50,11 @@ const mediaData: MediaItem[] = [
   },
   {
     id: "3",
-    title: "Summer Vibes",
+    title: ".......",
     artist: "Sunny Tunes",
     artwork: "https://picsum.photos/300/300?random=3",
     audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
-    promoVideo: "https://www.w3schools.com/html/mov_bbb.mp4",
+    promoVideo: "https://xlijah.com/soso.mp4",
     price: 3.0,
   },
 ];
