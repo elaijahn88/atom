@@ -11,7 +11,6 @@ import {
   Dimensions,
   TouchableWithoutFeedback,
   Keyboard,
-  useColorScheme,
   ScrollView,
   RefreshControl,
   Animated,
@@ -26,41 +25,43 @@ type Product = {
   name: string;
   price: number;
   image: string;
+  description?: string;
   featured?: boolean;
 };
 
-export default function MyStore() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
+type CartItem = Product & { quantity: number };
 
-  const [cart, setCart] = useState<Product[]>([]);
+export default function MyStore() {
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [cartVisible, setCartVisible] = useState(false);
   const [editModal, setEditModal] = useState(false);
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [image, setImage] = useState("");
+  const [description, setDescription] = useState("");
   const [products, setProducts] = useState<Product[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterFeatured, setFilterFeatured] = useState(false);
 
-  // Toast state
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
-  const toastAnim = useRef(new Animated.Value(-60)).current; // off-screen at start
+  const toastAnim = useRef(new Animated.Value(-60)).current;
 
-  // 🛍️ Initial Demo Data
+  // Initial demo products
   useEffect(() => {
     const initialProducts: Product[] = [
-      { id: "1", name: "iPhone 12", price: 699, image: "https://xlijah.com/pics/phones/iphone/12.jpg", featured: true },
-      { id: "2", name: "iPhone 13", price: 799, image: "https://xlijah.com/pics/phones/iphone/13.jpg" },
-      { id: "3", name: "iPhone 14", price: 899, image: "https://xlijah.com/pics/phones/iphone/14.jpg", featured: true },
-      { id: "4", name: "iPhone 15", price: 999, image: "https://xlijah.com/pics/phones/iphone/15.jpg" },
-      { id: "5", name: "iPhone 16", price: 1099, image: "https://xlijah.com/pics/phones/iphone/16.jpg" },
-      { id: "6", name: "iPhone SE", price: 499, image: "https://xlijah.com/pics/phones/iphone/12.jpg" },
+      { id: "1", name: "iPhone 12", price: 699, image: "https://xlijah.com/pics/phones/iphone/12.jpg", description: "Compact and powerful smartphone.", featured: true },
+      { id: "2", name: "iPhone 13", price: 799, image: "https://xlijah.com/pics/phones/iphone/13.jpg", description: "Improved camera and battery." },
+      { id: "3", name: "iPhone 14", price: 899, image: "https://xlijah.com/pics/phones/iphone/14.jpg", description: "Sleek design with advanced features.", featured: true },
+      { id: "4", name: "iPhone 15", price: 999, image: "https://xlijah.com/pics/phones/iphone/15.jpg", description: "Next-gen performance and display." },
+      { id: "5", name: "iPhone 16", price: 1099, image: "https://xlijah.com/pics/phones/iphone/16.jpg", description: "Top-tier smartphone experience." },
+      { id: "6", name: "iPhone SE", price: 499, image: "https://xlijah.com/pics/phones/iphone/12.jpg", description: "Affordable and reliable phone." },
     ];
     setProducts(initialProducts);
   }, []);
 
-  // 🛍️ Refresh handler
+  // Refresh handler
   const onRefresh = () => {
     setRefreshing(true);
     setTimeout(() => {
@@ -69,6 +70,7 @@ export default function MyStore() {
         name: `New Gadget ${Math.floor(Math.random() * 100)}`,
         price: Math.floor(Math.random() * 1000) + 100,
         image: "https://picsum.photos/200/300?random=" + Math.floor(Math.random() * 1000),
+        description: "Check out this amazing new gadget!",
       };
       setProducts((prev) => [newProduct, ...prev]);
       setRefreshing(false);
@@ -76,9 +78,15 @@ export default function MyStore() {
     }, 1500);
   };
 
-  // 🛒 Cart handlers
+  // Cart handlers
   const addToCart = (product: Product) => {
-    setCart((prev) => [...prev, product]);
+    setCart((prev) => {
+      const existing = prev.find((p) => p.id === product.id);
+      if (existing) {
+        return prev.map((p) => p.id === product.id ? { ...p, quantity: p.quantity + 1 } : p);
+      }
+      return [...prev, { ...product, quantity: 1 }];
+    });
     showToast(`${product.name} added to cart ✅`, "success");
   };
 
@@ -87,38 +95,51 @@ export default function MyStore() {
     showToast("Item removed from cart 🗑️", "error");
   };
 
-  const cartTotal = cart.reduce((sum, item) => sum + item.price, 0);
+  const updateQuantity = (id: string, delta: number) => {
+    setCart((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item
+      )
+    );
+  };
 
-  // ✏️ Edit handlers
+  const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+  // Edit handlers
   const handleEdit = (product: Product) => {
     setProductToEdit(product);
     setName(product.name);
     setPrice(product.price.toString());
     setImage(product.image);
+    setDescription(product.description || "");
     setEditModal(true);
   };
 
   const saveEdit = () => {
-    // Normally, save to backend
+    if (!productToEdit) return;
+    setProducts((prev) =>
+      prev.map((p) =>
+        p.id === productToEdit.id
+          ? { ...p, name, price: parseFloat(price), image, description }
+          : p
+      )
+    );
     showToast("Product changes saved ✏️", "success");
     setEditModal(false);
   };
 
-  // 🛒 Payment
   const handlePayment = () => {
     showToast(`Checkout $${cartTotal.toFixed(2)} 💰`, "success");
     setCart([]);
     setCartVisible(false);
   };
 
-  // Delete Product
   const handleDelete = (productId: string) => {
     setProducts((prev) => prev.filter((p) => p.id !== productId));
     setCart((prev) => prev.filter((p) => p.id !== productId));
     showToast("Product deleted 🗑️", "error");
   };
 
-  // Toast animation
   const showToast = (message: string, type: "success" | "error" = "success") => {
     setToast({ message, type });
     Animated.sequence([
@@ -128,14 +149,12 @@ export default function MyStore() {
     ]).start(() => setToast(null));
   };
 
+  const filteredProducts = products.filter(
+    (p) => p.name.toLowerCase().includes(search.toLowerCase()) && (!filterFeatured || p.featured)
+  );
+
   const renderProduct = ({ item }: { item: Product }) => (
-    <TouchableOpacity
-      activeOpacity={0.9}
-      style={[
-        styles.card,
-        { backgroundColor: isDark ? "#1c1c1e" : "#fff", shadowColor: isDark ? "#000" : "#ddd" },
-      ]}
-    >
+    <TouchableOpacity style={[styles.card, { backgroundColor: "#1e1e1e", shadowColor: "#000" }]}>
       {item.featured && (
         <View style={styles.featuredBadge}>
           <Text style={styles.featuredText}>FEATURED</Text>
@@ -143,10 +162,13 @@ export default function MyStore() {
       )}
       <Image source={{ uri: item.image }} style={styles.image} />
       <View style={styles.cardBody}>
-        <Text style={[styles.title, { color: isDark ? "#fff" : "#111" }]} numberOfLines={2}>
+        <Text style={[styles.title, { color: "#fff" }]} numberOfLines={2}>
           {item.name}
         </Text>
-        <Text style={[styles.price, { color: isDark ? "#00ff88" : "#ff7f00" }]}>
+        <Text style={[styles.description, { color: "#aaa" }]} numberOfLines={2}>
+          {item.description}
+        </Text>
+        <Text style={[styles.price, { color: "#ff7f00" }]}>
           ${item.price}
         </Text>
       </View>
@@ -165,24 +187,21 @@ export default function MyStore() {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? "#121212" : "#fafafa" }]}>
+    <View style={[styles.container, { backgroundColor: "#121212" }]}>
       {/* Toast */}
       {toast && (
         <Animated.View
-          style={[
-            styles.toast,
-            { backgroundColor: toast.type === "success" ? "#34c759" : "#ff3b30", transform: [{ translateY: toastAnim }] },
-          ]}
+          style={[styles.toast, { backgroundColor: toast.type === "success" ? "#34c759" : "#ff3b30", transform: [{ translateY: toastAnim }] }]}
         >
           <Text style={styles.toastText}>{toast.message}</Text>
         </Animated.View>
       )}
 
-      {/* Header */}
+      {/* Header + Search */}
       <View style={styles.headerRow}>
-        <Text style={[styles.header, { color: isDark ? "#fff" : "#111" }]}>My Store</Text>
+        <Text style={styles.header}>My Store</Text>
         <TouchableOpacity onPress={() => setCartVisible(true)}>
-          <Ionicons name="cart-outline" size={32} color={isDark ? "#00ff88" : "#ff7f00"} />
+          <Ionicons name="cart-outline" size={32} color="#ff7f00" />
           {cart.length > 0 && (
             <View style={styles.cartBadge}>
               <Text style={styles.cartBadgeText}>{cart.length}</Text>
@@ -191,68 +210,91 @@ export default function MyStore() {
         </TouchableOpacity>
       </View>
 
+      <View style={{ flexDirection: "row", marginHorizontal: 20, marginBottom: 10 }}>
+        <TextInput
+          placeholder="Search products..."
+          placeholderTextColor="#888"
+          value={search}
+          onChangeText={setSearch}
+          style={[styles.input, { flex: 1, backgroundColor: "#1f1f1f", color: "#fff" }]}
+        />
+        <TouchableOpacity
+          style={[styles.smallBtn, { marginLeft: 8, backgroundColor: filterFeatured ? "#ff7f00" : "#555" }]}
+          onPress={() => setFilterFeatured(!filterFeatured)}
+        >
+          <Ionicons name="star" size={20} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
       {/* Product List */}
       <FlatList
-        data={products}
+        data={filteredProducts}
         numColumns={2}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 120 }}
         renderItem={renderProduct}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}
       />
 
-      {/* ✏️ Edit Modal */}
+      {/* Edit Modal */}
       <Modal visible={editModal} transparent animationType="slide">
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: isDark ? "#222" : "#fff" }]}>
-              <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#000" }]}>Edit Product</Text>
-              <TextInput placeholder="Product Name" value={name} onChangeText={setName} style={styles.input} placeholderTextColor="#999" />
-              <TextInput placeholder="Price" value={price} onChangeText={setPrice} keyboardType="numeric" style={styles.input} placeholderTextColor="#999" />
-              <TextInput placeholder="Image URL" value={image} onChangeText={setImage} style={styles.input} placeholderTextColor="#999" />
+            <View style={[styles.modalContent, { backgroundColor: "#222" }]}>
+              <Text style={[styles.modalTitle, { color: "#fff" }]}>Edit Product</Text>
+              <TextInput placeholder="Product Name" value={name} onChangeText={setName} style={[styles.input, { backgroundColor: "#333", color: "#fff" }]} placeholderTextColor="#888" />
+              <TextInput placeholder="Price" value={price} onChangeText={setPrice} keyboardType="numeric" style={[styles.input, { backgroundColor: "#333", color: "#fff" }]} placeholderTextColor="#888" />
+              <TextInput placeholder="Image URL" value={image} onChangeText={setImage} style={[styles.input, { backgroundColor: "#333", color: "#fff" }]} placeholderTextColor="#888" />
+              <TextInput placeholder="Description" value={description} onChangeText={setDescription} style={[styles.input, { backgroundColor: "#333", color: "#fff" }]} placeholderTextColor="#888" />
 
               <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ff7f00" }]} onPress={saveEdit}>
                 <Text style={styles.modalBtnText}>Save Changes</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ddd" }]} onPress={() => setEditModal(false)}>
-                <Text style={[styles.modalBtnText, { color: "#333" }]}>Cancel</Text>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#555" }]} onPress={() => setEditModal(false)}>
+                <Text style={[styles.modalBtnText, { color: "#fff" }]}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </View>
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* 🛒 Cart Modal */}
+      {/* Cart Modal */}
       <Modal visible={cartVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? "#222" : "#fff", height: "70%" }]}>
-            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#000" }]}>My Cart ({cart.length})</Text>
+          <View style={[styles.modalContent, { backgroundColor: "#222", height: "70%" }]}>
+            <Text style={[styles.modalTitle, { color: "#fff" }]}>My Cart ({cart.length})</Text>
             <ScrollView>
               {cart.map((item) => (
-                <View key={item.id} style={[styles.cartItem, { backgroundColor: isDark ? "#333" : "#f2f2f2" }]}>
+                <View key={item.id} style={[styles.cartItem, { backgroundColor: "#333" }]}>
                   <Image source={{ uri: item.image }} style={styles.cartImage} />
                   <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={{ fontWeight: "700", color: isDark ? "#fff" : "#000" }}>{item.name}</Text>
-                    <Text style={{ color: isDark ? "#00ff88" : "#ff7f00", fontWeight: "600" }}>${item.price}</Text>
+                    <Text style={{ fontWeight: "700", color: "#fff" }}>{item.name}</Text>
+                    <Text style={{ color: "#ff7f00", fontWeight: "600" }}>${item.price}</Text>
+                    <View style={{ flexDirection: "row", marginTop: 4 }}>
+                      <TouchableOpacity onPress={() => updateQuantity(item.id, -1)} style={[styles.smallBtn, { backgroundColor: "#555" }]}>
+                        <Ionicons name="remove" size={16} color="#fff" />
+                      </TouchableOpacity>
+                      <Text style={{ color: "#fff", marginHorizontal: 8 }}>{item.quantity}</Text>
+                      <TouchableOpacity onPress={() => updateQuantity(item.id, 1)} style={[styles.smallBtn, { backgroundColor: "#555" }]}>
+                        <Ionicons name="add" size={16} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  <TouchableOpacity
-                    onPress={() => removeFromCart(item.id)}
-                    style={[styles.smallBtn, { backgroundColor: "#ff3b30" }]}
-                  >
+                  <TouchableOpacity onPress={() => removeFromCart(item.id)} style={[styles.smallBtn, { backgroundColor: "#ff3b30" }]}>
                     <Ionicons name="trash-outline" size={18} color="#fff" />
                   </TouchableOpacity>
                 </View>
               ))}
             </ScrollView>
             <View style={{ marginTop: 12 }}>
-              <Text style={{ fontSize: 18, fontWeight: "700", color: isDark ? "#fff" : "#000" }}>
+              <Text style={{ fontSize: 18, fontWeight: "700", color: "#fff" }}>
                 Total: ${cartTotal.toFixed(2)}
               </Text>
               <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#34c759" }]} onPress={handlePayment}>
                 <Text style={styles.modalBtnText}>Checkout</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ddd" }]} onPress={() => setCartVisible(false)}>
-                <Text style={[styles.modalBtnText, { color: "#333" }]}>Close</Text>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#555" }]} onPress={() => setCartVisible(false)}>
+                <Text style={[styles.modalBtnText, { color: "#fff" }]}>Close</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -265,18 +307,19 @@ export default function MyStore() {
 const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: 40 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginHorizontal: 20, marginBottom: 10 },
-  header: { fontSize: 26, fontWeight: "900" },
-  card: { width: CARD_WIDTH, borderRadius: 14, padding: 10, margin: 8, elevation: 3, shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
+  header: { fontSize: 26, fontWeight: "900", color: "#fff" },
+  card: { width: CARD_WIDTH, borderRadius: 14, padding: 10, margin: 8, elevation: 3, shadowOpacity: 0.3, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
   image: { width: "100%", height: CARD_WIDTH, borderRadius: 10 },
   cardBody: { marginTop: 8 },
-  title: { fontWeight: "700", fontSize: 15, textAlign: "left" },
+  title: { fontWeight: "700", fontSize: 15 },
+  description: { fontSize: 12, marginTop: 2 },
   price: { fontWeight: "800", marginTop: 4, fontSize: 16 },
   buttonRow: { flexDirection: "row", justifyContent: "flex-end", marginTop: 8, gap: 6 },
   smallBtn: { padding: 6, borderRadius: 8, justifyContent: "center", alignItems: "center" },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", padding: 20 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 20 },
   modalContent: { borderRadius: 20, padding: 20 },
   modalTitle: { fontSize: 22, fontWeight: "900", textAlign: "center", marginBottom: 16 },
-  input: { backgroundColor: "#f2f2f2", borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, fontSize: 15 },
+  input: { backgroundColor: "#333", borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, fontSize: 15, color: "#fff" },
   modalBtn: { borderRadius: 10, paddingVertical: 12, marginTop: 10, alignItems: "center" },
   modalBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
   cartItem: { flexDirection: "row", alignItems: "center", marginBottom: 10, borderRadius: 10, padding: 8 },
