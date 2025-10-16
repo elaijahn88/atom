@@ -58,10 +58,15 @@ export default function App() {
   const [user, setUser] = useState<IUserData | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [videos, setVideos] = useState<any[]>([]);
+  const [showVideoFeed, setShowVideoFeed] = useState(false);
 
   const videoRefs = useRef([]);
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems.length > 0) setCurrentIndex(viewableItems[0].index);
+  });
+  const viewConfigRef = useRef({ viewAreaCoveragePercentThreshold: 80 });
 
-  // ✅ Fetch videos & live likes
+  // 🔄 Fetch videos from Firestore
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "videos"), (snapshot) => {
       const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
@@ -72,6 +77,12 @@ export default function App() {
 
   const validateEmail = (email: string): boolean =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  const setMsg = (msg: string) => {
+    setMessage(msg);
+    setTimeout(() => setMessage(""), 5000);
+    return false;
+  };
 
   const validateForm = (): boolean => {
     if (!email.trim()) return setMsg("Email is required");
@@ -85,23 +96,12 @@ export default function App() {
     return true;
   };
 
-  const setMsg = (msg: string) => {
-    setMessage(msg);
-    setTimeout(() => setMessage(""), 5000);
-    return false;
-  };
-
-  // ✅ Sign Up
   const handleSignUp = async () => {
     if (!validateForm()) return;
     setLoading(true);
     setMessage("");
     try {
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
       const userData: IUserData = {
@@ -118,24 +118,18 @@ export default function App() {
       setMessage("✅ Account created successfully!");
       setIsLoggedIn(true);
     } catch (err: any) {
-      console.error(err);
       setMsg("Error: " + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // ✅ Sign In
   const handleSignIn = async () => {
     if (!validateForm()) return;
     setLoading(true);
     setMessage("");
     try {
-      const userCredential = await signInWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       const docRef = doc(db, "users", user.uid);
       const docSnap = await getDoc(docRef);
@@ -146,14 +140,12 @@ export default function App() {
       }
       setIsLoggedIn(true);
     } catch (err: any) {
-      console.error(err);
       setMsg("Error: " + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // ✅ Like toggle
   const handleLike = async (videoId: string, currentLikes: number) => {
     const videoRef = doc(db, "videos", videoId);
     await updateDoc(videoRef, { likes: currentLikes + 1 });
@@ -163,18 +155,76 @@ export default function App() {
     await signOut(auth);
     setIsLoggedIn(false);
     setUser(null);
+    setShowVideoFeed(false);
   };
 
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) setCurrentIndex(viewableItems[0].index);
-  });
-  const viewConfigRef = useRef({ viewAreaCoveragePercentThreshold: 80 });
+  // 🎥 After login/signup show soso video first
+  useEffect(() => {
+    if (isLoggedIn && user) {
+      const timer = setTimeout(() => {
+        setShowVideoFeed(true);
+      }, 10000); // ⏱️ 10 seconds
+      return () => clearTimeout(timer);
+    }
+  }, [isLoggedIn, user]);
 
   if (isLoggedIn && user) {
+    if (!showVideoFeed) {
+      return (
+        <View style={styles.darkContainer}>
+          <StatusBar hidden />
+
+          {/* 🔝 Avatar + Logout */}
+          <View style={styles.topBar}>
+            <TouchableOpacity onPress={handleLogout}>
+              <Ionicons name="log-out-outline" size={26} color="#fff" />
+            </TouchableOpacity>
+            <View style={styles.userSection}>
+              <Image source={{ uri: user.avatar }} style={styles.avatar} />
+              <Text style={styles.userName}>{user.name}</Text>
+            </View>
+          </View>
+
+          {/* 🎥 Full-screen welcome video */}
+          <Video
+            source={{ uri: "https://xlijah.com/soso.mp4" }}
+            style={styles.fullscreenVideo}
+            resizeMode="cover"
+            repeat
+            paused={false}
+            muted={false}
+            onError={(err) => console.error("Video error:", err)}
+          />
+
+          <View style={styles.centerOverlay}>
+            <Text style={styles.overlayText}>Welcome, {user.name}!</Text>
+          </View>
+        </View>
+      );
+    }
+
+    // 🎬 Video Feed: AI + Physics + Firestore videos
+    const feed = [
+      {
+        id: "ai1",
+        title: "AI Development",
+        uri: "https://xlijah.com/pics/ai_dev.mp4",
+        likes: 54,
+        comments: 10,
+      },
+      {
+        id: "ph1",
+        title: "Physics Inventions",
+        uri: "https://xlijah.com/pics/physics_invention.mp4",
+        likes: 39,
+        comments: 5,
+      },
+      ...videos,
+    ];
+
     return (
       <View style={styles.darkContainer}>
         <StatusBar hidden />
-        {/* Top Bar */}
         <View style={styles.topBar}>
           <TouchableOpacity onPress={handleLogout}>
             <Ionicons name="log-out-outline" size={26} color="#fff" />
@@ -185,9 +235,8 @@ export default function App() {
           </View>
         </View>
 
-        {/* Video Feed */}
         <FlatList
-          data={videos}
+          data={feed}
           keyExtractor={(item) => item.id}
           renderItem={({ item, index }) => (
             <View style={{ width, height }}>
@@ -200,6 +249,7 @@ export default function App() {
                 paused={currentIndex !== index}
               />
               <View style={styles.overlay}>
+                <Text style={styles.feedTitle}>{item.title}</Text>
                 <TouchableOpacity
                   style={styles.iconButton}
                   onPress={() => handleLike(item.id, item.likes)}
@@ -223,7 +273,7 @@ export default function App() {
     );
   }
 
-  // 🔐 Dark Mode Login / Signup
+  // 🔐 Login/Signup Screen
   return (
     <KeyboardAvoidingView
       style={styles.darkContainer}
@@ -241,43 +291,16 @@ export default function App() {
         </View>
 
         <View style={styles.darkForm}>
-          <DarkField
-            label="Email"
-            value={email}
-            placeholder="you@example.com"
-            onChangeText={setEmail}
-          />
-          <DarkPasswordField
-            label="Password"
-            value={password}
-            onChangeText={setPassword}
-            show={showPassword}
-            toggle={() => setShowPassword(!showPassword)}
-          />
+          <DarkField label="Email" value={email} placeholder="you@example.com" onChangeText={setEmail} />
+          <DarkPasswordField label="Password" value={password} onChangeText={setPassword} show={showPassword} toggle={() => setShowPassword(!showPassword)} />
           {!isLoginMode && (
-            <DarkPasswordField
-              label="Confirm Password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              show={showConfirmPassword}
-              toggle={() => setShowConfirmPassword(!showConfirmPassword)}
-            />
+            <DarkPasswordField label="Confirm Password" value={confirmPassword} onChangeText={setConfirmPassword} show={showConfirmPassword} toggle={() => setShowConfirmPassword(!showConfirmPassword)} />
           )}
           {!isLoginMode && (
             <>
               <DarkField label="Full Name" value={name} onChangeText={setName} />
-              <DarkField
-                label="Account"
-                value={account}
-                onChangeText={setAccount}
-                keyboardType="numeric"
-              />
-              <DarkField
-                label="Age"
-                value={age}
-                onChangeText={setAge}
-                keyboardType="numeric"
-              />
+              <DarkField label="Account" value={account} onChangeText={setAccount} keyboardType="numeric" />
+              <DarkField label="Age" value={age} onChangeText={setAge} keyboardType="numeric" />
             </>
           )}
           <TouchableOpacity
@@ -292,19 +315,12 @@ export default function App() {
 
           <TouchableOpacity onPress={() => setIsLoginMode(!isLoginMode)}>
             <Text style={styles.switchText}>
-              {isLoginMode
-                ? "Don’t have an account? Sign Up"
-                : "Already have one? Sign In"}
+              {isLoginMode ? "Don’t have an account? Sign Up" : "Already have one? Sign In"}
             </Text>
           </TouchableOpacity>
 
           {message ? (
-            <Text
-              style={[
-                styles.msg,
-                message.includes("✅") ? { color: "#4CAF50" } : { color: "#FF5252" },
-              ]}
-            >
+            <Text style={[styles.msg, message.includes("✅") ? { color: "#4CAF50" } : { color: "#FF5252" }]}>
               {message}
             </Text>
           ) : null}
@@ -316,7 +332,7 @@ export default function App() {
   );
 }
 
-/* 🔹 Dark Mode Reusable Fields */
+/* 🔹 Reusable Input Fields */
 const DarkField = ({ label, value, onChangeText, keyboardType = "default", placeholder }: any) => (
   <View style={{ marginBottom: 14 }}>
     <Text style={styles.darkLabel}>{label}</Text>
@@ -359,40 +375,21 @@ const styles = StyleSheet.create({
   darkSubtitle: { color: "#999", fontSize: 15, marginTop: 4 },
   darkForm: { backgroundColor: "#1a1a1a", padding: 24, borderRadius: 20 },
   darkLabel: { color: "#ccc", fontSize: 14, marginBottom: 4 },
-  darkInput: {
-    backgroundColor: "#111",
-    color: "#fff",
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    fontSize: 16,
-  },
-  darkButton: {
-    backgroundColor: "#00BFFF",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 10,
-  },
+  darkInput: { backgroundColor: "#111", color: "#fff", borderRadius: 10, paddingVertical: 12, paddingHorizontal: 14, fontSize: 16 },
+  darkButton: { backgroundColor: "#00BFFF", paddingVertical: 14, borderRadius: 12, alignItems: "center", marginTop: 10 },
   darkButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   switchText: { color: "#00BFFF", textAlign: "center", marginTop: 16 },
   msg: { textAlign: "center", marginTop: 12, fontSize: 14 },
-  topBar: {
-    position: "absolute",
-    top: 40,
-    left: 0,
-    right: 0,
-    zIndex: 99,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    alignItems: "center",
-  },
+  topBar: { position: "absolute", top: 40, left: 0, right: 0, zIndex: 3, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 20, alignItems: "center" },
   userSection: { flexDirection: "row", alignItems: "center" },
   avatar: { width: 40, height: 40, borderRadius: 20, marginLeft: 10 },
   userName: { color: "#fff", fontWeight: "600", marginLeft: 8 },
+  fullscreenVideo: { position: "absolute", top: 0, left: 0, width: "100%", height: "100%", zIndex: 1 },
+  centerOverlay: { position: "absolute", top: "45%", left: 0, right: 0, alignItems: "center", zIndex: 2 },
+  overlayText: { color: "#fff", fontSize: 26, fontWeight: "700", textShadowColor: "rgba(0,0,0,0.7)", textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 8 },
   video: { width: "100%", height: "100%" },
   overlay: { position: "absolute", right: 20, bottom: 120, alignItems: "center" },
   iconButton: { marginBottom: 25, alignItems: "center" },
   iconText: { color: "#fff", fontSize: 14, marginTop: 4 },
+  feedTitle: { color: "#fff", fontSize: 18, fontWeight: "700", position: "absolute", bottom: 200, left: 20 },
 });
