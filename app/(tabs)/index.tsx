@@ -52,7 +52,7 @@ export default function App() {
   const [videos, setVideos] = useState<any[]>([]);
   const [showVideoFeed, setShowVideoFeed] = useState(false);
 
-  const videoRefs = useRef([]);
+  const videoRefs = useRef<any[]>([]);
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems.length > 0) setCurrentIndex(viewableItems[0].index);
   });
@@ -66,6 +66,11 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  // ✅ Auto-play first video
+  useEffect(() => {
+    if (videos.length > 0) setCurrentIndex(0);
+  }, [videos]);
 
   const validateEmail = (email: string): boolean =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -164,7 +169,7 @@ export default function App() {
             source={{ uri: "https://xlijah.com/soso.mp4" }}
             style={styles.fullscreenVideo}
             resizeMode="cover"
-            repeat
+            repeat={true}
             paused={false}
             muted={false}
           />
@@ -180,21 +185,30 @@ export default function App() {
           data={videos}
           keyExtractor={(item) => item.id}
           renderItem={({ item, index }) => (
-            <View style={{ width, height }}>
+            <View style={{ width, height, backgroundColor: "black" }}>
               <Video
                 ref={(ref) => (videoRefs.current[index] = ref)}
                 source={{ uri: item.uri }}
                 style={styles.video}
                 resizeMode="cover"
-                repeat
+                repeat={true}
                 paused={currentIndex !== index}
+                onError={(e) => console.warn("Video error:", e)}
+                ignoreSilentSwitch="obey"
+                playInBackground={false}
+                playWhenInactive={false}
+                progressUpdateInterval={500.0}
               />
             </View>
           )}
           pagingEnabled
+          decelerationRate="fast"
+          snapToAlignment="center"
           showsVerticalScrollIndicator={false}
           onViewableItemsChanged={onViewableItemsChanged.current}
           viewabilityConfig={viewConfigRef.current}
+          windowSize={3}
+          removeClippedSubviews
         />
       </View>
     );
