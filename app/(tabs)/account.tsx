@@ -2,18 +2,14 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
-  FlatList,
-  Image,
-  TouchableOpacity,
-  StyleSheet,
-  Modal,
   TextInput,
+  TouchableOpacity,
   ScrollView,
-  RefreshControl,
+  StyleSheet,
+  FlatList,
   Animated,
-  Dimensions,
+  Image,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import {
   doc,
   getDoc,
@@ -25,67 +21,59 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase";
 
-const { width } = Dimensions.get("window");
-const CARD_WIDTH = (width - 48) / 2;
-
-type Product = {
-  id: string;
-  name: string;
-  price: number;
-  image: string;
-  description?: string;
-  featured?: boolean;
-};
-
-type CartItem = Product & { quantity: number };
-
 type Transaction = {
   receiver: string;
   amount: string;
   timestamp: string;
   proof?: string;
-  status?: "Pending" | "Completed";
+  status?: "Pending" | "Completed" | "Failed";
 };
 
-type Props = { userEmail: string };
-
-export default function StoreAndMoneyManager({ userEmail }: Props) {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [cartVisible, setCartVisible] = useState(false);
-
+export default function MobileMoneyManager() {
+  const [email, setEmail] = useState(""); // For switching users
+  const [fetchedEmail, setFetchedEmail] = useState("");
   const [userName, setUserName] = useState("");
   const [userAccount, setUserAccount] = useState(0);
   const [userAge, setUserAge] = useState(0);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [topUpAmount, setTopUpAmount] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [showTransactions, setShowTransactions] = useState(false);
+  const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"success" | "error" | "info">("info");
 
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
-  const toastAnim = useRef(new Animated.Value(-60)).current;
-
+  const messageAnim = useRef(new Animated.Value(0)).current;
   const balanceAnim = useRef(new Animated.Value(0)).current;
+  const txAnimValues = useRef<{ [key: string]: Animated.Value }>({}).current;
+
   const quickTopUps = [5, 10, 20, 50, 100];
 
-  // ------------------ TOAST ------------------
-  const showToast = (message: string, type: "success" | "error" = "success") => {
-    setToast({ message, type });
-    Animated.sequence([
-      Animated.timing(toastAnim, { toValue: 20, duration: 300, useNativeDriver: true }),
-      Animated.delay(1800),
-      Animated.timing(toastAnim, { toValue: -60, duration: 300, useNativeDriver: true }),
-    ]).start(() => setToast(null));
+  const mobileMoneyProviders = [
+    { name: "MTN Mobile Money", color: "#FFD700" },
+    { name: "Airtel Money", color: "#FF4500" },
+    { name: "Other MM", color: "#4CAF50" },
+  ];
+
+  const showMessage = (text: string, type: "success" | "error" | "info" = "info") => {
+    setMessage(text);
+    setMessageType(type);
+    Animated.timing(messageAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+    setTimeout(() => {
+      Animated.timing(messageAnim, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => setMessage(""));
+    }, 4000);
   };
 
-  // ------------------ FETCH USER DATA ------------------
-  const fetchUserData = async () => {
+  // Fetch user
+  const fetchUserData = async (userEmail: string) => {
     try {
       const userRef = doc(db, "users", userEmail);
       const userSnap = await getDoc(userRef);
       if (!userSnap.exists()) {
-        showToast("No user found with this email.", "error");
-        return;
+        showMessage("User not found!", "error");
+        return false;
       }
       const data = userSnap.data();
+      setFetchedEmail(userEmail);
       setUserName(data.name || "");
       setUserAccount(data.account || 0);
       setUserAge(data.age || 0);
@@ -95,27 +83,29 @@ export default function StoreAndMoneyManager({ userEmail }: Props) {
       const txList: Transaction[] = [];
       txSnap.forEach((doc) => txList.push(doc.data() as Transaction));
       setTransactions(txList.reverse());
+      return true;
     } catch (err) {
       console.error(err);
-      showToast("Failed to fetch user data.", "error");
+      showMessage("Failed to fetch user data.", "error");
+      return false;
     }
   };
 
-  // ------------------ BALANCE LISTENER ------------------
+  // Balance listener
   useEffect(() => {
-    fetchUserData();
-    const userRef = doc(db, "users", userEmail);
+    if (!fetchedEmail) return;
+    const userRef = doc(db, "users", fetchedEmail);
     const unsubscribe = onSnapshot(userRef, (snap) => {
       const data = snap.data();
       if (!data) return;
       if (data.account !== userAccount) {
         setUserAccount(data.account);
-        showToast(`Balance updated: $${data.account}`, "success");
         flashBalance();
+        showMessage(`Balance updated: $${data.account}`, "info");
       }
     });
     return () => unsubscribe();
-  }, [userEmail, userAccount]);
+  }, [fetchedEmail, userAccount]);
 
   const flashBalance = () => {
     balanceAnim.setValue(0);
@@ -125,254 +115,269 @@ export default function StoreAndMoneyManager({ userEmail }: Props) {
     ]).start();
   };
 
-  // ------------------ INITIAL PRODUCTS ------------------
-  useEffect(() => {
-    const initialProducts: Product[] = [
-      { id: "1", name: "iPhone 12", price: 699, image: "https://xlijah.com/pics/phones/iphone/12.jpg", description: "Compact and powerful smartphone.", featured: true },
-      { id: "2", name: "iPhone 13", price: 799, image: "https://xlijah.com/pics/phones/iphone/13.jpg", description: "Improved camera and battery." },
-      { id: "3", name: "iPhone 14", price: 899, image: "https://xlijah.com/pics/phones/iphone/14.jpg", description: "Sleek design with advanced features.", featured: true },
-      { id: "4", name: "iPhone 15", price: 999, image: "https://xlijah.com/pics/phones/iphone/15.jpg", description: "Next-gen performance and display." },
-      { id: "5", name: "iPhone 16", price: 1099, image: "https://xlijah.com/pics/phones/iphone/16.jpg", description: "Top-tier smartphone experience." },
-    ];
-    setProducts(initialProducts);
-  }, []);
-
-  // ------------------ CART HANDLERS ------------------
-  const addToCart = (product: Product) => {
-    if (product.price > userAccount) {
-      showToast("Insufficient balance!", "error");
-      return;
-    }
-    setCart((prev) => {
-      const existing = prev.find((p) => p.id === product.id);
-      if (existing) return prev.map((p) => p.id === product.id ? { ...p, quantity: p.quantity + 1 } : p);
-      return [...prev, { ...product, quantity: 1 }];
-    });
-    showToast(`${product.name} added to cart ✅`);
+  const animateTransaction = (proof: string) => {
+    if (!txAnimValues[proof]) txAnimValues[proof] = new Animated.Value(0);
+    Animated.timing(txAnimValues[proof], { toValue: 1, duration: 500, useNativeDriver: true }).start();
   };
 
-  const removeFromCart = (id: string) => {
-    setCart((prev) => prev.filter((p) => p.id !== id));
-    showToast("Item removed from cart 🗑️", "error");
-  };
-
-  const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-
-  const handleCheckout = async () => {
-    if (cartTotal > userAccount) {
-      showToast("Insufficient balance!", "error");
-      return;
-    }
-
-    try {
-      const newBalance = userAccount - cartTotal;
-      setUserAccount(newBalance);
-      flashBalance();
-
-      const userRef = doc(db, "users", userEmail);
-      await updateDoc(userRef, { account: newBalance });
-
-      const txCol = collection(db, "users", userEmail, "transactions");
-      for (const item of cart) {
-        const tx: Transaction = {
-          receiver: item.name,
-          amount: item.price.toString(),
-          timestamp: new Date().toLocaleString(),
-          proof: `PUR#${Math.floor(Math.random() * 10000)}`,
-          status: "Completed",
-        };
-        await addDoc(txCol, tx);
-      }
-
-      setTransactions((prev) => [
-        ...cart.map((item) => ({
-          receiver: item.name,
-          amount: item.price.toString(),
-          timestamp: new Date().toLocaleString(),
-          proof: `PUR#${Math.floor(Math.random() * 10000)}`,
-          status: "Completed",
-        })),
-        ...prev,
-      ]);
-      setCart([]);
-      showToast("Purchase successful!", "success");
-      setCartVisible(false);
-    } catch (err) {
-      console.error(err);
-      showToast("Checkout failed!", "error");
-    }
-  };
-
-  // ------------------ TOP-UP ------------------
   const simulateTopUp = async (amount?: number, method?: string) => {
     const topUpValue = amount ?? Number(topUpAmount);
-    if (!topUpValue) {
-      showToast("Enter a valid amount.", "error");
-      return;
-    }
+    if (!topUpValue || !fetchedEmail) return showMessage("Enter valid amount.", "error");
 
-    try {
-      const newBalance = userAccount + topUpValue;
-      setUserAccount(newBalance);
-      flashBalance();
+    const newTx: Transaction = {
+      receiver: method || "Top-Up",
+      amount: topUpValue.toString(),
+      timestamp: new Date().toLocaleString(),
+      proof: `MM#${Math.floor(Math.random() * 10000)}`,
+      status: "Pending",
+    };
+    setTransactions([newTx, ...transactions]);
+    animateTransaction(newTx.proof!);
+    setTopUpAmount("");
 
-      const userRef = doc(db, "users", userEmail);
-      await updateDoc(userRef, { account: newBalance });
+    setTimeout(async () => {
+      try {
+        newTx.status = "Completed";
+        setTransactions((prev) => prev.map((tx) => (tx.proof === newTx.proof ? newTx : tx)));
 
-      const txCol = collection(db, "users", userEmail, "transactions");
-      const newTx: Transaction = {
-        receiver: method || "Top-Up",
-        amount: topUpValue.toString(),
-        timestamp: new Date().toLocaleString(),
-        proof: `MM#${Math.floor(Math.random() * 10000)}`,
-        status: "Completed",
-      };
-      await addDoc(txCol, newTx);
-      setTransactions((prev) => [newTx, ...prev]);
-      setTopUpAmount("");
-      showToast(`Top-Up of $${topUpValue} successful!`, "success");
-    } catch (err) {
-      console.error(err);
-      showToast("Top-Up failed!", "error");
-    }
+        const newBalance = userAccount + topUpValue;
+        setUserAccount(newBalance);
+        flashBalance();
+
+        const userRef = doc(db, "users", fetchedEmail);
+        await updateDoc(userRef, { account: newBalance });
+
+        const txCol = collection(db, "users", fetchedEmail, "transactions");
+        await addDoc(txCol, newTx);
+        showMessage(`Top-Up of $${topUpValue} successful!`, "success");
+      } catch (err) {
+        console.error(err);
+        showMessage("Top-Up failed!", "error");
+      }
+    }, 2000);
   };
 
-  const balanceColor = balanceAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["#fff", "#4CAF50"],
-  });
+  // Withdraw / Send Money
+  const simulateWithdraw = async () => {
+    const withdrawValue = Number(withdrawAmount);
+    if (!withdrawValue || withdrawValue <= 0) return showMessage("Enter valid amount.", "error");
+    if (withdrawValue > userAccount) return showMessage("Insufficient balance.", "error");
 
-  const mobileMoneyProviders = [
-    { name: "MTN Mobile Money", color: "#FFD700" },
-    { name: "Airtel Money", color: "#FF4500" },
-    { name: "Other MM", color: "#4CAF50" },
-  ];
+    const newTx: Transaction = {
+      receiver: "Withdraw",
+      amount: withdrawValue.toString(),
+      timestamp: new Date().toLocaleString(),
+      proof: `WD#${Math.floor(Math.random() * 10000)}`,
+      status: "Pending",
+    };
+    setTransactions([newTx, ...transactions]);
+    animateTransaction(newTx.proof!);
 
-  const renderProduct = ({ item }: { item: Product }) => (
-    <View style={[styles.card, { backgroundColor: "#1e1e1e" }]}>
-      {item.featured && (
-        <View style={styles.featuredBadge}>
-          <Text style={styles.featuredText}>FEATURED</Text>
-        </View>
-      )}
-      <Image source={{ uri: item.image }} style={styles.image} />
-      <View style={styles.cardBody}>
-        <Text style={[styles.title, { color: "#fff" }]} numberOfLines={2}>{item.name}</Text>
-        <Text style={[styles.description, { color: "#aaa" }]} numberOfLines={2}>{item.description}</Text>
-        <Text style={[styles.price, { color: "#ff7f00" }]}>${item.price}</Text>
-      </View>
-      <View style={styles.buttonRow}>
-        <TouchableOpacity onPress={() => addToCart(item)} style={[styles.smallBtn, { backgroundColor: "#34c759" }]}>
-          <Ionicons name="cart" size={18} color="#fff" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    setTimeout(async () => {
+      try {
+        newTx.status = "Completed";
+        setTransactions((prev) => prev.map((tx) => (tx.proof === newTx.proof ? newTx : tx)));
+
+        const newBalance = userAccount - withdrawValue;
+        setUserAccount(newBalance);
+        flashBalance();
+
+        const userRef = doc(db, "users", fetchedEmail);
+        await updateDoc(userRef, { account: newBalance });
+
+        const txCol = collection(db, "users", fetchedEmail, "transactions");
+        await addDoc(txCol, newTx);
+        showMessage(`Withdrawal of $${withdrawValue} successful!`, "success");
+        setWithdrawAmount("");
+      } catch (err) {
+        console.error(err);
+        showMessage("Withdrawal failed!", "error");
+      }
+    }, 2000);
+  };
+
+  // Logout / Switch user
+  const logoutUser = () => {
+    setFetchedEmail("");
+    setUserName("");
+    setUserAccount(0);
+    setUserAge(0);
+    setTransactions([]);
+    setEmail("");
+  };
+
+  const balanceColor = balanceAnim.interpolate({ inputRange: [0, 1], outputRange: ["#fff", "#4CAF50"] });
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      {/* TOAST */}
-      {toast && (
+      {message && (
         <Animated.View
-          style={[styles.toast, { backgroundColor: toast.type === "success" ? "#34c759" : "#ff3b30", transform: [{ translateY: toastAnim }] }]}
+          style={[
+            styles.messageBox,
+            {
+              opacity: messageAnim,
+              transform: [{ translateY: messageAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
+              backgroundColor: messageType === "error" ? "#FF5252" : messageType === "success" ? "#4CAF50" : "#2196F3",
+            },
+          ]}
         >
-          <Text style={styles.toastText}>{toast.message}</Text>
+          <Text style={styles.messageText}>{message}</Text>
         </Animated.View>
       )}
 
-      {/* USER INFO */}
-      {userName && (
-        <View style={styles.accountCard}>
-          <Image source={{ uri: "https://i.pravatar.cc/100?u=" + userEmail }} style={styles.avatar} />
-          <Text style={styles.welcomeText}>👤 {userName}</Text>
-          <Animated.Text style={[styles.accountText, { color: balanceColor }]}>💰 Balance: ${userAccount.toFixed(2)}</Animated.Text>
-          <Text style={styles.accountText}>🎂 Age: {userAge}</Text>
-        </View>
-      )}
+      {!fetchedEmail ? (
+        <>
+          <Text style={styles.sectionTitle}>Enter User Email</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            placeholderTextColor="#999"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+          <TouchableOpacity
+            style={styles.goButton}
+            onPress={async () => {
+              const success = await fetchUserData(email);
+              if (!success) setEmail("");
+            }}
+          >
+            <Text style={styles.goButtonText}>Login</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <>
+          <TouchableOpacity style={styles.logoutButton} onPress={logoutUser}>
+            <Text style={styles.goButtonText}>Logout / Switch User</Text>
+          </TouchableOpacity>
 
-      {/* TOP-UP */}
-      <Text style={styles.sectionTitle}>Top-Up Account</Text>
-      <View style={styles.card}>
-        <TextInput style={styles.input} placeholder="Enter Amount" placeholderTextColor="#999" value={topUpAmount} onChangeText={setTopUpAmount} keyboardType="numeric" />
-        <View style={styles.quickTopUps}>
-          {quickTopUps.map((amt) => (
-            <TouchableOpacity key={amt} style={styles.quickTopUpBtn} onPress={() => simulateTopUp(amt, "Manual")}>
-              <Text style={styles.quickTopUpText}>${amt}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        <View style={styles.mmRow}>
-          {mobileMoneyProviders.map((p) => (
-            <TouchableOpacity key={p.name} style={[styles.mmBtn, { backgroundColor: p.color }]} onPress={() => simulateTopUp(Number(topUpAmount), p.name)}>
-              <Text style={styles.mmText}>{p.name}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        <TouchableOpacity style={styles.topUpButton} onPress={() => simulateTopUp()}>
-          <Text style={styles.topUpButtonText}>Top-Up Now</Text>
-        </TouchableOpacity>
-      </View>
+          <View style={styles.accountCard}>
+            <Image source={{ uri: `https://i.pravatar.cc/100?u=${fetchedEmail}` }} style={styles.avatar} />
+            <Text style={styles.welcomeText}>👤 {userName}</Text>
+            <Animated.Text style={[styles.accountText, { color: balanceColor }]}>
+              💰 Balance: ${userAccount.toFixed(2)}
+            </Animated.Text>
+            <Text style={styles.accountText}>🎂 Age: {userAge}</Text>
 
-      {/* PRODUCTS */}
-      <Text style={styles.sectionTitle}>Products</Text>
-      <FlatList
-        data={products}
-        numColumns={2}
-        keyExtractor={(item) => item.id}
-        renderItem={renderProduct}
-        contentContainerStyle={{ paddingBottom: 120 }}
-      />
-
-      {/* CART BUTTON */}
-      <TouchableOpacity style={[styles.topUpButton, { backgroundColor: "#007bff" }]} onPress={() => setCartVisible(true)}>
-        <Text style={styles.topUpButtonText}>View Cart ({cart.length})</Text>
-      </TouchableOpacity>
-
-      {/* CART MODAL */}
-      <Modal visible={cartVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: "#222", height: "70%" }]}>
-            <Text style={[styles.modalTitle, { color: "#fff" }]}>My Cart ({cart.length})</Text>
-            <ScrollView>
-              {cart.map((item) => (
-                <View key={item.id} style={[styles.cartItem, { backgroundColor: "#333" }]}>
-                  <Image source={{ uri: item.image }} style={styles.cartImage} />
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={{ fontWeight: "700", color: "#fff" }}>{item.name}</Text>
-                    <Text style={{ color: "#ff7f00", fontWeight: "600" }}>${item.price}</Text>
-                    <Text style={{ color: "#fff" }}>Qty: {item.quantity}</Text>
-                  </View>
-                  <TouchableOpacity onPress={() => removeFromCart(item.id)} style={[styles.smallBtn, { backgroundColor: "#ff3b30" }]}>
-                    <Ionicons name="trash" size={18} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </ScrollView>
-            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 16, textAlign: "center", marginVertical: 10 }}>Total: ${cartTotal}</Text>
-            <TouchableOpacity style={[styles.topUpButton, { backgroundColor: "#34c759" }]} onPress={handleCheckout}>
-              <Text style={styles.topUpButtonText}>Checkout</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.topUpButton, { backgroundColor: "#999", marginTop: 8 }]} onPress={() => setCartVisible(false)}>
-              <Text style={styles.topUpButtonText}>Close</Text>
+            <TouchableOpacity style={styles.showTxBtn} onPress={() => setShowTransactions(!showTransactions)}>
+              <Text style={styles.showTxBtnText}>
+                {showTransactions ? "Hide Transactions" : "Show Transactions"}
+              </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
+
+          {/* Top-Up */}
+          <Text style={styles.sectionTitle}>Top-Up Account</Text>
+          <View style={styles.card}>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter Amount"
+              placeholderTextColor="#999"
+              value={topUpAmount}
+              onChangeText={setTopUpAmount}
+              keyboardType="numeric"
+            />
+            <View style={styles.quickTopUps}>
+              {quickTopUps.map((amt) => (
+                <TouchableOpacity key={amt} style={styles.quickTopUpBtn} onPress={() => simulateTopUp(amt, "Manual")}>
+                  <Text style={styles.quickTopUpText}>${amt}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Mobile Money</Text>
+            <View style={styles.mmRow}>
+              {mobileMoneyProviders.map((provider) => (
+                <TouchableOpacity
+                  key={provider.name}
+                  style={[styles.mmBtn, { backgroundColor: provider.color }]}
+                  onPress={() => simulateTopUp(Number(topUpAmount), provider.name)}
+                >
+                  <Text style={styles.mmText}>{provider.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity style={styles.topUpButton} onPress={() => simulateTopUp()}>
+              <Text style={styles.topUpButtonText}>Top-Up Now</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Withdraw */}
+          <Text style={styles.sectionTitle}>Withdraw / Send Money</Text>
+          <View style={styles.card}>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter Amount"
+              placeholderTextColor="#999"
+              value={withdrawAmount}
+              onChangeText={setWithdrawAmount}
+              keyboardType="numeric"
+            />
+            <TouchableOpacity style={styles.withdrawButton} onPress={simulateWithdraw}>
+              <Text style={styles.topUpButtonText}>Withdraw</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Transactions */}
+          {showTransactions && (
+            <>
+              <Text style={styles.sectionTitle}>Transaction History</Text>
+              {transactions.length ? (
+                <FlatList
+                  data={transactions}
+                  keyExtractor={(item) => item.proof || Math.random().toString()}
+                  renderItem={({ item }) => {
+                    const anim = txAnimValues[item.proof!] || new Animated.Value(1);
+                    return (
+                      <Animated.View
+                        style={{
+                          opacity: anim,
+                          transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
+                          marginBottom: 12,
+                          backgroundColor: "#1a1a1a",
+                          borderRadius: 15,
+                          padding: 14,
+                        }}
+                      >
+                        <Text style={styles.txText}>➡️ To: {item.receiver}</Text>
+                        <Text style={styles.txText}>💲 Amount: {item.amount}</Text>
+                        <Text style={styles.txText}>🕒 Time: {item.timestamp}</Text>
+                        <Text style={styles.txText}>📄 Proof: {item.proof}</Text>
+                        <Text style={[styles.txText, { color: item.status === "Completed" ? "#4CAF50" : item.status === "Pending" ? "#FFD700" : "#FF5252" }]}>
+                          Status: {item.status}
+                        </Text>
+                      </Animated.View>
+                    );
+                  }}
+                />
+              ) : (
+                <Text style={styles.noTx}>No transactions yet.</Text>
+              )}
+            </>
+          )}
+        </>
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { padding: 15, backgroundColor: "#121212", flexGrow: 1 },
-  toast: { position: "absolute", top: 0, left: 20, right: 20, padding: 12, borderRadius: 12, zIndex: 99 },
-  toastText: { color: "#fff", textAlign: "center", fontWeight: "600" },
+  messageBox: { position: "absolute", top: 15, left: 0, right: 0, marginHorizontal: 20, paddingVertical: 10, borderRadius: 10, zIndex: 99 },
+  messageText: { color: "#fff", textAlign: "center", fontWeight: "600" },
   sectionTitle: { fontSize: 22, fontWeight: "700", marginVertical: 12, color: "#fff" },
   input: { width: "100%", backgroundColor: "#1a1a1a", color: "#fff", borderRadius: 12, padding: 14, marginBottom: 12, fontSize: 16 },
-  card: { borderRadius: 20, padding: 10, margin: 6, width: CARD_WIDTH },
+  goButton: { backgroundColor: "#007bff", paddingVertical: 14, borderRadius: 25, marginBottom: 10, alignItems: "center" },
+  goButtonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  logoutButton: { backgroundColor: "#FF5252", paddingVertical: 12, borderRadius: 25, marginBottom: 15, alignItems: "center" },
   accountCard: { backgroundColor: "#1f1f1f", borderRadius: 20, padding: 25, marginBottom: 20, alignItems: "center" },
   avatar: { width: 80, height: 80, borderRadius: 40, marginBottom: 10 },
   welcomeText: { fontSize: 22, fontWeight: "bold", color: "#fff", marginBottom: 10 },
   accountText: { fontSize: 16, color: "#ccc", marginVertical: 2 },
+  showTxBtn: { backgroundColor: "#FF9800", paddingVertical: 10, paddingHorizontal: 20, borderRadius: 25, marginTop: 15 },
+  showTxBtnText: { color: "#fff", fontWeight: "700" },
+  card: { backgroundColor: "#1f1f1f", borderRadius: 20, padding: 20, marginBottom: 20 },
   quickTopUps: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
   quickTopUpBtn: { backgroundColor: "#333", paddingVertical: 8, paddingHorizontal: 16, borderRadius: 15, alignItems: "center" },
   quickTopUpText: { color: "#fff", fontWeight: "600", fontSize: 14 },
@@ -380,19 +385,8 @@ const styles = StyleSheet.create({
   mmBtn: { flex: 1, marginHorizontal: 3, borderRadius: 15, paddingVertical: 12, alignItems: "center" },
   mmText: { color: "#fff", fontWeight: "700", fontSize: 14, textAlign: "center" },
   topUpButton: { backgroundColor: "#FF5722", paddingVertical: 14, borderRadius: 25, marginTop: 10, alignItems: "center" },
+  withdrawButton: { backgroundColor: "#2196F3", paddingVertical: 14, borderRadius: 25, marginTop: 10, alignItems: "center" },
   topUpButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  image: { width: "100%", height: 120, borderRadius: 12 },
-  cardBody: { paddingVertical: 8 },
-  title: { fontWeight: "700", fontSize: 16 },
-  description: { fontSize: 12 },
-  price: { fontWeight: "700", marginTop:6, fontSize: 14 },
-  buttonRow: { flexDirection: "row", justifyContent: "flex-end", marginTop: 8 },
-  smallBtn: { padding: 8, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  featuredBadge: { position: "absolute", top: 10, left: 10, backgroundColor: "#FFD700", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, zIndex: 1 },
-  featuredText: { fontSize: 10, fontWeight: "700", color: "#000" },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center" },
-  modalContent: { width: "90%", borderRadius: 20, padding: 15 },
-  modalTitle: { fontSize: 20, fontWeight: "700", marginBottom: 12, textAlign: "center" },
-  cartItem: { flexDirection: "row", padding: 12, borderRadius: 12, marginVertical: 6, alignItems: "center" },
-  cartImage: { width: 60, height: 60, borderRadius: 12 },
+  txText: { color: "#fff", fontSize: 14, marginBottom: 4 },
+  noTx: { color: "#aaa", textAlign: "center", marginVertical: 10, fontSize: 15 },
 });
