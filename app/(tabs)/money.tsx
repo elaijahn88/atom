@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   FlatList,
   StyleSheet,
-  Modal,
   ScrollView,
   Image,
   useColorScheme,
@@ -14,7 +13,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { db, auth, database, ref, push, onValue } from "../../firebase";
-import { collection, addDoc, doc, updateDoc, onSnapshot } from "firebase/firestore";
+import { collection, addDoc, doc, updateDoc, onSnapshot, getDoc } from "firebase/firestore";
 
 type Account = {
   id: string;
@@ -49,7 +48,7 @@ export default function MoneyManager() {
   const [paymentAmount, setPaymentAmount] = useState("");
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [historyVisible, setHistoryVisible] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"info" | "success" | "error">("info");
@@ -83,7 +82,7 @@ export default function MoneyManager() {
         prevBalances[acc.id] = acc.balance;
       });
       setAccounts(loaded);
-    }, (err) => showMessage("Failed to load accounts", "error"));
+    }, () => showMessage("Failed to load accounts", "error"));
 
     return () => unsubscribe();
   }, []);
@@ -118,8 +117,7 @@ export default function MoneyManager() {
       logActivity(`Created ${creatingType} "${name}"`);
       showMessage(`${creatingType} "${name}" created.`, "success");
       setModalVisible(false); setName(""); setDescription(""); setDeposit("");
-    } catch (err) {
-      console.error(err);
+    } catch {
       showMessage("Failed to create account.", "error");
     }
   };
@@ -148,8 +146,7 @@ export default function MoneyManager() {
       logActivity(`Deposited $${amt.toFixed(2)} to ${selectedAccount.name}`);
       showMessage(`Deposited $${amt.toFixed(2)} to ${selectedAccount.name}`, "success");
       setPaymentAmount(""); setSelectedAccount(null);
-    } catch (err) {
-      console.error(err);
+    } catch {
       showMessage("Deposit failed.", "error");
     }
   };
@@ -160,9 +157,22 @@ export default function MoneyManager() {
     push(ref(database, "activity/" + safeEmail), { action, timestamp: Date.now() });
   };
 
+  // --- Check loan eligibility for Bank ---
+  const checkLoanEligibility = (account: Account) => {
+    const eligible = account.balance >= 100 ? "Eligible" : "Not Eligible";
+    showMessage(`Loan eligibility for ${account.name}: ${eligible}`, "info");
+  };
+
+  // --- View SACCO client history ---
+  const viewClientHistory = (account: Account) => {
+    const relatedTx = transactions.filter((t) => t.accountId === account.id);
+    if (relatedTx.length === 0) return showMessage("No client transactions yet.", "info");
+    let summary = relatedTx.map((t) => `${t.type}: $${t.amount.toFixed(2)}`).join("\n");
+    showMessage(`Client History for ${account.name}:\n${summary}`, "info");
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: isDark ? "#0b0b0b" : "#f7f7f8" }]}>
-      {/* Message */}
       {message ? (
         <Animated.View
           style={[
@@ -178,7 +188,6 @@ export default function MoneyManager() {
         </Animated.View>
       ) : null}
 
-      {/* Header */}
       <View style={styles.headerRow}>
         <View>
           <Text style={[styles.title, { color: isDark ? "#fff" : "#111" }]}>Money Manager</Text>
@@ -187,7 +196,6 @@ export default function MoneyManager() {
         <Image source={{ uri: avatarUri }} style={styles.avatar} />
       </View>
 
-      {/* Account Creation */}
       <View style={styles.buttonRow}>
         {(["Bank", "SACCO", "Mobile Money"] as Account["type"][]).map((t) => (
           <TouchableOpacity
@@ -201,16 +209,26 @@ export default function MoneyManager() {
         ))}
       </View>
 
-      {/* Transaction History toggle */}
       <TouchableOpacity
         style={[styles.historyBtn, { backgroundColor: isDark ? "#111827" : "#007AFF" }]}
-        onPress={() => setHistoryVisible(true)}
+        onPress={() => setShowHistory(!showHistory)}
       >
-        <Ionicons name="time-outline" size={18} color="#fff" />
-        <Text style={styles.historyText}>Show Transaction History</Text>
+        <Ionicons name={showHistory ? "eye-off-outline" : "time-outline"} size={18} color="#fff" />
+        <Text style={styles.historyText}>{showHistory ? "Hide" : "Show"} Transaction History</Text>
       </TouchableOpacity>
 
-      {/* Account list */}
+      {showHistory && (
+        <ScrollView style={{ maxHeight: 220, marginBottom: 10 }}>
+          {transactions.length === 0 && <Text style={{ color: isDark ? "#aaa" : "#666", textAlign: "center", padding: 12 }}>No transactions yet.</Text>}
+          {transactions.map((t) => (
+            <View key={t.id} style={[styles.transactionCard, { backgroundColor: isDark ? "#0b0b0b" : "#f3f3f3" }]}>
+              <Text style={{ color: isDark ? "#fff" : "#111" }}>{t.type} • ${t.amount.toFixed(2)}</Text>
+              <Text style={{ color: "#888", fontSize: 12 }}>{new Date(t.timestamp).toLocaleString()}</Text>
+            </View>
+          ))}
+        </ScrollView>
+      )}
+
       <FlatList
         data={accounts}
         keyExtractor={(i) => i.id}
@@ -224,8 +242,12 @@ export default function MoneyManager() {
               </View>
               <View style={{ alignItems: "flex-end" }}>
                 <Text style={{ color: "#00a650", fontWeight: "800" }}>${item.balance.toFixed(2)}</Text>
-                <TouchableOpacity style={styles.payBtn} onPress={() => setSelectedAccount(item)}>
-                  <Text style={styles.payBtnText}>Deposit</Text>
+                <TouchableOpacity style={styles.payBtn} onPress={() => {
+                  if (item.type === "Bank") checkLoanEligibility(item);
+                  else if (item.type === "SACCO") viewClientHistory(item);
+                  else setSelectedAccount(item);
+                }}>
+                  <Text style={styles.payBtnText}>{item.type === "Bank" ? "Check Loan" : item.type === "SACCO" ? "View Clients" : "Deposit"}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -233,15 +255,14 @@ export default function MoneyManager() {
         )}
       />
 
-      {/* Create Account Modal */}
-      <Modal visible={modalVisible} transparent animationType="slide">
+      {/* Modals */}
+      {modalVisible && (
         <ScrollView contentContainerStyle={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: isDark ? "#111" : "#fff" }]}>
             <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#111" }]}>Create {creatingType}</Text>
             <TextInput placeholder={`${creatingType} Name`} placeholderTextColor={isDark ? "#666" : "#999"} style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]} value={name} onChangeText={setName} />
             <TextInput placeholder="Description" placeholderTextColor={isDark ? "#666" : "#999"} style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]} value={description} onChangeText={setDescription} />
             <TextInput placeholder="Initial Deposit" placeholderTextColor={isDark ? "#666" : "#999"} style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]} value={deposit} onChangeText={setDeposit} keyboardType="numeric" />
-
             <TouchableOpacity style={styles.modalBtn} onPress={createAccount}>
               <Text style={styles.modalBtnText}>Create {creatingType}</Text>
             </TouchableOpacity>
@@ -250,13 +271,12 @@ export default function MoneyManager() {
             </TouchableOpacity>
           </View>
         </ScrollView>
-      </Modal>
+      )}
 
-      {/* Deposit Modal */}
-      <Modal visible={!!selectedAccount} transparent animationType="fade">
+      {selectedAccount && (
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: isDark ? "#111" : "#fff" }]}>
-            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#111" }]}>Deposit to {selectedAccount?.name}</Text>
+            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#111" }]}>Deposit to {selectedAccount.name}</Text>
             <TextInput placeholder="Amount" placeholderTextColor={isDark ? "#666" : "#999"} style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]} value={paymentAmount} onChangeText={setPaymentAmount} keyboardType="numeric" />
             <TouchableOpacity style={styles.modalBtn} onPress={sendPayment}>
               <Text style={styles.modalBtnText}>Deposit</Text>
@@ -266,28 +286,8 @@ export default function MoneyManager() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      )}
 
-      {/* Transaction History Modal */}
-      <Modal visible={historyVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? "#111" : "#fff" }]}>
-            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#111" }]}>Transaction History</Text>
-            <ScrollView style={{ maxHeight: 420, marginTop: 8 }}>
-              {transactions.length === 0 && <Text style={{ color: isDark ? "#aaa" : "#666", textAlign: "center", padding: 20 }}>No transactions yet.</Text>}
-              {transactions.map((t) => (
-                <View key={t.id} style={[styles.transactionCard, { backgroundColor: isDark ? "#0b0b0b" : "#f3f3f3" }]}>
-                  <Text style={{ color: isDark ? "#fff" : "#111" }}>{t.type} • ${t.amount.toFixed(2)}</Text>
-                  <Text style={{ color: "#888", fontSize: 12 }}>{new Date(t.timestamp).toLocaleString()}</Text>
-                </View>
-              ))}
-            </ScrollView>
-            <TouchableOpacity style={[styles.modalBtn, { marginTop: 12 }]} onPress={() => setHistoryVisible(false)}>
-              <Text style={styles.modalBtnText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -308,10 +308,10 @@ const styles = StyleSheet.create({
   accountName: { fontSize: 16, fontWeight: "800", marginBottom: 4 },
   payBtn: { marginTop: 8, backgroundColor: "#111827", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8 },
   payBtnText: { color: "#fff", fontWeight: "700" },
+  input: { borderRadius: 10, padding: 12, fontSize: 16, marginBottom: 12 },
   modalOverlay: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.6)", padding: 20 },
   modalContent: { width: "100%", borderRadius: 14, padding: 18 },
   modalTitle: { fontSize: 20, fontWeight: "900", marginBottom: 12, textAlign: "center" },
-  input: { borderRadius: 10, padding: 12, fontSize: 16, marginBottom: 12 },
   modalBtn: { backgroundColor: "#10B981", padding: 12, borderRadius: 10, alignItems: "center", marginTop: 8 },
   modalBtnText: { color: "#fff", fontWeight: "800" },
   transactionCard: { padding: 12, borderRadius: 10, marginBottom: 10 },
