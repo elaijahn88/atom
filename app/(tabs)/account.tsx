@@ -1,392 +1,319 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
-  Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   StyleSheet,
+  Text,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   FlatList,
-  Animated,
-  Image,
+  Dimensions,
+  StatusBar,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { auth, db } from "../../firebase";
 import {
-  doc,
-  getDoc,
-  collection,
-  getDocs,
-  addDoc,
-  updateDoc,
-  onSnapshot,
-} from "firebase/firestore";
-import { db } from "../../firebase";
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
+import { doc, setDoc, getDoc, onSnapshot, collection } from "firebase/firestore";
+import Video from "react-native-video";
 
-type Transaction = {
-  receiver: string;
-  amount: string;
-  timestamp: string;
-  proof?: string;
-  status?: "Pending" | "Completed" | "Failed";
-};
+interface IUserData {
+  email: string;
+  name: string;
+  account: number;
+  age: number;
+  createdAt: Date;
+  avatar?: string;
+}
 
-export default function MobileMoneyManager() {
-  const [email, setEmail] = useState(""); // For switching users
-  const [fetchedEmail, setFetchedEmail] = useState("");
-  const [userName, setUserName] = useState("");
-  const [userAccount, setUserAccount] = useState(0);
-  const [userAge, setUserAge] = useState(0);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [topUpAmount, setTopUpAmount] = useState("");
-  const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [showTransactions, setShowTransactions] = useState(false);
+const { width, height } = Dimensions.get("window");
+
+export default function App() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [name, setName] = useState("");
+  const [account, setAccount] = useState("");
+  const [age, setAge] = useState("");
+  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState<"success" | "error" | "info">("info");
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState<IUserData | null>(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [videos, setVideos] = useState<any[]>([]);
+  const [showVideoFeed, setShowVideoFeed] = useState(false);
 
-  const messageAnim = useRef(new Animated.Value(0)).current;
-  const balanceAnim = useRef(new Animated.Value(0)).current;
-  const txAnimValues = useRef<{ [key: string]: Animated.Value }>({}).current;
+  const videoRefs = useRef<Video[]>([]);
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems.length > 0) setCurrentIndex(viewableItems[0].index);
+  });
+  const viewConfigRef = useRef({ viewAreaCoveragePercentThreshold: 80 });
 
-  const quickTopUps = [5, 10, 20, 50, 100];
+  // 🔄 Fetch videos from Firestore
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "videos"), (snapshot) => {
+      const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      setVideos(data);
+    });
+    return () => unsubscribe();
+  }, []);
 
-  const mobileMoneyProviders = [
-    { name: "MTN Mobile Money", color: "#FFD700" },
-    { name: "Airtel Money", color: "#FF4500" },
-    { name: "Other MM", color: "#4CAF50" },
-  ];
+  const validateEmail = (email: string): boolean =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-  const showMessage = (text: string, type: "success" | "error" | "info" = "info") => {
-    setMessage(text);
-    setMessageType(type);
-    Animated.timing(messageAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
-    setTimeout(() => {
-      Animated.timing(messageAnim, { toValue: 0, duration: 500, useNativeDriver: true }).start(() => setMessage(""));
-    }, 4000);
+  const setMsg = (msg: string) => {
+    setMessage(msg);
+    setTimeout(() => setMessage(""), 5000);
+    return false;
   };
 
-  // Fetch user
-  const fetchUserData = async (userEmail: string) => {
-    try {
-      const userRef = doc(db, "users", userEmail);
-      const userSnap = await getDoc(userRef);
-      if (!userSnap.exists()) {
-        showMessage("User not found!", "error");
-        return false;
-      }
-      const data = userSnap.data();
-      setFetchedEmail(userEmail);
-      setUserName(data.name || "");
-      setUserAccount(data.account || 0);
-      setUserAge(data.age || 0);
+  const validateForm = (): boolean => {
+    if (!email.trim()) return setMsg("Email is required");
+    if (!validateEmail(email)) return setMsg("Enter a valid email");
+    if (!password.trim()) return setMsg("Password is required");
+    if (!isLoginMode) {
+      if (!name.trim()) return setMsg("Full name is required");
+      if (password !== confirmPassword) return setMsg("Passwords do not match");
+      if (isNaN(Number(age)) || Number(age) <= 0) return setMsg("Enter valid age");
+    }
+    return true;
+  };
 
-      const txCol = collection(db, "users", userEmail, "transactions");
-      const txSnap = await getDocs(txCol);
-      const txList: Transaction[] = [];
-      txSnap.forEach((doc) => txList.push(doc.data() as Transaction));
-      setTransactions(txList.reverse());
-      return true;
-    } catch (err) {
-      console.error(err);
-      showMessage("Failed to fetch user data.", "error");
-      return false;
+  const handleSignUp = async () => {
+    if (!validateForm()) return;
+    setLoading(true);
+    setMessage("");
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      const userData: IUserData = {
+        email: user.email || email,
+        name,
+        account: Number(account) || 0,
+        age: Number(age) || 0,
+        createdAt: new Date(),
+        avatar: `https://i.pravatar.cc/150?u=${email}`,
+      };
+
+      await setDoc(doc(db, "users", user.uid), userData);
+      setUser(userData);
+      setIsLoggedIn(true);
+      setMessage("✅ Account created successfully!");
+    } catch (err: any) {
+      setMsg("Error: " + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Balance listener
+  const handleSignIn = async () => {
+    if (!validateForm()) return;
+    setLoading(true);
+    setMessage("");
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      const docRef = doc(db, "users", user.uid);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data() as IUserData;
+        setUser(data);
+        setMessage(`✅ Welcome back, ${data.name || "User"}!`);
+      }
+      setIsLoggedIn(true);
+    } catch (err: any) {
+      setMsg("Error: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    setIsLoggedIn(false);
+    setUser(null);
+    setShowVideoFeed(false);
+  };
+
+  // 🎥 Show welcome video for 10 seconds, then show feed
   useEffect(() => {
-    if (!fetchedEmail) return;
-    const userRef = doc(db, "users", fetchedEmail);
-    const unsubscribe = onSnapshot(userRef, (snap) => {
-      const data = snap.data();
-      if (!data) return;
-      if (data.account !== userAccount) {
-        setUserAccount(data.account);
-        flashBalance();
-        showMessage(`Balance updated: $${data.account}`, "info");
-      }
-    });
-    return () => unsubscribe();
-  }, [fetchedEmail, userAccount]);
+    if (isLoggedIn && user) {
+      const timer = setTimeout(() => setShowVideoFeed(true), 10000);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoggedIn, user]);
 
-  const flashBalance = () => {
-    balanceAnim.setValue(0);
-    Animated.sequence([
-      Animated.timing(balanceAnim, { toValue: 1, duration: 300, useNativeDriver: false }),
-      Animated.timing(balanceAnim, { toValue: 0, duration: 300, useNativeDriver: false }),
-    ]).start();
-  };
-
-  const animateTransaction = (proof: string) => {
-    if (!txAnimValues[proof]) txAnimValues[proof] = new Animated.Value(0);
-    Animated.timing(txAnimValues[proof], { toValue: 1, duration: 500, useNativeDriver: true }).start();
-  };
-
-  const simulateTopUp = async (amount?: number, method?: string) => {
-    const topUpValue = amount ?? Number(topUpAmount);
-    if (!topUpValue || !fetchedEmail) return showMessage("Enter valid amount.", "error");
-
-    const newTx: Transaction = {
-      receiver: method || "Top-Up",
-      amount: topUpValue.toString(),
-      timestamp: new Date().toLocaleString(),
-      proof: `MM#${Math.floor(Math.random() * 10000)}`,
-      status: "Pending",
-    };
-    setTransactions([newTx, ...transactions]);
-    animateTransaction(newTx.proof!);
-    setTopUpAmount("");
-
-    setTimeout(async () => {
-      try {
-        newTx.status = "Completed";
-        setTransactions((prev) => prev.map((tx) => (tx.proof === newTx.proof ? newTx : tx)));
-
-        const newBalance = userAccount + topUpValue;
-        setUserAccount(newBalance);
-        flashBalance();
-
-        const userRef = doc(db, "users", fetchedEmail);
-        await updateDoc(userRef, { account: newBalance });
-
-        const txCol = collection(db, "users", fetchedEmail, "transactions");
-        await addDoc(txCol, newTx);
-        showMessage(`Top-Up of $${topUpValue} successful!`, "success");
-      } catch (err) {
-        console.error(err);
-        showMessage("Top-Up failed!", "error");
-      }
-    }, 2000);
-  };
-
-  // Withdraw / Send Money
-  const simulateWithdraw = async () => {
-    const withdrawValue = Number(withdrawAmount);
-    if (!withdrawValue || withdrawValue <= 0) return showMessage("Enter valid amount.", "error");
-    if (withdrawValue > userAccount) return showMessage("Insufficient balance.", "error");
-
-    const newTx: Transaction = {
-      receiver: "Withdraw",
-      amount: withdrawValue.toString(),
-      timestamp: new Date().toLocaleString(),
-      proof: `WD#${Math.floor(Math.random() * 10000)}`,
-      status: "Pending",
-    };
-    setTransactions([newTx, ...transactions]);
-    animateTransaction(newTx.proof!);
-
-    setTimeout(async () => {
-      try {
-        newTx.status = "Completed";
-        setTransactions((prev) => prev.map((tx) => (tx.proof === newTx.proof ? newTx : tx)));
-
-        const newBalance = userAccount - withdrawValue;
-        setUserAccount(newBalance);
-        flashBalance();
-
-        const userRef = doc(db, "users", fetchedEmail);
-        await updateDoc(userRef, { account: newBalance });
-
-        const txCol = collection(db, "users", fetchedEmail, "transactions");
-        await addDoc(txCol, newTx);
-        showMessage(`Withdrawal of $${withdrawValue} successful!`, "success");
-        setWithdrawAmount("");
-      } catch (err) {
-        console.error(err);
-        showMessage("Withdrawal failed!", "error");
-      }
-    }, 2000);
-  };
-
-  // Logout / Switch user
-  const logoutUser = () => {
-    setFetchedEmail("");
-    setUserName("");
-    setUserAccount(0);
-    setUserAge(0);
-    setTransactions([]);
-    setEmail("");
-  };
-
-  const balanceColor = balanceAnim.interpolate({ inputRange: [0, 1], outputRange: ["#fff", "#4CAF50"] });
-
-  return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {message && (
-        <Animated.View
-          style={[
-            styles.messageBox,
-            {
-              opacity: messageAnim,
-              transform: [{ translateY: messageAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
-              backgroundColor: messageType === "error" ? "#FF5252" : messageType === "success" ? "#4CAF50" : "#2196F3",
-            },
-          ]}
-        >
-          <Text style={styles.messageText}>{message}</Text>
-        </Animated.View>
-      )}
-
-      {!fetchedEmail ? (
-        <>
-          <Text style={styles.sectionTitle}>Enter User Email</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#999"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
+  // 🔹 Logged-in Screens
+  if (isLoggedIn && user) {
+    // 🎬 Welcome video
+    if (!showVideoFeed) {
+      return (
+        <View style={styles.darkContainer}>
+          <StatusBar hidden />
+          <Video
+            source={{ uri: "https://xlijah.com/soso.mp4" }}
+            style={styles.fullscreenVideo}
+            resizeMode="cover"
+            repeat
+            muted={false}
+            paused={false}
+            playInBackground={false}
+            playWhenInactive={false}
+            ignoreSilentSwitch="obey"
           />
-          <TouchableOpacity
-            style={styles.goButton}
-            onPress={async () => {
-              const success = await fetchUserData(email);
-              if (!success) setEmail("");
-            }}
-          >
-            <Text style={styles.goButtonText}>Login</Text>
-          </TouchableOpacity>
-        </>
-      ) : (
-        <>
-          <TouchableOpacity style={styles.logoutButton} onPress={logoutUser}>
-            <Text style={styles.goButtonText}>Logout / Switch User</Text>
-          </TouchableOpacity>
+        </View>
+      );
+    }
 
-          <View style={styles.accountCard}>
-            <Image source={{ uri: `https://i.pravatar.cc/100?u=${fetchedEmail}` }} style={styles.avatar} />
-            <Text style={styles.welcomeText}>👤 {userName}</Text>
-            <Animated.Text style={[styles.accountText, { color: balanceColor }]}>
-              💰 Balance: ${userAccount.toFixed(2)}
-            </Animated.Text>
-            <Text style={styles.accountText}>🎂 Age: {userAge}</Text>
-
-            <TouchableOpacity style={styles.showTxBtn} onPress={() => setShowTransactions(!showTransactions)}>
-              <Text style={styles.showTxBtnText}>
-                {showTransactions ? "Hide Transactions" : "Show Transactions"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Top-Up */}
-          <Text style={styles.sectionTitle}>Top-Up Account</Text>
-          <View style={styles.card}>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter Amount"
-              placeholderTextColor="#999"
-              value={topUpAmount}
-              onChangeText={setTopUpAmount}
-              keyboardType="numeric"
-            />
-            <View style={styles.quickTopUps}>
-              {quickTopUps.map((amt) => (
-                <TouchableOpacity key={amt} style={styles.quickTopUpBtn} onPress={() => simulateTopUp(amt, "Manual")}>
-                  <Text style={styles.quickTopUpText}>${amt}</Text>
-                </TouchableOpacity>
-              ))}
+    // 🎞️ Firestore video feed (looping forever)
+    return (
+      <View style={styles.darkContainer}>
+        <StatusBar hidden />
+        <FlatList
+          data={videos}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item, index }) => (
+            <View style={{ width, height }}>
+              <Video
+                ref={(ref) => (videoRefs.current[index] = ref!)}
+                source={{ uri: item.uri }}
+                style={styles.video}
+                resizeMode="cover"
+                repeat
+                muted={false}
+                paused={currentIndex !== index}
+                onError={(e) => console.warn("Video error:", e)}
+                onBuffer={() => {}}
+                playInBackground={false}
+                playWhenInactive={false}
+                ignoreSilentSwitch="obey"
+              />
             </View>
-            <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Mobile Money</Text>
-            <View style={styles.mmRow}>
-              {mobileMoneyProviders.map((provider) => (
-                <TouchableOpacity
-                  key={provider.name}
-                  style={[styles.mmBtn, { backgroundColor: provider.color }]}
-                  onPress={() => simulateTopUp(Number(topUpAmount), provider.name)}
-                >
-                  <Text style={styles.mmText}>{provider.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <TouchableOpacity style={styles.topUpButton} onPress={() => simulateTopUp()}>
-              <Text style={styles.topUpButtonText}>Top-Up Now</Text>
-            </TouchableOpacity>
-          </View>
+          )}
+          pagingEnabled
+          showsVerticalScrollIndicator={false}
+          onViewableItemsChanged={onViewableItemsChanged.current}
+          viewabilityConfig={viewConfigRef.current}
+        />
+      </View>
+    );
+  }
 
-          {/* Withdraw */}
-          <Text style={styles.sectionTitle}>Withdraw / Send Money</Text>
-          <View style={styles.card}>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter Amount"
-              placeholderTextColor="#999"
-              value={withdrawAmount}
-              onChangeText={setWithdrawAmount}
-              keyboardType="numeric"
-            />
-            <TouchableOpacity style={styles.withdrawButton} onPress={simulateWithdraw}>
-              <Text style={styles.topUpButtonText}>Withdraw</Text>
-            </TouchableOpacity>
-          </View>
+  // 🔐 Login/Signup Screen
+  return (
+    <KeyboardAvoidingView
+      style={styles.darkContainer}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <View style={styles.header}>
+          <Ionicons name="lock-closed-outline" size={52} color="#00BFFF" />
+          <Text style={styles.darkTitle}>
+            {isLoginMode ? "Welcome Back" : "Join the Community"}
+          </Text>
+          <Text style={styles.darkSubtitle}>
+            {isLoginMode ? "Sign in to continue" : "Create your account below"}
+          </Text>
+        </View>
 
-          {/* Transactions */}
-          {showTransactions && (
+        <View style={styles.darkForm}>
+          <DarkField label="Email" value={email} placeholder="you@example.com" onChangeText={setEmail} />
+          <DarkPasswordField label="Password" value={password} onChangeText={setPassword} show={showPassword} toggle={() => setShowPassword(!showPassword)} />
+          {!isLoginMode && (
+            <DarkPasswordField label="Confirm Password" value={confirmPassword} onChangeText={setConfirmPassword} show={showConfirmPassword} toggle={() => setShowConfirmPassword(!showConfirmPassword)} />
+          )}
+          {!isLoginMode && (
             <>
-              <Text style={styles.sectionTitle}>Transaction History</Text>
-              {transactions.length ? (
-                <FlatList
-                  data={transactions}
-                  keyExtractor={(item) => item.proof || Math.random().toString()}
-                  renderItem={({ item }) => {
-                    const anim = txAnimValues[item.proof!] || new Animated.Value(1);
-                    return (
-                      <Animated.View
-                        style={{
-                          opacity: anim,
-                          transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
-                          marginBottom: 12,
-                          backgroundColor: "#1a1a1a",
-                          borderRadius: 15,
-                          padding: 14,
-                        }}
-                      >
-                        <Text style={styles.txText}>➡️ To: {item.receiver}</Text>
-                        <Text style={styles.txText}>💲 Amount: {item.amount}</Text>
-                        <Text style={styles.txText}>🕒 Time: {item.timestamp}</Text>
-                        <Text style={styles.txText}>📄 Proof: {item.proof}</Text>
-                        <Text style={[styles.txText, { color: item.status === "Completed" ? "#4CAF50" : item.status === "Pending" ? "#FFD700" : "#FF5252" }]}>
-                          Status: {item.status}
-                        </Text>
-                      </Animated.View>
-                    );
-                  }}
-                />
-              ) : (
-                <Text style={styles.noTx}>No transactions yet.</Text>
-              )}
+              <DarkField label="Full Name" value={name} onChangeText={setName} />
+              <DarkField label="Account" value={account} onChangeText={setAccount} keyboardType="numeric" />
+              <DarkField label="Age" value={age} onChangeText={setAge} keyboardType="numeric" />
             </>
           )}
-        </>
-      )}
-    </ScrollView>
+          <TouchableOpacity
+            style={[styles.darkButton, loading && { opacity: 0.6 }]}
+            onPress={isLoginMode ? handleSignIn : handleSignUp}
+            disabled={loading}
+          >
+            <Text style={styles.darkButtonText}>{isLoginMode ? "Sign In" : "Sign Up"}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => setIsLoginMode(!isLoginMode)}>
+            <Text style={styles.switchText}>
+              {isLoginMode ? "Don’t have an account? Sign Up" : "Already have one? Sign In"}
+            </Text>
+          </TouchableOpacity>
+
+          {message ? (
+            <Text style={[styles.msg, message.includes("✅") ? { color: "#4CAF50" } : { color: "#FF5252" }]}>
+              {message}
+            </Text>
+          ) : null}
+        </View>
+
+        {loading && <ActivityIndicator size="large" color="#00BFFF" />}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
+/* 🔹 Reusable Fields */
+const DarkField = ({ label, value, onChangeText, keyboardType = "default", placeholder }: any) => (
+  <View style={{ marginBottom: 14 }}>
+    <Text style={styles.darkLabel}>{label}</Text>
+    <TextInput
+      style={styles.darkInput}
+      placeholder={placeholder}
+      placeholderTextColor="#666"
+      value={value}
+      onChangeText={onChangeText}
+      keyboardType={keyboardType}
+    />
+  </View>
+);
+
+const DarkPasswordField = ({ label, value, onChangeText, show, toggle }: any) => (
+  <View style={{ marginBottom: 14 }}>
+    <Text style={styles.darkLabel}>{label}</Text>
+    <View style={{ flexDirection: "row", alignItems: "center" }}>
+      <TextInput
+        style={[styles.darkInput, { flex: 1 }]}
+        placeholder="••••••"
+        placeholderTextColor="#666"
+        value={value}
+        onChangeText={onChangeText}
+        secureTextEntry={!show}
+      />
+      <TouchableOpacity onPress={toggle} style={{ padding: 4 }}>
+        <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={20} color="#999" />
+      </TouchableOpacity>
+    </View>
+  </View>
+);
+
+/* 🎨 Styles */
 const styles = StyleSheet.create({
-  container: { padding: 15, backgroundColor: "#121212", flexGrow: 1 },
-  messageBox: { position: "absolute", top: 15, left: 0, right: 0, marginHorizontal: 20, paddingVertical: 10, borderRadius: 10, zIndex: 99 },
-  messageText: { color: "#fff", textAlign: "center", fontWeight: "600" },
-  sectionTitle: { fontSize: 22, fontWeight: "700", marginVertical: 12, color: "#fff" },
-  input: { width: "100%", backgroundColor: "#1a1a1a", color: "#fff", borderRadius: 12, padding: 14, marginBottom: 12, fontSize: 16 },
-  goButton: { backgroundColor: "#007bff", paddingVertical: 14, borderRadius: 25, marginBottom: 10, alignItems: "center" },
-  goButtonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-  logoutButton: { backgroundColor: "#FF5252", paddingVertical: 12, borderRadius: 25, marginBottom: 15, alignItems: "center" },
-  accountCard: { backgroundColor: "#1f1f1f", borderRadius: 20, padding: 25, marginBottom: 20, alignItems: "center" },
-  avatar: { width: 80, height: 80, borderRadius: 40, marginBottom: 10 },
-  welcomeText: { fontSize: 22, fontWeight: "bold", color: "#fff", marginBottom: 10 },
-  accountText: { fontSize: 16, color: "#ccc", marginVertical: 2 },
-  showTxBtn: { backgroundColor: "#FF9800", paddingVertical: 10, paddingHorizontal: 20, borderRadius: 25, marginTop: 15 },
-  showTxBtnText: { color: "#fff", fontWeight: "700" },
-  card: { backgroundColor: "#1f1f1f", borderRadius: 20, padding: 20, marginBottom: 20 },
-  quickTopUps: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
-  quickTopUpBtn: { backgroundColor: "#333", paddingVertical: 8, paddingHorizontal: 16, borderRadius: 15, alignItems: "center" },
-  quickTopUpText: { color: "#fff", fontWeight: "600", fontSize: 14 },
-  mmRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
-  mmBtn: { flex: 1, marginHorizontal: 3, borderRadius: 15, paddingVertical: 12, alignItems: "center" },
-  mmText: { color: "#fff", fontWeight: "700", fontSize: 14, textAlign: "center" },
-  topUpButton: { backgroundColor: "#FF5722", paddingVertical: 14, borderRadius: 25, marginTop: 10, alignItems: "center" },
-  withdrawButton: { backgroundColor: "#2196F3", paddingVertical: 14, borderRadius: 25, marginTop: 10, alignItems: "center" },
-  topUpButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  txText: { color: "#fff", fontSize: 14, marginBottom: 4 },
-  noTx: { color: "#aaa", textAlign: "center", marginVertical: 10, fontSize: 15 },
+  darkContainer: { flex: 1, backgroundColor: "#0a0a0a" },
+  scrollContainer: { flexGrow: 1, justifyContent: "center", padding: 20 },
+  header: { alignItems: "center", marginBottom: 30 },
+  darkTitle: { fontSize: 26, fontWeight: "700", color: "#fff", marginTop: 10 },
+  darkSubtitle: { color: "#999", fontSize: 15, marginTop: 4 },
+  darkForm: { backgroundColor: "#1a1a1a", padding: 24, borderRadius: 20 },
+  darkLabel: { color: "#ccc", fontSize: 14, marginBottom: 4 },
+  darkInput: { backgroundColor: "#111", color: "#fff", borderRadius: 10, paddingVertical: 12, paddingHorizontal: 14, fontSize: 16 },
+  darkButton: { backgroundColor: "#00BFFF", paddingVertical: 14, borderRadius: 12, alignItems: "center", marginTop: 10 },
+  darkButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  switchText: { color: "#00BFFF", textAlign: "center", marginTop: 16 },
+  msg: { textAlign: "center", marginTop: 12, fontSize: 14 },
+  fullscreenVideo: { position: "absolute", top: 0, left: 0, width: "100%", height: "100%" },
+  video: { width: "100%", height: "100%" },
 });
