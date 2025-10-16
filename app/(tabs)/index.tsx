@@ -12,7 +12,6 @@ import {
   FlatList,
   Dimensions,
   StatusBar,
-  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase";
@@ -21,14 +20,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
 } from "firebase/auth";
-import {
-  doc,
-  setDoc,
-  getDoc,
-  updateDoc,
-  onSnapshot,
-  collection,
-} from "firebase/firestore";
+import { doc, setDoc, getDoc, onSnapshot, collection } from "firebase/firestore";
 import Video from "react-native-video";
 
 interface IUserData {
@@ -115,8 +107,8 @@ export default function App() {
 
       await setDoc(doc(db, "users", user.uid), userData);
       setUser(userData);
-      setMessage("✅ Account created successfully!");
       setIsLoggedIn(true);
+      setMessage("✅ Account created successfully!");
     } catch (err: any) {
       setMsg("Error: " + err.message);
     } finally {
@@ -146,11 +138,6 @@ export default function App() {
     }
   };
 
-  const handleLike = async (videoId: string, currentLikes: number) => {
-    const videoRef = doc(db, "videos", videoId);
-    await updateDoc(videoRef, { likes: currentLikes + 1 });
-  };
-
   const handleLogout = async () => {
     await signOut(auth);
     setIsLoggedIn(false);
@@ -158,34 +145,21 @@ export default function App() {
     setShowVideoFeed(false);
   };
 
-  // 🎥 After login/signup show soso video first
+  // 🎥 After login/signup show welcome video for 10 seconds
   useEffect(() => {
     if (isLoggedIn && user) {
-      const timer = setTimeout(() => {
-        setShowVideoFeed(true);
-      }, 10000); // ⏱️ 10 seconds
+      const timer = setTimeout(() => setShowVideoFeed(true), 10000);
       return () => clearTimeout(timer);
     }
   }, [isLoggedIn, user]);
 
+  // 🔹 Logged-in Screens
   if (isLoggedIn && user) {
+    // Welcome video
     if (!showVideoFeed) {
       return (
         <View style={styles.darkContainer}>
           <StatusBar hidden />
-
-          {/* 🔝 Avatar + Logout */}
-          <View style={styles.topBar}>
-            <TouchableOpacity onPress={handleLogout}>
-              <Ionicons name="log-out-outline" size={26} color="#fff" />
-            </TouchableOpacity>
-            <View style={styles.userSection}>
-              <Image source={{ uri: user.avatar }} style={styles.avatar} />
-              <Text style={styles.userName}>{user.name}</Text>
-            </View>
-          </View>
-
-          {/* 🎥 Full-screen welcome video */}
           <Video
             source={{ uri: "https://xlijah.com/soso.mp4" }}
             style={styles.fullscreenVideo}
@@ -193,50 +167,17 @@ export default function App() {
             repeat
             paused={false}
             muted={false}
-            onError={(err) => console.error("Video error:", err)}
           />
-
-          <View style={styles.centerOverlay}>
-            <Text style={styles.overlayText}>Welcome, {user.name}!</Text>
-          </View>
         </View>
       );
     }
 
-    // 🎬 Video Feed: AI + Physics + Firestore videos
-    const feed = [
-      {
-        id: "ai1",
-        title: "AI Development",
-        uri: "https://xlijah.com/pics/ai_dev.mp4",
-        likes: 54,
-        comments: 10,
-      },
-      {
-        id: "ph1",
-        title: "Physics Inventions",
-        uri: "https://xlijah.com/pics/physics_invention.mp4",
-        likes: 39,
-        comments: 5,
-      },
-      ...videos,
-    ];
-
+    // Firestore video feed
     return (
       <View style={styles.darkContainer}>
         <StatusBar hidden />
-        <View style={styles.topBar}>
-          <TouchableOpacity onPress={handleLogout}>
-            <Ionicons name="log-out-outline" size={26} color="#fff" />
-          </TouchableOpacity>
-          <View style={styles.userSection}>
-            <Image source={{ uri: user.avatar }} style={styles.avatar} />
-            <Text style={styles.userName}>{user.name}</Text>
-          </View>
-        </View>
-
         <FlatList
-          data={feed}
+          data={videos}
           keyExtractor={(item) => item.id}
           renderItem={({ item, index }) => (
             <View style={{ width, height }}>
@@ -248,20 +189,6 @@ export default function App() {
                 repeat
                 paused={currentIndex !== index}
               />
-              <View style={styles.overlay}>
-                <Text style={styles.feedTitle}>{item.title}</Text>
-                <TouchableOpacity
-                  style={styles.iconButton}
-                  onPress={() => handleLike(item.id, item.likes)}
-                >
-                  <Ionicons name="heart-outline" size={36} color="#fff" />
-                  <Text style={styles.iconText}>{item.likes}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.iconButton}>
-                  <Ionicons name="chatbubble-outline" size={36} color="#fff" />
-                  <Text style={styles.iconText}>{item.comments}</Text>
-                </TouchableOpacity>
-              </View>
             </View>
           )}
           pagingEnabled
@@ -308,9 +235,7 @@ export default function App() {
             onPress={isLoginMode ? handleSignIn : handleSignUp}
             disabled={loading}
           >
-            <Text style={styles.darkButtonText}>
-              {isLoginMode ? "Sign In" : "Sign Up"}
-            </Text>
+            <Text style={styles.darkButtonText}>{isLoginMode ? "Sign In" : "Sign Up"}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity onPress={() => setIsLoginMode(!isLoginMode)}>
@@ -380,16 +305,6 @@ const styles = StyleSheet.create({
   darkButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   switchText: { color: "#00BFFF", textAlign: "center", marginTop: 16 },
   msg: { textAlign: "center", marginTop: 12, fontSize: 14 },
-  topBar: { position: "absolute", top: 40, left: 0, right: 0, zIndex: 3, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 20, alignItems: "center" },
-  userSection: { flexDirection: "row", alignItems: "center" },
-  avatar: { width: 40, height: 40, borderRadius: 20, marginLeft: 10 },
-  userName: { color: "#fff", fontWeight: "600", marginLeft: 8 },
-  fullscreenVideo: { position: "absolute", top: 0, left: 0, width: "100%", height: "100%", zIndex: 1 },
-  centerOverlay: { position: "absolute", top: "45%", left: 0, right: 0, alignItems: "center", zIndex: 2 },
-  overlayText: { color: "#fff", fontSize: 26, fontWeight: "700", textShadowColor: "rgba(0,0,0,0.7)", textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 8 },
+  fullscreenVideo: { position: "absolute", top: 0, left: 0, width: "100%", height: "100%" },
   video: { width: "100%", height: "100%" },
-  overlay: { position: "absolute", right: 20, bottom: 120, alignItems: "center" },
-  iconButton: { marginBottom: 25, alignItems: "center" },
-  iconText: { color: "#fff", fontSize: 14, marginTop: 4 },
-  feedTitle: { color: "#fff", fontSize: 18, fontWeight: "700", position: "absolute", bottom: 200, left: 20 },
 });
