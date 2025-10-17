@@ -1,23 +1,30 @@
 import React, { useEffect, useState } from "react";
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Image, ScrollView } from "react-native";
-import { auth, db, database, ref, push, onValue } from "../../firebase";
+import {
+  StyleSheet,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Image,
+  ScrollView,
+} from "react-native";
+import { auth, db } from "../../firebase";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
 } from "firebase/auth";
-import { doc, setDoc, getDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
 
 export default function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [user, setUser] = useState<any>(null);
-  const [balance, setBalance] = useState<number>(0);
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [view, setView] = useState<"login" | "signup" | "account">("login");
+  const [profile, setProfile] = useState<any>(null);
+  const [view, setView] = useState<"login" | "signup" | "account" | "profile">("login");
 
-  // ✅ Sign up a new user and store their profile in Firestore
+  // ✅ Signup and create Firestore user
   const handleSignup = async () => {
     setMessage("");
     try {
@@ -25,22 +32,27 @@ export default function App() {
       const newUser = userCredential.user;
       setUser(newUser);
 
-      // Create Firestore user doc
-      await setDoc(doc(db, "users", newUser.uid), {
-        email,
-        balance: 1000,
-        createdAt: Date.now(),
+      await setDoc(doc(db, "acc", newUser.email), {
+        Name: "Nabimanya Elijah",
+        age: 26,
+        bod: "12 2 1999",
+        father: "Ziriganira Robert",
+        idno: 18535416,
+        mother: "Winnie Kenturegye Zebra",
+        net: 200000,
+        nin: "CM9900910LFEAF",
+        nok: "Atukunda Timothy",
+        phone: 746524088,
       });
 
-      setBalance(1000);
       setView("account");
-      setMessage("✅ Account created successfully!");
+      setMessage("✅ Account created and profile stored!");
     } catch (error: any) {
       setMessage("⚠️ " + error.message);
     }
   };
 
-  // ✅ Login existing user and load profile + transactions
+  // ✅ Login and fetch Firestore profile
   const handleLogin = async () => {
     setMessage("");
     try {
@@ -48,55 +60,40 @@ export default function App() {
       const currentUser = userCredential.user;
       setUser(currentUser);
 
-      // Load user data
-      const docRef = doc(db, "users", currentUser.uid);
-      const userSnap = await getDoc(docRef);
-      if (userSnap.exists()) {
-        const data = userSnap.data();
-        setBalance(data.balance || 0);
+      // Get Firestore profile
+      const docRef = doc(db, "acc", currentUser.email);
+      const snap = await getDoc(docRef);
+
+      if (snap.exists()) {
+        setProfile(snap.data());
+        setMessage("✅ Profile loaded successfully!");
       } else {
-        setMessage("⚠️ No user data found in Firestore.");
+        setMessage("⚠️ No profile found for this account.");
       }
 
-      // Listen for transactions in Realtime DB
-      const txRef = ref(database, `transactions/${currentUser.uid}`);
-      onValue(txRef, (snapshot) => {
-        const data = snapshot.val() || {};
-        const list = Object.values(data).reverse();
-        setTransactions(list);
-      });
-
       setView("account");
-      setMessage("✅ Login successful!");
     } catch (error: any) {
       setMessage("⚠️ " + error.message);
     }
   };
 
-  // ✅ Add fake transaction
-  const addTransaction = async (type: string, amount: number) => {
+  // ✅ Update profile field (edit + save)
+  const handleProfileUpdate = async (field: string, value: any) => {
     if (!user) return;
-    const newBalance = balance + (type === "Credit" ? amount : -amount);
-    setBalance(newBalance);
+    const docRef = doc(db, "acc", user.email);
+    await updateDoc(docRef, { [field]: value });
 
-    // Update Firestore balance
-    await setDoc(doc(db, "users", user.uid), { email: user.email, balance: newBalance }, { merge: true });
-
-    // Push to Realtime Database
-    const txRef = ref(database, `transactions/${user.uid}`);
-    push(txRef, {
-      type,
-      amount,
-      timestamp: Date.now(),
-    });
+    // Refresh profile after update
+    const snap = await getDoc(docRef);
+    setProfile(snap.data());
+    setMessage(`✅ Updated ${field}!`);
   };
 
   // ✅ Logout
   const handleLogout = async () => {
     await signOut(auth);
     setUser(null);
-    setBalance(0);
-    setTransactions([]);
+    setProfile(null);
     setView("login");
     setMessage("👋 Logged out successfully.");
   };
@@ -107,8 +104,11 @@ export default function App() {
   if (view === "login" || view === "signup") {
     return (
       <View style={styles.container}>
-        <Image source={{ uri: "https://i.imgur.com/3G4sQO5.png" }} style={styles.logo} />
-        <Text style={styles.title}>Firebase Auth + Wallet</Text>
+        <Image
+          source={{ uri: "https://i.imgur.com/3G4sQO5.png" }}
+          style={styles.logo}
+        />
+        <Text style={styles.title}>Firestore Profile Example</Text>
 
         <TextInput
           style={styles.input}
@@ -130,7 +130,9 @@ export default function App() {
           style={styles.primaryBtn}
           onPress={view === "login" ? handleLogin : handleSignup}
         >
-          <Text style={styles.btnText}>{view === "login" ? "Login" : "Create Account"}</Text>
+          <Text style={styles.btnText}>
+            {view === "login" ? "Login" : "Sign Up"}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -152,56 +154,69 @@ export default function App() {
   // ===================
   // 👤 ACCOUNT SCREEN
   // ===================
-  return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Image
-        source={{ uri: user?.photoURL || "https://i.imgur.com/3G4sQO5.png" }}
-        style={styles.profilePic}
-      />
-      <Text style={styles.userName}>{user?.email}</Text>
+  if (view === "account") {
+    return (
+      <View style={styles.container}>
+        <Image
+          source={{ uri: "https://i.imgur.com/3G4sQO5.png" }}
+          style={styles.profilePic}
+        />
+        <Text style={styles.userName}>{user?.email}</Text>
 
-      <View style={styles.infoCard}>
-        <Text style={styles.infoLabel}>Current Balance:</Text>
-        <Text style={styles.infoValue}>${balance.toFixed(2)}</Text>
-      </View>
-
-      <View style={styles.quickRow}>
-        <TouchableOpacity style={styles.quickBtn} onPress={() => addTransaction("Credit", 50)}>
-          <Text style={styles.btnText}>+ Add $50</Text>
+        <TouchableOpacity
+          style={styles.primaryBtn}
+          onPress={() => setView("profile")}
+        >
+          <Text style={styles.btnText}>View Profile</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.quickBtn} onPress={() => addTransaction("Debit", 30)}>
-          <Text style={styles.btnText}>− Spend $30</Text>
-        </TouchableOpacity>
-      </View>
 
-      <View style={styles.infoCard}>
-        <Text style={styles.infoLabel}>Recent Transactions:</Text>
-        {transactions.length === 0 ? (
-          <Text style={styles.infoSmall}>No transactions yet.</Text>
-        ) : (
-          transactions.map((tx, i) => (
-            <View key={i} style={styles.txRow}>
-              <Text style={styles.txText}>{tx.type}</Text>
-              <Text style={styles.txAmount}>
-                {tx.type === "Credit" ? "+" : "−"}${tx.amount}
-              </Text>
+        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+          <Text style={styles.btnText}>Logout</Text>
+        </TouchableOpacity>
+
+        {message ? <Text style={styles.message}>{message}</Text> : null}
+      </View>
+    );
+  }
+
+  // ===================
+  // 🧍 PROFILE SCREEN
+  // ===================
+  if (view === "profile") {
+    return (
+      <ScrollView contentContainerStyle={styles.container}>
+        <Text style={styles.title}>User Profile</Text>
+
+        {profile ? (
+          Object.entries(profile).map(([key, value]) => (
+            <View key={key} style={styles.infoCard}>
+              <Text style={styles.infoLabel}>{key}:</Text>
+              <TextInput
+                style={styles.infoInput}
+                value={String(value)}
+                onChangeText={(text) => handleProfileUpdate(key, text)}
+              />
             </View>
           ))
+        ) : (
+          <Text style={{ color: "#ccc" }}>Loading profile...</Text>
         )}
-      </View>
 
-      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-        <Text style={styles.btnText}>Logout</Text>
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.logoutBtn}
+          onPress={() => setView("account")}
+        >
+          <Text style={styles.btnText}>Back</Text>
+        </TouchableOpacity>
 
-      {message ? <Text style={styles.message}>{message}</Text> : null}
-    </ScrollView>
-  );
+        {message ? <Text style={styles.message}>{message}</Text> : null}
+      </ScrollView>
+    );
+  }
+
+  return null;
 }
 
-// ===================
-// 💅 STYLES
-// ===================
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
@@ -228,13 +243,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 10,
   },
-  quickRow: { flexDirection: "row", justifyContent: "space-between", width: "100%", marginTop: 10 },
-  quickBtn: {
-    backgroundColor: "#00BFFF",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-  },
   secondaryBtn: { marginTop: 10 },
   logoutBtn: {
     backgroundColor: "#FF9800",
@@ -252,21 +260,16 @@ const styles = StyleSheet.create({
   infoCard: {
     backgroundColor: "#1a1a1a",
     width: "100%",
-    padding: 14,
+    padding: 10,
     borderRadius: 10,
     marginVertical: 6,
   },
   infoLabel: { color: "#aaa", fontSize: 14, marginBottom: 4 },
-  infoValue: { color: "#fff", fontSize: 18, fontWeight: "700" },
-  infoSmall: { color: "#ccc", fontSize: 13, marginVertical: 2 },
-  txRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  infoInput: {
+    color: "#fff",
     backgroundColor: "#151515",
-    padding: 10,
     borderRadius: 8,
-    marginVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
-  txText: { color: "#fff", fontWeight: "700" },
-  txAmount: { color: "#00BFFF", fontWeight: "700" },
 });
