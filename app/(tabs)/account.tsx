@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -8,14 +8,10 @@ import {
   FlatList,
   StyleSheet,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { db } from "../../firebase";
-import {
-  doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-} from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 
 export default function AccountAndMoneyManager() {
   const [name, setName] = useState("");
@@ -26,6 +22,12 @@ export default function AccountAndMoneyManager() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [label, setLabel] = useState("");
   const quickTopUps = [5, 10, 20, 50, 100];
+
+  const mobileMoneyProviders = [
+    { name: "MTN Mobile Money", color: "#FFD700" },
+    { name: "Airtel Money", color: "#FF4500" },
+    { name: "Other MM", color: "#4CAF50" },
+  ];
 
   // --- LOGIN FUNCTION ---
   const handleLogin = async () => {
@@ -41,15 +43,24 @@ export default function AccountAndMoneyManager() {
       const snap = await getDoc(docRef);
       if (snap.exists()) {
         const data = snap.data();
-        if (!("net" in data)) data.net = 0; // ensure net field exists
-        await updateDoc(docRef, { net: data.net }); // keep schema updated
+        if (!("net" in data)) data.net = 0;
+        if (!("transactions" in data)) data.transactions = [];
+        await updateDoc(docRef, { net: data.net, transactions: data.transactions });
         setProfile(data);
-        setTransactions(data.transactions || []);
+        setTransactions(data.transactions);
         setView("account");
       } else {
         const defaultData = {
           Name: name.trim(),
-          net: 0, // balance stored here
+          age: 26,
+          bod: "12 2 1999",
+          father: "Ziriganira robert",
+          mother: "Winnie kenturegye zebra",
+          idno: 18535416,
+          nin: "CM9900910LFEAF",
+          nok: "Atukunda timothy",
+          phone: 746524088,
+          net: 0,
           transactions: [],
           isFrozen: false,
           createdAt: new Date().toISOString(),
@@ -127,12 +138,6 @@ export default function AccountAndMoneyManager() {
     setLabel("Net (balance) updated.");
   };
 
-  const mobileMoneyProviders = [
-    { name: "MTN Mobile Money", color: "#FFD700" },
-    { name: "Airtel Money", color: "#FF4500" },
-    { name: "Other MM", color: "#4CAF50" },
-  ];
-
   // --- UI RENDER ---
   if (loading)
     return (
@@ -164,19 +169,42 @@ export default function AccountAndMoneyManager() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>👤 {profile?.Name}</Text>
       <Text style={styles.balanceText}>💰 Net: ${profile?.net?.toFixed(2)}</Text>
-      <Text style={[styles.statusText, { color: profile?.isFrozen ? "#FF5252" : "#4CAF50" }]}>
+      <Text
+        style={[
+          styles.statusText,
+          { color: profile?.isFrozen ? "#FF5252" : "#4CAF50" },
+        ]}
+      >
         {profile?.isFrozen ? "❌ Frozen" : "✅ Active"}
       </Text>
+
+      {/* --- PERSONAL INFO --- */}
+      <View style={styles.infoCard}>
+        <Text style={styles.infoText}>📅 Age: {profile?.age}</Text>
+        <Text style={styles.infoText}>🎂 BOD: {profile?.bod}</Text>
+        <Text style={styles.infoText}>👨 Father: {profile?.father}</Text>
+        <Text style={styles.infoText}>👩 Mother: {profile?.mother}</Text>
+        <Text style={styles.infoText}>🆔 ID No: {profile?.idno}</Text>
+        <Text style={styles.infoText}>💳 NIN: {profile?.nin}</Text>
+        <Text style={styles.infoText}>📞 Phone: {profile?.phone}</Text>
+        <Text style={styles.infoText}>👤 NOK: {profile?.nok}</Text>
+      </View>
 
       <View style={styles.buttonRow}>
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: "#FF9800" }]}
-          onPress={() => updateNetManually(prompt("Enter new net value:") || "0")}
+          onPress={() => {
+            const val = prompt("Enter new net value:") || "0";
+            updateNetManually(val);
+          }}
         >
           <Text style={styles.actionButtonText}>Manual Update</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: profile?.isFrozen ? "#4CAF50" : "#FF5252" }]}
+          style={[
+            styles.actionButton,
+            { backgroundColor: profile?.isFrozen ? "#4CAF50" : "#FF5252" },
+          ]}
           onPress={toggleFreeze}
         >
           <Text style={styles.actionButtonText}>
@@ -306,4 +334,6 @@ const styles = StyleSheet.create({
   noTx: { color: "#aaa", textAlign: "center", marginVertical: 10 },
   logoutButton: { backgroundColor: "#333", padding: 10, borderRadius: 10, marginTop: 10 },
   logoutText: { color: "#fff", textAlign: "center", fontWeight: "600" },
+  infoCard: { backgroundColor: "#1f1f1f", borderRadius: 15, padding: 15, marginBottom: 15 },
+  infoText: { color: "#fff", fontSize: 16, marginBottom: 4 },
 });
