@@ -13,7 +13,6 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 /* -----------------------
    Types
@@ -45,11 +44,6 @@ type User = {
   transactions: Transaction[];
   loan: Loan;
 };
-
-/* -----------------------
-   Constants
-   ----------------------- */
-const STORAGE_KEY = "@david_data_v1";
 
 /* -----------------------
    App
@@ -95,47 +89,14 @@ export default function App() {
   ];
 
   /* -----------------------
-     Load David from AsyncStorage on mount
+     Initialize David (no AsyncStorage)
      ----------------------- */
   useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        const json = await AsyncStorage.getItem(STORAGE_KEY);
-        if (json) {
-          const parsed = JSON.parse(json) as User;
-          if (mounted) setDavid(parsed);
-        } else {
-          if (mounted) setDavid(initialDavid);
-        }
-      } catch (err) {
-        console.error("Failed loading david from storage:", err);
-        if (mounted) setDavid(initialDavid);
-      } finally {
-        if (mounted) setLoadingStore(false);
-      }
-    };
-    load();
-    return () => {
-      mounted = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setTimeout(() => {
+      setDavid(initialDavid);
+      setLoadingStore(false);
+    }, 500);
   }, []);
-
-  /* -----------------------
-     Persist david whenever it changes
-     ----------------------- */
-  useEffect(() => {
-    if (!david) return;
-    const persist = async () => {
-      try {
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(david));
-      } catch (err) {
-        console.error("Failed saving david to storage:", err);
-      }
-    };
-    persist();
-  }, [david]);
 
   /* -----------------------
      Helpers: update state and transactions
@@ -192,7 +153,7 @@ export default function App() {
   };
 
   /* -----------------------
-     Freeze / Unfreeze (with confirmation)
+     Freeze / Unfreeze
      ----------------------- */
   const confirmToggleFreeze = () => {
     if (!david) return;
@@ -214,7 +175,7 @@ export default function App() {
   };
 
   /* -----------------------
-     Loan functions (request, approve with confirmation, repay with confirmation)
+     Loan functions
      ----------------------- */
   const requestLoan = (amount: number) => {
     if (!david) return;
@@ -252,7 +213,6 @@ export default function App() {
         {
           text: "Approve",
           onPress: () => {
-            // Approve - add to balance, create a tx
             setDavid((prev) => {
               if (!prev) return prev;
               const newBalance = prev.account + prev.loan.amount;
@@ -330,26 +290,20 @@ export default function App() {
   };
 
   /* -----------------------
-     Reset saved data (confirmation)
+     Reset data (no storage)
      ----------------------- */
   const confirmResetData = () => {
     Alert.alert(
       "Reset David",
-      "This will restore David to the original initial state and clear saved data. Continue?",
+      "This will restore David to the original initial state. Continue?",
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Reset",
           style: "destructive",
-          onPress: async () => {
-            try {
-              await AsyncStorage.removeItem(STORAGE_KEY);
-              setDavid(initialDavid);
-              Alert.alert("Reset", "David's data has been reset.");
-            } catch (err) {
-              console.error("Error resetting storage:", err);
-              Alert.alert("Error", "Failed to reset data.");
-            }
+          onPress: () => {
+            setDavid(initialDavid);
+            Alert.alert("Reset", "David's data has been reset.");
           },
         },
       ]
@@ -357,7 +311,7 @@ export default function App() {
   };
 
   /* -----------------------
-     Small components
+     UI components
      ----------------------- */
   const SectionButton = ({ onPress, label, icon }: { onPress: () => void; label: string; icon: string }) => (
     <TouchableOpacity style={styles.sectionBtn} onPress={onPress}>
@@ -419,7 +373,7 @@ export default function App() {
         />
       </View>
 
-      {/* Only one visible at a time */}
+      {/* Deposit Section */}
       {visibleSection === "deposit" && (
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>💰 Deposit / Top-Up (David)</Text>
@@ -436,11 +390,7 @@ export default function App() {
 
           <View style={styles.quickRow}>
             {quickTopUps.map((amt) => (
-              <TouchableOpacity
-                key={amt}
-                style={styles.quickBtn}
-                onPress={() => handleTopUp(amt, "Quick")}
-              >
+              <TouchableOpacity key={amt} style={styles.quickBtn} onPress={() => handleTopUp(amt, "Quick")}>
                 <Text style={styles.quickBtnText}>+${amt}</Text>
               </TouchableOpacity>
             ))}
@@ -449,27 +399,17 @@ export default function App() {
           <Text style={[styles.label, { marginTop: 12 }]}>Providers</Text>
           <View style={styles.providersRow}>
             {mobileMoneyProviders.map((p) => (
-              <TouchableOpacity
-                key={p.key}
-                style={styles.providerBtn}
-                onPress={() => handleTopUp(undefined, p.key)}
-              >
+              <TouchableOpacity key={p.key} style={styles.providerBtn} onPress={() => handleTopUp(undefined, p.key)}>
                 <Text style={styles.providerText}>{p.name}</Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          <TouchableOpacity
-            style={[styles.primaryBtn, { marginTop: 14 }]}
-            onPress={() => handleTopUp(undefined)}
-          >
+          <TouchableOpacity style={[styles.primaryBtn, { marginTop: 14 }]} onPress={() => handleTopUp(undefined)}>
             <Text style={styles.primaryBtnText}>Top-Up Manual</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.secondaryBtn, { marginTop: 8 }]}
-            onPress={confirmToggleFreeze}
-          >
+          <TouchableOpacity style={[styles.secondaryBtn, { marginTop: 8 }]} onPress={confirmToggleFreeze}>
             <Text style={styles.secondaryBtnText}>
               {david.isFrozen ? "Unfreeze Account" : "Freeze Account"}
             </Text>
@@ -477,6 +417,7 @@ export default function App() {
         </View>
       )}
 
+      {/* View Client */}
       {visibleSection === "viewClient" && (
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>👥 View Client / Transaction History</Text>
@@ -508,6 +449,7 @@ export default function App() {
         </View>
       )}
 
+      {/* Loan Section */}
       {visibleSection === "loan" && (
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>🏦 Check Loan / Account Management</Text>
@@ -522,36 +464,26 @@ export default function App() {
             </>
           )}
 
-          {/* Loan actions */}
           <View style={{ marginTop: 12 }}>
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={() => requestLoan(100)}
-            >
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => requestLoan(100)}>
               <Text style={styles.primaryBtnText}>Request $100 Loan</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.secondaryBtn, { marginTop: 8 }]}
-              onPress={confirmApproveLoan}
-            >
+            <TouchableOpacity style={[styles.secondaryBtn, { marginTop: 8 }]} onPress={confirmApproveLoan}>
               <Text style={styles.secondaryBtnText}>Approve Pending Loan</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.secondaryBtn, { marginTop: 8 }]}
-              onPress={() => confirmRepayLoan(50)}
-            >
+            <TouchableOpacity style={[styles.secondaryBtn, { marginTop: 8 }]} onPress={() => confirmRepayLoan(50)}>
               <Text style={styles.secondaryBtnText}>Repay $50</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
 
-      {/* Utility footer */}
+      {/* Reset */}
       <View style={{ marginTop: 18, alignItems: "center" }}>
         <TouchableOpacity style={[styles.secondaryBtn, { width: 180 }]} onPress={confirmResetData}>
-          <Text style={styles.secondaryBtnText}>Reset David (clear storage)</Text>
+          <Text style={styles.secondaryBtnText}>Reset David</Text>
         </TouchableOpacity>
       </View>
 
@@ -571,9 +503,7 @@ const styles = StyleSheet.create({
     minHeight: "100%",
   },
   appTitle: { color: "#00BFFF", fontSize: 24, fontWeight: "700", marginBottom: 16, textAlign: "center" },
-
   buttonsRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 14 },
-
   sectionBtn: {
     flex: 1,
     backgroundColor: "#1a1a1a",
@@ -585,71 +515,28 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   sectionBtnText: { color: "#fff", marginLeft: 8, fontWeight: "700" },
-
-  sectionCard: {
-    backgroundColor: "#121212",
-    marginTop: 10,
-    padding: 14,
-    borderRadius: 12,
-  },
+  sectionCard: { backgroundColor: "#121212", marginTop: 10, padding: 14, borderRadius: 12 },
   sectionTitle: { fontSize: 18, color: "#fff", fontWeight: "700", marginBottom: 8 },
-
   label: { color: "#ccc", fontSize: 14 },
-
-  input: {
-    backgroundColor: "#1a1a1a",
-    color: "#fff",
-    padding: 12,
-    borderRadius: 10,
-    marginTop: 10,
-  },
-
+  input: { backgroundColor: "#1a1a1a", color: "#fff", padding: 12, borderRadius: 10, marginTop: 10 },
   quickRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 12 },
   quickBtn: { backgroundColor: "#00BFFF", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8 },
   quickBtnText: { color: "#fff", fontWeight: "700" },
-
   providersRow: { marginTop: 8, flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
-  providerBtn: {
-    width: "48%",
-    backgroundColor: "#2a2a2a",
-    padding: 12,
-    borderRadius: 10,
-    marginVertical: 4,
-  },
+  providerBtn: { width: "48%", backgroundColor: "#2a2a2a", padding: 12, borderRadius: 10, marginVertical: 4 },
   providerText: { color: "#fff", fontWeight: "700", textAlign: "center" },
-
-  primaryBtn: {
-    backgroundColor: "#FF9800",
-    padding: 12,
-    borderRadius: 10,
-    alignItems: "center",
-  },
+  primaryBtn: { backgroundColor: "#FF9800", padding: 12, borderRadius: 10, alignItems: "center" },
   primaryBtnText: { color: "#fff", fontWeight: "700" },
-
-  secondaryBtn: {
-    backgroundColor: "#333",
-    padding: 12,
-    borderRadius: 10,
-    alignItems: "center",
-  },
+  secondaryBtn: { backgroundColor: "#333", padding: 12, borderRadius: 10, alignItems: "center" },
   secondaryBtnText: { color: "#fff", fontWeight: "700" },
-
   clientRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   clientName: { color: "#fff", fontSize: 20, fontWeight: "700" },
   clientEmail: { color: "#aaa" },
   clientBalance: { color: "#00BFFF", fontWeight: "700", fontSize: 18 },
-
-  txRow: {
-    backgroundColor: "#151515",
-    padding: 12,
-    borderRadius: 10,
-    flexDirection: "row",
-    alignItems: "center",
-  },
+  txRow: { backgroundColor: "#151515", padding: 12, borderRadius: 10, flexDirection: "row", alignItems: "center" },
   txTextType: { color: "#fff", fontWeight: "700" },
   txTextSmall: { color: "#aaa", fontSize: 12 },
   txAmount: { color: "#fff", fontWeight: "700" },
   txStatus: { fontSize: 12 },
-
   noTx: { color: "#888", marginTop: 10, textAlign: "center" },
 });
