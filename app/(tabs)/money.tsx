@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { db, auth, database, ref, push, onValue } from "../../firebase";
-import { collection, addDoc, doc, updateDoc, onSnapshot, getDoc } from "firebase/firestore";
+import { collection, addDoc, doc, updateDoc, onSnapshot } from "firebase/firestore";
 
 type Account = {
   id: string;
@@ -43,19 +43,18 @@ export default function MoneyManager() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [deposit, setDeposit] = useState("");
-
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
-
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [showHistory, setShowHistory] = useState(false);
-
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"info" | "success" | "error">("info");
   const msgAnim = useRef(new Animated.Value(0)).current;
 
   const currentUserEmail = auth.currentUser?.email || "guest@example.com";
-  const avatarUri = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUserEmail)}&background=111827&color=fff&size=128`;
+  const avatarUri = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+    currentUserEmail
+  )}&background=111827&color=fff&size=128`;
 
   // --- Message helper ---
   const showMessage = (text: string, type: "info" | "success" | "error" = "info") => {
@@ -63,7 +62,9 @@ export default function MoneyManager() {
     setMessageType(type);
     Animated.timing(msgAnim, { toValue: 1, duration: 280, useNativeDriver: true }).start();
     setTimeout(() => {
-      Animated.timing(msgAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => setMessage(""));
+      Animated.timing(msgAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() =>
+        setMessage("")
+      );
     }, 5000);
   };
 
@@ -72,17 +73,24 @@ export default function MoneyManager() {
     let prevBalances: Record<string, number> = {};
     const accountsCol = collection(db, "accounts");
 
-    const unsubscribe = onSnapshot(accountsCol, (snap) => {
-      const loaded: Account[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-      loaded.forEach((acc) => {
-        const prev = prevBalances[acc.id];
-        if (prev !== undefined && prev !== acc.balance) {
-          showMessage(`${acc.name} balance changed: $${prev.toFixed(2)} → $${acc.balance.toFixed(2)}`, "info");
-        }
-        prevBalances[acc.id] = acc.balance;
-      });
-      setAccounts(loaded);
-    }, () => showMessage("Failed to load accounts", "error"));
+    const unsubscribe = onSnapshot(
+      accountsCol,
+      (snap) => {
+        const loaded: Account[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+        loaded.forEach((acc) => {
+          const prev = prevBalances[acc.id];
+          if (prev !== undefined && prev !== acc.balance) {
+            showMessage(
+              `${acc.name} balance changed: $${prev.toFixed(2)} → $${acc.balance.toFixed(2)}`,
+              "info"
+            );
+          }
+          prevBalances[acc.id] = acc.balance;
+        });
+        setAccounts(loaded);
+      },
+      () => showMessage("Failed to load accounts", "error")
+    );
 
     return () => unsubscribe();
   }, []);
@@ -111,12 +119,21 @@ export default function MoneyManager() {
       return;
     }
     try {
-      const payload = { name, description, type: creatingType, balance: initial, createdBy: currentUserEmail };
+      const payload = {
+        name,
+        description,
+        type: creatingType,
+        balance: initial,
+        createdBy: currentUserEmail,
+      };
       const docRef = await addDoc(collection(db, "accounts"), payload as any);
       setAccounts((prev) => [...prev, { id: docRef.id, ...(payload as any) }]);
       logActivity(`Created ${creatingType} "${name}"`);
       showMessage(`${creatingType} "${name}" created.`, "success");
-      setModalVisible(false); setName(""); setDescription(""); setDeposit("");
+      setModalVisible(false);
+      setName("");
+      setDescription("");
+      setDeposit("");
     } catch {
       showMessage("Failed to create account.", "error");
     }
@@ -134,7 +151,9 @@ export default function MoneyManager() {
       const accRef = doc(db, "accounts", selectedAccount.id);
       const newBalance = selectedAccount.balance + amt;
       await updateDoc(accRef, { balance: newBalance });
-      setAccounts((prev) => prev.map((a) => (a.id === selectedAccount.id ? { ...a, balance: newBalance } : a)));
+      setAccounts((prev) =>
+        prev.map((a) => (a.id === selectedAccount.id ? { ...a, balance: newBalance } : a))
+      );
       const safeEmail = currentUserEmail.replace(".", "_");
       await push(ref(database, "transactions/" + safeEmail), {
         user: currentUserEmail,
@@ -145,7 +164,8 @@ export default function MoneyManager() {
       });
       logActivity(`Deposited $${amt.toFixed(2)} to ${selectedAccount.name}`);
       showMessage(`Deposited $${amt.toFixed(2)} to ${selectedAccount.name}`, "success");
-      setPaymentAmount(""); setSelectedAccount(null);
+      setPaymentAmount("");
+      setSelectedAccount(null);
     } catch {
       showMessage("Deposit failed.", "error");
     }
@@ -179,8 +199,15 @@ export default function MoneyManager() {
             styles.messageBox,
             {
               opacity: msgAnim,
-              transform: [{ translateY: msgAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
-              backgroundColor: messageType === "error" ? "#EF4444" : messageType === "success" ? "#10B981" : "#3B82F6",
+              transform: [
+                { translateY: msgAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) },
+              ],
+              backgroundColor:
+                messageType === "error"
+                  ? "#EF4444"
+                  : messageType === "success"
+                  ? "#10B981"
+                  : "#3B82F6",
             },
           ]}
         >
@@ -200,8 +227,17 @@ export default function MoneyManager() {
         {(["Bank", "SACCO", "Mobile Money"] as Account["type"][]).map((t) => (
           <TouchableOpacity
             key={t}
-            style={[styles.typeBtn, { backgroundColor: t === "Bank" ? "#3B82F6" : t === "SACCO" ? "#10B981" : "#F59E0B" }]}
-            onPress={() => { setCreatingType(t); setModalVisible(true); }}
+            style={[
+              styles.typeBtn,
+              {
+                backgroundColor:
+                  t === "Bank" ? "#3B82F6" : t === "SACCO" ? "#10B981" : "#F59E0B",
+              },
+            ]}
+            onPress={() => {
+              setCreatingType(t);
+              setModalVisible(true);
+            }}
           >
             <Ionicons name="add-circle-outline" size={16} color="#fff" />
             <Text style={styles.typeBtnText}>Create {t}</Text>
@@ -214,19 +250,49 @@ export default function MoneyManager() {
         onPress={() => setShowHistory(!showHistory)}
       >
         <Ionicons name={showHistory ? "eye-off-outline" : "time-outline"} size={18} color="#fff" />
-        <Text style={styles.historyText}>{showHistory ? "Hide" : "Show"} Transaction History</Text>
+        <Text style={styles.historyText}>
+          {showHistory ? "Hide" : "Show"} Transaction History
+        </Text>
       </TouchableOpacity>
 
       {showHistory && (
-        <ScrollView style={{ maxHeight: 220, marginBottom: 10 }}>
-          {transactions.length === 0 && <Text style={{ color: isDark ? "#aaa" : "#666", textAlign: "center", padding: 12 }}>No transactions yet.</Text>}
-          {transactions.map((t) => (
-            <View key={t.id} style={[styles.transactionCard, { backgroundColor: isDark ? "#0b0b0b" : "#f3f3f3" }]}>
-              <Text style={{ color: isDark ? "#fff" : "#111" }}>{t.type} • ${t.amount.toFixed(2)}</Text>
-              <Text style={{ color: "#888", fontSize: 12 }}>{new Date(t.timestamp).toLocaleString()}</Text>
-            </View>
-          ))}
-        </ScrollView>
+        <>
+          <ScrollView style={{ maxHeight: 220, marginBottom: 10 }}>
+            {transactions.length === 0 && (
+              <Text style={{ color: isDark ? "#aaa" : "#666", textAlign: "center", padding: 12 }}>
+                No transactions yet.
+              </Text>
+            )}
+            {transactions.map((t) => (
+              <View
+                key={t.id}
+                style={[
+                  styles.transactionCard,
+                  { backgroundColor: isDark ? "#0b0b0b" : "#f3f3f3" },
+                ]}
+              >
+                <Text style={{ color: isDark ? "#fff" : "#111" }}>
+                  {t.type} • ${t.amount.toFixed(2)}
+                </Text>
+                <Text style={{ color: "#888", fontSize: 12 }}>
+                  {new Date(t.timestamp).toLocaleString()}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+
+          {/* Floating Hide Button */}
+          <TouchableOpacity
+            style={[
+              styles.fabHideBtn,
+              { backgroundColor: isDark ? "#1f2937" : "#ef4444" },
+            ]}
+            onPress={() => setShowHistory(false)}
+          >
+            <Ionicons name="eye-off-outline" size={20} color="#fff" />
+            <Text style={styles.fabHideText}>Hide</Text>
+          </TouchableOpacity>
+        </>
       )}
 
       <FlatList
@@ -237,17 +303,30 @@ export default function MoneyManager() {
           <View style={[styles.accountCard, { backgroundColor: isDark ? "#111" : "#fff" }]}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
               <View style={{ flex: 1, paddingRight: 12 }}>
-                <Text style={[styles.accountName, { color: isDark ? "#fff" : "#111" }]}>{item.name} • <Text style={{ fontWeight: "800" }}>{item.type}</Text></Text>
+                <Text style={[styles.accountName, { color: isDark ? "#fff" : "#111" }]}>
+                  {item.name} • <Text style={{ fontWeight: "800" }}>{item.type}</Text>
+                </Text>
                 <Text style={{ color: isDark ? "#aaa" : "#555" }}>{item.description}</Text>
               </View>
               <View style={{ alignItems: "flex-end" }}>
-                <Text style={{ color: "#00a650", fontWeight: "800" }}>${item.balance.toFixed(2)}</Text>
-                <TouchableOpacity style={styles.payBtn} onPress={() => {
-                  if (item.type === "Bank") checkLoanEligibility(item);
-                  else if (item.type === "SACCO") viewClientHistory(item);
-                  else setSelectedAccount(item);
-                }}>
-                  <Text style={styles.payBtnText}>{item.type === "Bank" ? "Check Loan" : item.type === "SACCO" ? "View Clients" : "Deposit"}</Text>
+                <Text style={{ color: "#00a650", fontWeight: "800" }}>
+                  ${item.balance.toFixed(2)}
+                </Text>
+                <TouchableOpacity
+                  style={styles.payBtn}
+                  onPress={() => {
+                    if (item.type === "Bank") checkLoanEligibility(item);
+                    else if (item.type === "SACCO") viewClientHistory(item);
+                    else setSelectedAccount(item);
+                  }}
+                >
+                  <Text style={styles.payBtnText}>
+                    {item.type === "Bank"
+                      ? "Check Loan"
+                      : item.type === "SACCO"
+                      ? "View Clients"
+                      : "Deposit"}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -259,14 +338,38 @@ export default function MoneyManager() {
       {modalVisible && (
         <ScrollView contentContainerStyle={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: isDark ? "#111" : "#fff" }]}>
-            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#111" }]}>Create {creatingType}</Text>
-            <TextInput placeholder={`${creatingType} Name`} placeholderTextColor={isDark ? "#666" : "#999"} style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]} value={name} onChangeText={setName} />
-            <TextInput placeholder="Description" placeholderTextColor={isDark ? "#666" : "#999"} style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]} value={description} onChangeText={setDescription} />
-            <TextInput placeholder="Initial Deposit" placeholderTextColor={isDark ? "#666" : "#999"} style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]} value={deposit} onChangeText={setDeposit} keyboardType="numeric" />
+            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#111" }]}>
+              Create {creatingType}
+            </Text>
+            <TextInput
+              placeholder={`${creatingType} Name`}
+              placeholderTextColor={isDark ? "#666" : "#999"}
+              style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]}
+              value={name}
+              onChangeText={setName}
+            />
+            <TextInput
+              placeholder="Description"
+              placeholderTextColor={isDark ? "#666" : "#999"}
+              style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]}
+              value={description}
+              onChangeText={setDescription}
+            />
+            <TextInput
+              placeholder="Initial Deposit"
+              placeholderTextColor={isDark ? "#666" : "#999"}
+              style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]}
+              value={deposit}
+              onChangeText={setDeposit}
+              keyboardType="numeric"
+            />
             <TouchableOpacity style={styles.modalBtn} onPress={createAccount}>
               <Text style={styles.modalBtnText}>Create {creatingType}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#6b7280" }]} onPress={() => setModalVisible(false)}>
+            <TouchableOpacity
+              style={[styles.modalBtn, { backgroundColor: "#6b7280" }]}
+              onPress={() => setModalVisible(false)}
+            >
               <Text style={styles.modalBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -276,43 +379,152 @@ export default function MoneyManager() {
       {selectedAccount && (
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: isDark ? "#111" : "#fff" }]}>
-            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#111" }]}>Deposit to {selectedAccount.name}</Text>
-            <TextInput placeholder="Amount" placeholderTextColor={isDark ? "#666" : "#999"} style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]} value={paymentAmount} onChangeText={setPaymentAmount} keyboardType="numeric" />
+            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#111" }]}>
+              Deposit to {selectedAccount.name}
+            </Text>
+            <TextInput
+              placeholder="Amount"
+              placeholderTextColor={isDark ? "#666" : "#999"}
+              style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]}
+              value={paymentAmount}
+              onChangeText={setPaymentAmount}
+              keyboardType="numeric"
+            />
             <TouchableOpacity style={styles.modalBtn} onPress={sendPayment}>
               <Text style={styles.modalBtnText}>Deposit</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#6b7280" }]} onPress={() => setSelectedAccount(null)}>
+            <TouchableOpacity
+              style={[styles.modalBtn, { backgroundColor: "#6b7280" }]}
+              onPress={() => setSelectedAccount(null)}
+            >
               <Text style={styles.modalBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
-
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: 50, paddingHorizontal: 16 },
-  messageBox: { position: "absolute", top: 12, left: 20, right: 20, paddingVertical: 10, borderRadius: 10, zIndex: 999 },
+  messageBox: {
+    position: "absolute",
+    top: 12,
+    left: 20,
+    right: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+    zIndex: 999,
+  },
   messageText: { color: "#fff", textAlign: "center", fontWeight: "600" },
-  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 18 },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 18,
+  },
   title: { fontSize: 28, fontWeight: "900" },
   avatar: { width: 48, height: 48, borderRadius: 24 },
   buttonRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
-  typeBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 10, borderRadius: 10, marginHorizontal: 6 },
+  typeBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 10,
+    borderRadius: 10,
+    marginHorizontal: 6,
+  },
   typeBtnText: { color: "#fff", marginLeft: 8, fontWeight: "700" },
-  historyBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 12, borderRadius: 10, marginBottom: 12 },
+  historyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 12,
+  },
   historyText: { color: "#fff", marginLeft: 8, fontWeight: "700" },
-  accountCard: { padding: 14, borderRadius: 12, marginBottom: 12, shadowColor: "#000", shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 2 },
+  accountCard: {
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    elevation: 2,
+  },
   accountName: { fontSize: 16, fontWeight: "800", marginBottom: 4 },
-  payBtn: { marginTop: 8, backgroundColor: "#111827", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8 },
+  payBtn: {
+    marginTop: 8,
+    backgroundColor: "#111827",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
   payBtnText: { color: "#fff", fontWeight: "700" },
-  input: { borderRadius: 10, padding: 12, fontSize: 16, marginBottom: 12 },
-  modalOverlay: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.6)", padding: 20 },
-  modalContent: { width: "100%", borderRadius: 14, padding: 18 },
-  modalTitle: { fontSize: 20, fontWeight: "900", marginBottom: 12, textAlign: "center" },
-  modalBtn: { backgroundColor: "#10B981", padding: 12, borderRadius: 10, alignItems: "center", marginTop: 8 },
-  modalBtnText: { color: "#fff", fontWeight: "800" },
-  transactionCard: { padding: 12, borderRadius: 10, marginBottom: 10 },
+  input: {
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+    fontSize: 16,
+  },
+  modalOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.6)",
+    zIndex: 1000,
+    padding: 16,
+  },
+  modalContent: {
+    width: "100%",
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    marginBottom: 14,
+    textAlign: "center",
+  },
+  modalBtn: {
+    backgroundColor: "#007AFF",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+    marginTop: 8,
+  },
+  modalBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  transactionCard: {
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  fabHideBtn: {
+    position: "absolute",
+    bottom: 30,
+    right: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ef4444",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 30,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 5,
+    elevation: 5,
+    zIndex: 999,
+  },
+  fabHideText: { color: "#fff", fontWeight: "700", marginLeft: 6 },
 });
