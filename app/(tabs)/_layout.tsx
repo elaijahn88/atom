@@ -42,14 +42,14 @@ export default function TabLayout() {
       <Tabs.Screen
         name="money"
         options={{
-          title: 'Money Account',
+          title: 'Money',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="creditcard.fill" color={color} />,
         }}
       />
       <Tabs.Screen
         name="store"
         options={{
-          title: 'store',
+          title: 'Store',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="megaphone.fill" color={color} />,
         }}
       />
@@ -63,18 +63,18 @@ export default function TabLayout() {
       <Tabs.Screen
         name="plug"
         options={{
-          title: 'ads',
+          title: 'Ads',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="atom" color={color} />,
         }}
       />
-
-
-
-      
+      {/* New Account Tab */}
+      <Tabs.Screen
+        name="account"
+        options={{
+          title: 'Account',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.crop.circle.fill" color={color} />,
+        }}
+      />
     </Tabs>
-
-
-
-    
   );
 }
