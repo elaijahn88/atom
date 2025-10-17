@@ -59,7 +59,7 @@ export default function MyStore() {
         const data = docSnap.data();
         const productArray = Object.entries(data).map(([id, item]: any) => ({
           id,
-          name: item.name || `iPhone ${id}`,
+          name: item.name || ` ${id}`,
           price: item.price || 0,
           image: item.image || "https://via.placeholder.com/200",
           description: item.description || "",
