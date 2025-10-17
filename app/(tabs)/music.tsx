@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Dimensions,
   ScrollView,
-  Image,
   TextInput,
   TouchableOpacity,
   StatusBar,
@@ -15,7 +14,8 @@ import {
 import Video from "react-native-video";
 import { Ionicons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase";
-import { doc, onSnapshot, push, ref as rtdbRef, onValue } from "firebase/database";
+import { doc, onSnapshot } from "firebase/firestore"; // Firestore
+import { ref as rtdbRef, push, onValue } from "firebase/database"; // Realtime DB
 
 const { width } = Dimensions.get("window");
 
@@ -50,15 +50,28 @@ export default function MusicScreen() {
     return () => unsubscribe();
   }, []);
 
-  // Loop videos
-  const handleEnd = () => {
-    setCurrentVideoIndex((prev) => (prev + 1) % videos.length);
-  };
+  // 🔄 Load comments from Realtime Database
+  useEffect(() => {
+    const commentsRef = rtdbRef(db, "comments/video1");
+    const unsubscribe = onValue(commentsRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const arr = Object.values(data);
+      setComments(arr);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Auto-scroll comments
   useEffect(() => {
     if (commentScrollRef.current) commentScrollRef.current.scrollToEnd({ animated: true });
   }, [comments]);
+
+  // Loop videos
+  const handleEnd = () => {
+    if (videos.length > 0) {
+      setCurrentVideoIndex((prev) => (prev + 1) % videos.length);
+    }
+  };
 
   // Like button handler with floating heart
   const handleLike = () => {
@@ -71,14 +84,15 @@ export default function MusicScreen() {
       Animated.timing(heartScale, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start(() => setShowHeart(false));
 
-    push(likesRef, liked ? null : true);
+    setLiked((prev) => !prev);
+    push(likesRef, !liked ? true : null);
   };
 
   // Add comment handler
   const handleAddComment = () => {
     if (!commentText.trim()) return;
     const userId = auth.currentUser?.uid || "guest";
-    const commentsRef = rtdbRef(db, `comments/video1`);
+    const commentsRef = rtdbRef(db, "comments/video1");
     push(commentsRef, { userId, text: commentText.trim(), timestamp: Date.now() });
     setCommentText("");
   };
@@ -91,7 +105,6 @@ export default function MusicScreen() {
 
   // Example collaborate/produce buttons (static links)
   const handleLink = async (url: string, type: string) => {
-    const userId = auth.currentUser?.uid || "guest";
     try {
       const supported = await Linking.canOpenURL(url);
       if (supported) await Linking.openURL(url);
@@ -109,6 +122,7 @@ export default function MusicScreen() {
           <Text style={styles.labelText}>{labelMessage}</Text>
         </View>
       ) : null}
+
       {showHeart && (
         <Animated.View
           style={{
@@ -126,8 +140,9 @@ export default function MusicScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
         {/* Video Player */}
         <View style={styles.videoContainer}>
-          {videos.length > 0 && (
+          {videos.length > 0 ? (
             <Video
+              key={currentVideoIndex} // Important to force reload
               source={{ uri: videos[currentVideoIndex] }}
               style={styles.playerVideo}
               resizeMode="cover"
@@ -135,6 +150,10 @@ export default function MusicScreen() {
               paused={paused}
               onEnd={handleEnd}
             />
+          ) : (
+            <Text style={{ color: "#fff", alignSelf: "center", marginTop: 50 }}>
+              Loading videos...
+            </Text>
           )}
         </View>
 
@@ -153,7 +172,9 @@ export default function MusicScreen() {
         <ScrollView ref={commentScrollRef} style={styles.commentList}>
           {comments.map((c, i) => (
             <View key={i}>
-              <Text style={styles.comment}>{c.userId}: {c.text}</Text>
+              <Text style={styles.comment}>
+                {c.userId}: {c.text}
+              </Text>
             </View>
           ))}
         </ScrollView>
