@@ -12,8 +12,8 @@ import {
   Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { doc, getDoc, onSnapshot, updateDoc } from "firebase/firestore";
-import { db } from "../../firebase"; // ✅ make sure this is correct
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
+import { db } from "../../firebase";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 48) / 2;
@@ -30,65 +30,76 @@ type Product = {
 type CartItem = Product & { quantity: number };
 
 export default function MyStore() {
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [cartVisible, setCartVisible] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [search, setSearch] = useState("");
-  const [filterFeatured, setFilterFeatured] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [search, setSearch] = useState("");
   const toastAnim = useRef(new Animated.Value(-60)).current;
 
-  // ✅ Real-time Firestore listener
+  // ✅ Load only fields 12–17 and loop over them
+  const loadProducts = async () => {
+    try {
+      const docRef = doc(db, "phones", "iphone");
+      const snap = await getDoc(docRef);
+
+      if (snap.exists()) {
+        const data = snap.data();
+        const arr: Product[] = [];
+
+        for (let i = 12; i <= 17; i++) {
+          const url = data[i];
+          if (url) {
+            arr.push({
+              id: String(i),
+              name: `iPhone ${i}`,
+              price: i * 10,
+              image: url,
+              description: `Apple iPhone ${i} — sleek and powerful.`,
+              featured: i === 16 || i === 17,
+            });
+          }
+        }
+
+        setProducts(arr);
+        showToast("📱 Products loaded successfully!", "success");
+      } else {
+        showToast("⚠️ No document found for phones/iphone", "error");
+      }
+    } catch (error) {
+      console.error(error);
+      showToast("❌ Error loading products", "error");
+    }
+  };
+
+  // ✅ Realtime listener for document updates
   useEffect(() => {
     const docRef = doc(db, "phones", "iphone");
+    const unsubscribe = onSnapshot(docRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        const arr: Product[] = [];
 
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        const productArray = Object.entries(data).map(([id, url]) => ({
-          id,
-          name: `iPhone ${id}`,
-          price: parseFloat(id) * 10, // simple demo price logic
-          image: url as string,
-          description: `Apple iPhone ${id} — latest innovation.`,
-          featured: id === "16" || id === "17",
-        }));
-        setProducts(productArray);
-      } else {
-        console.log("No such document!");
+        for (let i = 12; i <= 17; i++) {
+          const url = data[i];
+          if (url) {
+            arr.push({
+              id: String(i),
+              name: `iPhone ${i}`,
+              price: i * 10,
+              image: url,
+              description: `Apple iPhone ${i}`,
+              featured: i === 16 || i === 17,
+            });
+          }
+        }
+        setProducts(arr);
       }
     });
-
     return () => unsubscribe();
   }, []);
 
-  // ✅ Manual refresh
-  const onRefresh = async () => {
-    setRefreshing(true);
-    try {
-      const docSnap = await getDoc(doc(db, "phones", "iphone"));
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        const productArray = Object.entries(data).map(([id, url]) => ({
-          id,
-          name: `iPhone ${id}`,
-          price: parseFloat(id) * 10,
-          image: url as string,
-          description: `Apple iPhone ${id} — latest innovation.`,
-          featured: id === "16" || id === "17",
-        }));
-        setProducts(productArray);
-      }
-      showToast("Products refreshed 🔄", "success");
-    } catch (error) {
-      console.error("Refresh error:", error);
-      showToast("Error refreshing products ❌", "error");
-    }
-    setRefreshing(false);
-  };
-
-  // ✅ Toast System
+  // ✅ Toast animation
   const showToast = (message: string, type: "success" | "error" = "success") => {
     setToast({ message, type });
     Animated.sequence([
@@ -98,67 +109,60 @@ export default function MyStore() {
     ]).start(() => setToast(null));
   };
 
-  // ✅ Cart Logic
-  const addToCart = (product: Product) => {
+  // ✅ Refresh logic
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadProducts();
+    setRefreshing(false);
+  };
+
+  // ✅ Cart logic
+  const addToCart = (item: Product) => {
     setCart((prev) => {
-      const existing = prev.find((p) => p.id === product.id);
+      const existing = prev.find((p) => p.id === item.id);
       if (existing) {
         return prev.map((p) =>
-          p.id === product.id ? { ...p, quantity: p.quantity + 1 } : p
+          p.id === item.id ? { ...p, quantity: p.quantity + 1 } : p
         );
       }
-      return [...prev, { ...product, quantity: 1 }];
+      return [...prev, { ...item, quantity: 1 }];
     });
-    showToast(`${product.name} added to cart ✅`, "success");
+    showToast(`${item.name} added 🛒`, "success");
   };
 
   const removeFromCart = (id: string) => {
-    setCart((prev) => prev.filter((item) => item.id !== id));
-    showToast("Item removed from cart 🗑️", "error");
+    setCart((prev) => prev.filter((p) => p.id !== id));
+    showToast("Removed from cart ❌", "error");
   };
 
-  const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const cartTotal = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
-  const handlePayment = () => {
-    showToast(`Checkout $${cartTotal.toFixed(2)} 💰`, "success");
-    setCart([]);
-    setCartVisible(false);
-  };
-
-  // ✅ Filter & Search
-  const filteredProducts = products.filter(
-    (p) =>
-      p.name.toLowerCase().includes(search.toLowerCase()) &&
-      (!filterFeatured || p.featured)
+  // ✅ Search filter
+  const filtered = products.filter((p) =>
+    p.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const renderProduct = ({ item }: { item: Product }) => (
-    <TouchableOpacity style={[styles.card, { backgroundColor: "#1e1e1e" }]}>
+  const renderItem = ({ item }: { item: Product }) => (
+    <TouchableOpacity style={styles.card}>
       {item.featured && (
         <View style={styles.featuredBadge}>
           <Text style={styles.featuredText}>FEATURED</Text>
         </View>
       )}
       <Image source={{ uri: item.image }} style={styles.image} />
-      <View style={styles.cardBody}>
-        <Text style={[styles.title, { color: "#fff" }]} numberOfLines={2}>
-          {item.name}
-        </Text>
-        <Text style={[styles.description, { color: "#aaa" }]} numberOfLines={2}>
-          {item.description}
-        </Text>
-        <Text style={[styles.price, { color: "#ff7f00" }]}>${item.price}</Text>
-      </View>
-      <View style={styles.buttonRow}>
+      <Text style={styles.title}>{item.name}</Text>
+      <Text style={styles.description}>{item.description}</Text>
+      <Text style={styles.price}>${item.price}</Text>
+      <View style={styles.row}>
         <TouchableOpacity
           onPress={() => addToCart(item)}
-          style={[styles.smallBtn, { backgroundColor: "#34c759" }]}
+          style={[styles.btn, { backgroundColor: "#34c759" }]}
         >
           <Ionicons name="cart" size={18} color="#fff" />
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => removeFromCart(item.id)}
-          style={[styles.smallBtn, { backgroundColor: "#ff3b30" }]}
+          style={[styles.btn, { backgroundColor: "#ff3b30" }]}
         >
           <Ionicons name="trash-outline" size={18} color="#fff" />
         </TouchableOpacity>
@@ -167,7 +171,7 @@ export default function MyStore() {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: "#121212" }]}>
+    <View style={styles.container}>
       {/* ✅ Toast */}
       {toast && (
         <Animated.View
@@ -185,44 +189,36 @@ export default function MyStore() {
 
       {/* ✅ Header */}
       <View style={styles.headerRow}>
-        <Text style={styles.header}>My Store</Text>
-        <TouchableOpacity onPress={() => setCartVisible(true)}>
-          <Ionicons name="cart-outline" size={32} color="#ff7f00" />
-          {cart.length > 0 && (
-            <View style={styles.cartBadge}>
-              <Text style={styles.cartBadgeText}>{cart.length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <Text style={styles.header}>iPhones</Text>
+        <Text style={{ color: "#ff7f00", fontWeight: "bold" }}>
+          Cart: ${cartTotal.toFixed(2)}
+        </Text>
       </View>
 
-      {/* ✅ Search + Filter */}
+      {/* ✅ Search bar */}
       <View style={{ flexDirection: "row", marginHorizontal: 20, marginBottom: 10 }}>
         <TextInput
-          placeholder="Search products..."
+          placeholder="Search iPhones..."
           placeholderTextColor="#888"
           value={search}
           onChangeText={setSearch}
-          style={[styles.input, { flex: 1, backgroundColor: "#1f1f1f", color: "#fff" }]}
+          style={[styles.input, { flex: 1 }]}
         />
         <TouchableOpacity
-          style={[
-            styles.smallBtn,
-            { marginLeft: 8, backgroundColor: filterFeatured ? "#ff7f00" : "#555" },
-          ]}
-          onPress={() => setFilterFeatured(!filterFeatured)}
+          onPress={onRefresh}
+          style={[styles.btn, { marginLeft: 8, backgroundColor: "#00BFFF" }]}
         >
-          <Ionicons name="star" size={20} color="#fff" />
+          <Ionicons name="refresh" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
 
       {/* ✅ Product Grid */}
       <FlatList
-        data={filteredProducts}
-        numColumns={2}
+        data={filtered}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 120 }}
-        renderItem={renderProduct}
+        renderItem={renderItem}
+        numColumns={2}
+        contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 100 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />
         }
@@ -232,58 +228,27 @@ export default function MyStore() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 40 },
+  container: { flex: 1, backgroundColor: "#121212", paddingTop: 40 },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
     marginHorizontal: 20,
     marginBottom: 10,
   },
-  header: { fontSize: 26, fontWeight: "900", color: "#fff" },
+  header: { color: "#fff", fontSize: 24, fontWeight: "900" },
   card: {
     width: CARD_WIDTH,
-    borderRadius: 14,
+    backgroundColor: "#1e1e1e",
+    borderRadius: 12,
     padding: 10,
     margin: 8,
-    elevation: 3,
   },
   image: { width: "100%", height: CARD_WIDTH, borderRadius: 10 },
-  cardBody: { marginTop: 8 },
-  title: { fontWeight: "700", fontSize: 15 },
-  description: { fontSize: 12, marginTop: 2 },
-  price: { fontWeight: "800", marginTop: 4, fontSize: 16 },
-  buttonRow: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginTop: 8,
-    gap: 6,
-  },
-  smallBtn: {
-    padding: 6,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  toast: {
-    position: "absolute",
-    left: 20,
-    right: 20,
-    padding: 12,
-    borderRadius: 10,
-    zIndex: 999,
-    elevation: 5,
-  },
-  toastText: { color: "#fff", fontWeight: "700", textAlign: "center" },
-  cartBadge: {
-    position: "absolute",
-    right: -6,
-    top: -4,
-    backgroundColor: "red",
-    borderRadius: 10,
-    paddingHorizontal: 6,
-  },
-  cartBadgeText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  title: { color: "#fff", fontWeight: "700", marginTop: 8 },
+  description: { color: "#aaa", fontSize: 12, marginTop: 4 },
+  price: { color: "#ff7f00", fontWeight: "800", marginTop: 6 },
+  row: { flexDirection: "row", justifyContent: "flex-end", marginTop: 8, gap: 8 },
+  btn: { padding: 8, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   featuredBadge: {
     position: "absolute",
     top: 6,
@@ -294,13 +259,22 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   featuredText: { color: "#fff", fontSize: 10, fontWeight: "700" },
+  toast: {
+    position: "absolute",
+    top: 20,
+    left: 20,
+    right: 20,
+    padding: 12,
+    borderRadius: 10,
+    zIndex: 999,
+    elevation: 5,
+  },
+  toastText: { color: "#fff", fontWeight: "700", textAlign: "center" },
   input: {
-    backgroundColor: "#333",
+    backgroundColor: "#1f1f1f",
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    marginBottom: 12,
-    fontSize: 15,
     color: "#fff",
   },
 });
