@@ -8,14 +8,30 @@ import { useColorScheme } from '../hooks/use-color-scheme';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  const activeColor = Colors[colorScheme ?? 'light'].tint;
+  const inactiveColor = Colors[colorScheme ?? 'light'].tabIconDefault ?? '#999';
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
+        tabBarActiveTintColor: activeColor,
+        tabBarInactiveTintColor: inactiveColor,
+        tabBarStyle: {
+          backgroundColor: Colors[colorScheme ?? 'light'].background,
+          borderTopWidth: 0,
+          elevation: 5,
+          shadowOpacity: 0.1,
+          height: 70,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '600',
+          marginBottom: 5,
+        },
         tabBarButton: HapticTab,
-      }}>
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
@@ -26,8 +42,29 @@ export default function TabLayout() {
       <Tabs.Screen
         name="money"
         options={{
-          title: 'money',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: 'Money Account',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="creditcard.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="store"
+        options={{
+          title: 'store',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="megaphone.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="music"
+        options={{
+          title: 'Music',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="music.note.list" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="plug"
+        options={{
+          title: 'ads',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="atom" color={color} />,
         }}
       />
     </Tabs>
