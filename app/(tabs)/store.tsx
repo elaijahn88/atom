@@ -6,18 +6,19 @@ import {
   Image,
   TouchableOpacity,
   StyleSheet,
-  Modal,
   TextInput,
   Dimensions,
-  TouchableWithoutFeedback,
-  Keyboard,
-  ScrollView,
   RefreshControl,
   Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { doc, getDoc, onSnapshot } from "firebase/firestore";
-import { db } from "./firebaseConfig"; // ✅ your Firebase setup file
+import {
+  doc,
+  getDoc,
+  onSnapshot,
+  updateDoc,
+} from "firebase/firestore";
+import { db } from "../../firebase"; // ✅ updated import
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 48) / 2;
@@ -46,15 +47,13 @@ export default function MyStore() {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
   const [filterFeatured, setFilterFeatured] = useState(false);
-
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const toastAnim = useRef(new Animated.Value(-60)).current;
 
-  // ✅ Fetch iPhones dynamically from Firestore
+  // ✅ Firestore listener (real-time)
   useEffect(() => {
     const docRef = doc(db, "phones", "iphone");
 
-    // Real-time updates (auto-refresh on change)
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -75,7 +74,7 @@ export default function MyStore() {
     return () => unsubscribe();
   }, []);
 
-  // ✅ Manual refresh handler
+  // ✅ Manual refresh
   const onRefresh = async () => {
     setRefreshing(true);
     try {
@@ -100,7 +99,17 @@ export default function MyStore() {
     setRefreshing(false);
   };
 
-  // ✅ Cart handlers
+  // ✅ Toast System
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    Animated.sequence([
+      Animated.timing(toastAnim, { toValue: 20, duration: 300, useNativeDriver: true }),
+      Animated.delay(1800),
+      Animated.timing(toastAnim, { toValue: -60, duration: 300, useNativeDriver: true }),
+    ]).start(() => setToast(null));
+  };
+
+  // ✅ Cart Logic
   const addToCart = (product: Product) => {
     setCart((prev) => {
       const existing = prev.find((p) => p.id === product.id);
@@ -119,19 +128,9 @@ export default function MyStore() {
     showToast("Item removed from cart 🗑️", "error");
   };
 
-  const updateQuantity = (id: string, delta: number) => {
-    setCart((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? { ...item, quantity: Math.max(1, item.quantity + delta) }
-          : item
-      )
-    );
-  };
-
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-  // ✅ Edit modal handlers
+  // ✅ Edit Logic
   const handleEdit = (product: Product) => {
     setProductToEdit(product);
     setName(product.name);
@@ -141,17 +140,47 @@ export default function MyStore() {
     setEditModal(true);
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!productToEdit) return;
-    setProducts((prev) =>
-      prev.map((p) =>
-        p.id === productToEdit.id
-          ? { ...p, name, price: parseFloat(price), image, description }
-          : p
-      )
-    );
-    showToast("Product changes saved ✏️", "success");
-    setEditModal(false);
+
+    try {
+      // update Firestore document field dynamically
+      const docRef = doc(db, "phones", "iphone");
+      const updatedProducts = {
+        ...Object.fromEntries(products.map((p) => [p.id, p])),
+        [productToEdit.id]: {
+          name,
+          price: parseFloat(price),
+          image,
+          description,
+          featured: productToEdit.featured || false,
+        },
+      };
+
+      await updateDoc(docRef, updatedProducts);
+      showToast("Product updated ✏️", "success");
+      setEditModal(false);
+    } catch (error) {
+      console.error("Error updating product:", error);
+      showToast("Failed to save product ❌", "error");
+    }
+  };
+
+  const handleDelete = async (productId: string) => {
+    try {
+      const docRef = doc(db, "phones", "iphone");
+      const remaining = Object.fromEntries(
+        products
+          .filter((p) => p.id !== productId)
+          .map((p) => [p.id, { ...p }])
+      );
+
+      await updateDoc(docRef, remaining);
+      showToast("Product deleted 🗑️", "error");
+    } catch (error) {
+      console.error("Delete error:", error);
+      showToast("Failed to delete ❌", "error");
+    }
   };
 
   const handlePayment = () => {
@@ -160,23 +189,7 @@ export default function MyStore() {
     setCartVisible(false);
   };
 
-  const handleDelete = (productId: string) => {
-    setProducts((prev) => prev.filter((p) => p.id !== productId));
-    setCart((prev) => prev.filter((p) => p.id !== productId));
-    showToast("Product deleted 🗑️", "error");
-  };
-
-  // ✅ Toast system
-  const showToast = (message: string, type: "success" | "error" = "success") => {
-    setToast({ message, type });
-    Animated.sequence([
-      Animated.timing(toastAnim, { toValue: 20, duration: 300, useNativeDriver: true }),
-      Animated.delay(1800),
-      Animated.timing(toastAnim, { toValue: -60, duration: 300, useNativeDriver: true }),
-    ]).start(() => setToast(null));
-  };
-
-  // ✅ Search + Featured filter
+  // ✅ Filter & Search
   const filteredProducts = products.filter(
     (p) =>
       p.name.toLowerCase().includes(search.toLowerCase()) &&
@@ -223,7 +236,6 @@ export default function MyStore() {
     </TouchableOpacity>
   );
 
-  // ✅ Render UI
   return (
     <View style={[styles.container, { backgroundColor: "#121212" }]}>
       {toast && (
