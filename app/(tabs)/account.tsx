@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from "react";
+// 📁 App.tsx
+import React, { useState, useEffect } from "react";
 import {
   View,
   TextInput,
@@ -9,129 +10,80 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  FlatList,
-  Dimensions,
-  StatusBar,
-  Animated,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase";
 import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
   signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
 } from "firebase/auth";
-import { doc, setDoc, getDoc, onSnapshot, collection } from "firebase/firestore";
-import Video from "react-native-video";
+import {
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  getDocs,
+  collection,
+  addDoc,
+} from "firebase/firestore";
 
 interface IUserData {
   email: string;
-  name: string;
   account: number;
   createdAt: Date;
-  avatar?: string;
 }
-
-const { width, height } = Dimensions.get("window");
 
 export default function App() {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [name, setName] = useState("");
-  const [account, setAccount] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [isLoginMode, setIsLoginMode] = useState(true);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState<IUserData | null>(null);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [videos, setVideos] = useState<any[]>([]);
-  const [showVideoFeed, setShowVideoFeed] = useState(false);
-  const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  const videoRefs = useRef<Video[]>([]);
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) setCurrentIndex(viewableItems[0].index);
-  });
-  const viewConfigRef = useRef({ viewAreaCoveragePercentThreshold: 80 });
-
-  // 🔄 Fetch videos from Firestore
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "videos"), (snapshot) => {
-      const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-      setVideos(data);
-    });
-    return () => unsubscribe();
-  }, []);
+  const [showManager, setShowManager] = useState(false);
 
   const validateEmail = (email: string): boolean =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   const setMsg = (msg: string) => {
     setMessage(msg);
-    setTimeout(() => setMessage(""), 5000);
+    setTimeout(() => setMessage(""), 4000);
     return false;
   };
 
-  const validateForm = (): boolean => {
+  const handleLogin = async () => {
     if (!email.trim()) return setMsg("Email is required");
     if (!validateEmail(email)) return setMsg("Enter a valid email");
-    if (!password.trim()) return setMsg("Password is required");
-    if (!isLoginMode) {
-      if (!name.trim()) return setMsg("Full name is required");
-      if (password !== confirmPassword) return setMsg("Passwords do not match");
-    }
-    return true;
-  };
 
-  const handleSignUp = async () => {
-    if (!validateForm()) return;
     setLoading(true);
-    setMessage("");
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-
-      const userData: IUserData = {
-        email: user.email || email,
-        name,
-        account: Number(account) || 0,
-        createdAt: new Date(),
-        avatar: `https://i.pravatar.cc/150?u=${email}`,
-      };
-
-      await setDoc(doc(db, "users", user.uid), userData);
-      setUser(userData);
-      setIsLoggedIn(true);
-      setMessage("✅ Account created successfully!");
-    } catch (err: any) {
-      setMsg("Error: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSignIn = async () => {
-    if (!validateForm()) return;
-    setLoading(true);
-    setMessage("");
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-      const docRef = doc(db, "users", user.uid);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data() as IUserData;
-        setUser(data);
-        setMessage(`✅ Welcome back, ${data.name || "User"}!`);
+      // Try to sign in; if not exist, create account automatically
+      try {
+        const userCredential = await signInWithEmailAndPassword(auth, email, "defaultpass");
+        const user = userCredential.user;
+        const userDoc = await getDoc(doc(db, "users", user.uid));
+        if (userDoc.exists()) {
+          const data = userDoc.data() as IUserData;
+          setUser(data);
+        }
+        setIsLoggedIn(true);
+        setMsg("✅ Logged in successfully");
+      } catch {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, "defaultpass");
+        const user = userCredential.user;
+        const userData: IUserData = {
+          email: user.email || email,
+          account: 0,
+          createdAt: new Date(),
+        };
+        await setDoc(doc(db, "users", user.uid), userData);
+        setUser(userData);
+        setIsLoggedIn(true);
+        setMsg("✅ Account created successfully!");
       }
-      setIsLoggedIn(true);
     } catch (err: any) {
-      setMsg("Error: " + err.message);
+      setMsg("❌ " + err.message);
     } finally {
       setLoading(false);
     }
@@ -141,284 +93,270 @@ export default function App() {
     await signOut(auth);
     setIsLoggedIn(false);
     setUser(null);
-    setShowVideoFeed(false);
+    setShowManager(false);
   };
 
-  // 💰 Mobile Money button with label + animation
-  const handleMobileMoney = async () => {
-    if (!user) return;
-    try {
-      const userRef = doc(db, "users", auth.currentUser?.uid || "");
-      const userSnap = await getDoc(userRef);
-
-      let balance = user.account;
-      if (userSnap.exists()) {
-        const data = userSnap.data() as IUserData;
-        balance = data.account;
-      }
-
-      const transactionAmount = 10;
-
-      if (balance >= transactionAmount) {
-        const newBalance = balance - transactionAmount;
-        await setDoc(userRef, { ...user, account: newBalance }, { merge: true });
-        setUser({ ...user, account: newBalance });
-
-        // Success message + animation
-        setMessage(`✅ Transaction complete! $${transactionAmount} deducted. New balance: $${newBalance}`);
-        setShowSuccessOverlay(true);
-
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }).start(() => {
-          setTimeout(() => {
-            Animated.timing(fadeAnim, {
-              toValue: 0,
-              duration: 500,
-              useNativeDriver: true,
-            }).start(() => setShowSuccessOverlay(false));
-          }, 2000);
-        });
-      } else {
-        setMessage(`⚠️ Insufficient funds. Balance: $${balance}. Need $${transactionAmount}.`);
-      }
-    } catch (error) {
-      console.error(error);
-      setMessage("❌ Unable to process transaction. Please try again later.");
-    }
-  };
-
-  // 🎥 Show welcome video for 10 seconds, then show feed
-  useEffect(() => {
-    if (isLoggedIn && user) {
-      const timer = setTimeout(() => setShowVideoFeed(true), 10000);
-      return () => clearTimeout(timer);
-    }
-  }, [isLoggedIn, user]);
-
-  // 🔹 Logged-in Screens
-  if (isLoggedIn && user) {
-    // 🎬 Welcome video
-    if (!showVideoFeed) {
-      return (
-        <View style={styles.darkContainer}>
-          <StatusBar hidden />
-          <Video
-            source={{ uri: "https://xlijah.com/soso.mp4" }}
-            style={styles.fullscreenVideo}
-            resizeMode="cover"
-            repeat
-          />
-        </View>
-      );
-    }
-
-    // 🎞️ Firestore video feed
+  if (showManager) {
     return (
-      <View style={styles.darkContainer}>
-        <StatusBar hidden />
-        <FlatList
-          data={videos}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item, index }) => (
-            <View style={{ width, height }}>
-              <Video
-                ref={(ref) => (videoRefs.current[index] = ref!)}
-                source={{ uri: item.uri }}
-                style={styles.video}
-                resizeMode="cover"
-                repeat
-                paused={currentIndex !== index}
-              />
-            </View>
-          )}
-          pagingEnabled
-          showsVerticalScrollIndicator={false}
-          onViewableItemsChanged={onViewableItemsChanged.current}
-          viewabilityConfig={viewConfigRef.current}
-        />
-
-        {/* 💰 Mobile Money Button */}
-        <TouchableOpacity style={styles.moneyButton} onPress={handleMobileMoney}>
-          <Ionicons name="cash-outline" size={22} color="#fff" />
-          <Text style={styles.moneyButtonText}>Mobile Money</Text>
+      <View style={{ flex: 1 }}>
+        <TouchableOpacity
+          style={{ backgroundColor: "#00BFFF", padding: 14, alignItems: "center" }}
+          onPress={() => setShowManager(false)}
+        >
+          <Text style={{ color: "#fff", fontWeight: "bold" }}>⬅ Back to Dashboard</Text>
         </TouchableOpacity>
-
-        {message ? (
-          <Text
-            style={[
-              styles.msg,
-              message.includes("✅")
-                ? { color: "#00FF88" }
-                : message.includes("⚠️")
-                ? { color: "#FFD700" }
-                : { color: "#FF5252" },
-            ]}
-          >
-            {message}
-          </Text>
-        ) : null}
-
-        {/* 🎉 Animated Overlay */}
-        {showSuccessOverlay && (
-          <Animated.View style={[styles.overlayContainer, { opacity: fadeAnim }]}>
-            <View style={styles.overlayBox}>
-              <Ionicons name="checkmark-circle-outline" size={64} color="#00FF88" />
-              <Text style={styles.overlayText}>Transaction Complete</Text>
-            </View>
-          </Animated.View>
-        )}
+        <MobileMoneyManager />
       </View>
     );
   }
 
-  // 🔐 Login/Signup Screen
+  if (isLoggedIn && user) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>Welcome, {user.email}</Text>
+        <Text style={styles.balance}>💰 Account Balance: ${user.account}</Text>
+
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: "#FF9800" }]}
+          onPress={() => setShowManager(true)}
+        >
+          <Ionicons name="settings-outline" size={22} color="#fff" />
+          <Text style={styles.buttonText}>Manage Users</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: "#FF5252", marginTop: 10 }]}
+          onPress={handleLogout}
+        >
+          <Text style={styles.buttonText}>Log Out</Text>
+        </TouchableOpacity>
+
+        {message ? <Text style={styles.msg}>{message}</Text> : null}
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
-      style={styles.darkContainer}
+      style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.header}>
-          <Ionicons name="lock-closed-outline" size={52} color="#00BFFF" />
-          <Text style={styles.darkTitle}>
-            {isLoginMode ? "Welcome Back" : "Join the Community"}
-          </Text>
-          <Text style={styles.darkSubtitle}>
-            {isLoginMode ? "Sign in to continue" : "Create your account below"}
-          </Text>
-        </View>
+      <ScrollView contentContainerStyle={{ alignItems: "center" }}>
+        <Ionicons name="mail-outline" size={50} color="#00BFFF" />
+        <Text style={styles.title}>Simple Email Login</Text>
 
-        <View style={styles.darkForm}>
-          <DarkField label="Email" value={email} placeholder="you@example.com" onChangeText={setEmail} />
-          <DarkPasswordField label="Password" value={password} onChangeText={setPassword} show={showPassword} toggle={() => setShowPassword(!showPassword)} />
-          {!isLoginMode && (
-            <DarkPasswordField label="Confirm Password" value={confirmPassword} onChangeText={setConfirmPassword} show={showConfirmPassword} toggle={() => setShowConfirmPassword(!showConfirmPassword)} />
-          )}
-          {!isLoginMode && (
-            <>
-              <DarkField label="Full Name" value={name} onChangeText={setName} />
-              <DarkField label="Account" value={account} onChangeText={setAccount} keyboardType="numeric" />
-            </>
-          )}
-          <TouchableOpacity
-            style={[styles.darkButton, loading && { opacity: 0.6 }]}
-            onPress={isLoginMode ? handleSignIn : handleSignUp}
-            disabled={loading}
-          >
-            <Text style={styles.darkButtonText}>{isLoginMode ? "Sign In" : "Sign Up"}</Text>
-          </TouchableOpacity>
+        <TextInput
+          style={styles.input}
+          placeholder="you@example.com"
+          placeholderTextColor="#888"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+        />
 
-          <TouchableOpacity onPress={() => setIsLoginMode(!isLoginMode)}>
-            <Text style={styles.switchText}>
-              {isLoginMode ? "Don’t have an account? Sign Up" : "Already have one? Sign In"}
-            </Text>
-          </TouchableOpacity>
-
-          {message ? (
-            <Text style={[styles.msg, message.includes("✅") ? { color: "#4CAF50" } : { color: "#FF5252" }]}>
-              {message}
-            </Text>
-          ) : null}
-        </View>
+        <TouchableOpacity
+          style={[styles.button, loading && { opacity: 0.7 }]}
+          onPress={handleLogin}
+          disabled={loading}
+        >
+          <Text style={styles.buttonText}>Continue</Text>
+        </TouchableOpacity>
 
         {loading && <ActivityIndicator size="large" color="#00BFFF" />}
+        {message ? <Text style={styles.msg}>{message}</Text> : null}
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-/* 🔹 Reusable Fields */
-const DarkField = ({ label, value, onChangeText, keyboardType = "default", placeholder }: any) => (
-  <View style={{ marginBottom: 14 }}>
-    <Text style={styles.darkLabel}>{label}</Text>
-    <TextInput
-      style={styles.darkInput}
-      placeholder={placeholder}
-      placeholderTextColor="#666"
-      value={value}
-      onChangeText={onChangeText}
-      keyboardType={keyboardType}
-    />
-  </View>
-);
+/* 💰 Admin Mobile Money Manager */
+function MobileMoneyManager() {
+  const [email, setEmail] = useState("");
+  const [fetchedEmail, setFetchedEmail] = useState("");
+  const [userAccount, setUserAccount] = useState<number>(0);
+  const [isFrozen, setIsFrozen] = useState<boolean>(false);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [topUpAmount, setTopUpAmount] = useState("");
+  const quickTopUps = [5, 10, 20, 50, 100];
 
-const DarkPasswordField = ({ label, value, onChangeText, show, toggle }: any) => (
-  <View style={{ marginBottom: 14 }}>
-    <Text style={styles.darkLabel}>{label}</Text>
-    <View style={{ flexDirection: "row", alignItems: "center" }}>
+  const fetchUserData = async () => {
+    if (!email) return;
+    try {
+      const usersSnapshot = await getDocs(collection(db, "users"));
+      let foundUser: any = null;
+      usersSnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.email === email) foundUser = { id: docSnap.id, ...data };
+      });
+      if (foundUser) {
+        setFetchedEmail(email);
+        setUserAccount(foundUser.account);
+        setIsFrozen(foundUser.isFrozen || false);
+        const txCol = collection(db, "users", foundUser.id, "transactions");
+        const txSnap = await getDocs(txCol);
+        const txList: any[] = [];
+        txSnap.forEach((doc) => txList.push(doc.data()));
+        setTransactions(txList.reverse());
+      } else {
+        Alert.alert("Not Found", "No user with that email exists.");
+      }
+    } catch (err) {
+      console.error("Error fetching user data:", err);
+      Alert.alert("Error", "Failed to fetch user data.");
+    }
+  };
+
+  const simulateTopUp = async (amount?: number) => {
+    const topUpValue = amount ?? Number(topUpAmount);
+    if (!topUpValue || !fetchedEmail) return;
+    try {
+      const usersSnapshot = await getDocs(collection(db, "users"));
+      let userDocId = "";
+      usersSnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.email === fetchedEmail) userDocId = docSnap.id;
+      });
+      if (!userDocId) return Alert.alert("Error", "User not found.");
+
+      const newBalance = userAccount + topUpValue;
+      await updateDoc(doc(db, "users", userDocId), { account: newBalance });
+      await addDoc(collection(db, "users", userDocId, "transactions"), {
+        amount: topUpValue,
+        timestamp: new Date().toLocaleString(),
+        status: "Completed",
+      });
+      setUserAccount(newBalance);
+      setTopUpAmount("");
+      Alert.alert("Success", `$${topUpValue} added successfully!`);
+    } catch (err) {
+      console.error("Error during top-up:", err);
+      Alert.alert("Error", "Top-up failed!");
+    }
+  };
+
+  const freezeAccount = async () => {
+    if (!fetchedEmail) return;
+    try {
+      const usersSnapshot = await getDocs(collection(db, "users"));
+      let userDocId = "";
+      usersSnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.email === fetchedEmail) userDocId = docSnap.id;
+      });
+      if (!userDocId) return;
+
+      await updateDoc(doc(db, "users", userDocId), { isFrozen: !isFrozen });
+      setIsFrozen(!isFrozen);
+      Alert.alert("Success", `Account ${!isFrozen ? "frozen" : "unfrozen"}!`);
+    } catch (err) {
+      console.error("Error updating freeze:", err);
+      Alert.alert("Error", "Failed to update account status.");
+    }
+  };
+
+  return (
+    <ScrollView style={styles.managerContainer}>
+      <Text style={styles.managerTitle}>📱 Mobile Money Manager</Text>
       <TextInput
-        style={[styles.darkInput, { flex: 1 }]}
-        placeholder="••••••"
-        placeholderTextColor="#666"
-        value={value}
-        onChangeText={onChangeText}
-        secureTextEntry={!show}
+        style={styles.input}
+        placeholder="Enter User Email"
+        placeholderTextColor="#999"
+        value={email}
+        onChangeText={setEmail}
       />
-      <TouchableOpacity onPress={toggle} style={{ padding: 4 }}>
-        <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={20} color="#999" />
+      <TouchableOpacity style={styles.button} onPress={fetchUserData}>
+        <Text style={styles.buttonText}>Fetch User</Text>
       </TouchableOpacity>
-    </View>
-  </View>
-);
+
+      {fetchedEmail ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{fetchedEmail}</Text>
+          <Text>Account: ${userAccount.toFixed(2)}</Text>
+          <Text>Status: {isFrozen ? "❄️ Frozen" : "✅ Active"}</Text>
+
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: isFrozen ? "#4CAF50" : "#FF5252" }]}
+              onPress={freezeAccount}
+            >
+              <Text style={styles.buttonText}>
+                {isFrozen ? "Unfreeze" : "Freeze"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Enter top-up amount"
+            value={topUpAmount}
+            onChangeText={setTopUpAmount}
+            keyboardType="numeric"
+          />
+
+          <View style={styles.quickTopUps}>
+            {quickTopUps.map((amt) => (
+              <TouchableOpacity
+                key={amt}
+                style={styles.quickTopUpButton}
+                onPress={() => simulateTopUp(amt)}
+              >
+                <Text style={styles.buttonText}>+${amt}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.txHeader}>Recent Transactions</Text>
+          {transactions.map((tx, idx) => (
+            <View key={idx} style={styles.txCard}>
+              <Text>Amount: ${tx.amount}</Text>
+              <Text>Status: {tx.status}</Text>
+              <Text>{tx.timestamp}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </ScrollView>
+  );
+}
 
 /* 🎨 Styles */
 const styles = StyleSheet.create({
-  darkContainer: { flex: 1, backgroundColor: "#0a0a0a" },
-  scrollContainer: { flexGrow: 1, justifyContent: "center", padding: 20 },
-  header: { alignItems: "center", marginBottom: 30 },
-  darkTitle: { fontSize: 26, fontWeight: "700", color: "#fff", marginTop: 10 },
-  darkSubtitle: { color: "#999", fontSize: 15, marginTop: 4 },
-  darkForm: { backgroundColor: "#1a1a1a", padding: 24, borderRadius: 20 },
-  darkLabel: { color: "#ccc", fontSize: 14, marginBottom: 4 },
-  darkInput: { backgroundColor: "#111", color: "#fff", borderRadius: 10, paddingVertical: 12, paddingHorizontal: 14, fontSize: 16 },
-  darkButton: { backgroundColor: "#00BFFF", paddingVertical: 14, borderRadius: 12, alignItems: "center", marginTop: 10 },
-  darkButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  switchText: { color: "#00BFFF", textAlign: "center", marginTop: 16 },
-  msg: { textAlign: "center", marginTop: 12, fontSize: 14 },
-  fullscreenVideo: { position: "absolute", top: 0, left: 0, width: "100%", height: "100%" },
-  video: { width: "100%", height: "100%" },
-  moneyButton: {
-    position: "absolute",
-    bottom: 80,
-    left: "25%",
-    right: "25%",
+  container: {
+    flex: 1,
+    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  title: { color: "#fff", fontSize: 24, fontWeight: "bold", marginVertical: 10 },
+  balance: { color: "#00BFFF", fontSize: 18, marginVertical: 10 },
+  input: {
+    backgroundColor: "#111",
+    color: "#fff",
+    borderRadius: 10,
+    padding: 12,
+    marginVertical: 6,
+    width: "90%",
+  },
+  button: {
     backgroundColor: "#00BFFF",
-    paddingVertical: 12,
-    borderRadius: 20,
+    padding: 12,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: 10,
     flexDirection: "row",
     justifyContent: "center",
-    alignItems: "center",
   },
-  moneyButtonText: { color: "#fff", fontSize: 16, fontWeight: "600", marginLeft: 8 },
-  overlayContainer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 100,
-  },
-  overlayBox: {
-    backgroundColor: "#111",
-    borderRadius: 20,
-    paddingVertical: 30,
-    paddingHorizontal: 50,
-    alignItems: "center",
-    shadowColor: "#00FF88",
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  overlayText: {
-    color: "#00FF88",
-    fontSize: 18,
-    fontWeight: "700",
-    marginTop: 10,
-  },
+  buttonText: { color: "#fff", fontWeight: "bold", marginLeft: 6 },
+  msg: { color: "#ccc", marginTop: 10 },
+  managerContainer: { flex: 1, backgroundColor: "#111", padding: 20 },
+  managerTitle: { color: "#00BFFF", fontSize: 24, fontWeight: "bold", marginBottom: 20 },
+  card: { backgroundColor: "#1a1a1a", padding: 20, borderRadius: 12, marginTop: 20 },
+  cardTitle: { color: "#fff", fontSize: 18, fontWeight: "bold", marginBottom: 10 },
+  actionRow: { flexDirection: "row", justifyContent: "center", marginTop: 10 },
+  actionButton: { padding: 10, borderRadius: 10, alignItems: "center", marginHorizontal: 4 },
+  quickTopUps: { flexDirection: "row", justifyContent: "space-around", marginVertical: 10 },
+  quickTopUpButton: { backgroundColor: "#00BFFF", padding: 10, borderRadius: 10 },
+  txHeader: { color: "#00BFFF", fontSize: 18, fontWeight: "bold", marginTop: 20 },
+  txCard: { backgroundColor: "#222", padding: 10, borderRadius: 10, marginTop: 6 },
 });
