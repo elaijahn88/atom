@@ -1,5 +1,5 @@
 // App.tsx
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -10,9 +10,14 @@ import {
   FlatList,
   Alert,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
+/* -----------------------
+   Types
+   ----------------------- */
 type Transaction = {
   id: string;
   provider?: string;
@@ -41,9 +46,16 @@ type User = {
   loan: Loan;
 };
 
+/* -----------------------
+   Constants
+   ----------------------- */
+const STORAGE_KEY = "@david_data_v1";
+
+/* -----------------------
+   App
+   ----------------------- */
 export default function App() {
-  // Hardcoded David
-  const [david, setDavid] = useState<User>({
+  const initialDavid: User = {
     id: "david-1",
     name: "David",
     email: "david@example.com",
@@ -62,13 +74,17 @@ export default function App() {
       },
     ],
     loan: { amount: 0, outstanding: 0, status: "NoLoan", dueDate: null },
-  });
+  };
 
+  const [david, setDavid] = useState<User | null>(null);
+  const [loadingStore, setLoadingStore] = useState(true);
+
+  // UI state
   const [visibleSection, setVisibleSection] = useState<
     "none" | "deposit" | "viewClient" | "loan"
   >("none");
 
-  // Deposit state
+  // deposit UI
   const [topUpAmount, setTopUpAmount] = useState<string>("");
   const quickTopUps = [5, 10, 20, 50, 100];
   const mobileMoneyProviders = [
@@ -78,35 +94,81 @@ export default function App() {
     { name: "G-Money", key: "G-Money" },
   ];
 
-  // Utility: add transaction locally
+  /* -----------------------
+     Load David from AsyncStorage on mount
+     ----------------------- */
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const json = await AsyncStorage.getItem(STORAGE_KEY);
+        if (json) {
+          const parsed = JSON.parse(json) as User;
+          if (mounted) setDavid(parsed);
+        } else {
+          if (mounted) setDavid(initialDavid);
+        }
+      } catch (err) {
+        console.error("Failed loading david from storage:", err);
+        if (mounted) setDavid(initialDavid);
+      } finally {
+        if (mounted) setLoadingStore(false);
+      }
+    };
+    load();
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* -----------------------
+     Persist david whenever it changes
+     ----------------------- */
+  useEffect(() => {
+    if (!david) return;
+    const persist = async () => {
+      try {
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(david));
+      } catch (err) {
+        console.error("Failed saving david to storage:", err);
+      }
+    };
+    persist();
+  }, [david]);
+
+  /* -----------------------
+     Helpers: update state and transactions
+     ----------------------- */
   const addTransaction = (tx: Transaction) => {
-    setDavid((prev) => ({
-      ...prev,
-      transactions: [tx, ...prev.transactions],
-    }));
+    setDavid((prev) =>
+      prev ? { ...prev, transactions: [tx, ...prev.transactions] } : prev
+    );
   };
 
-  // Simulate top-up via provider (adds pending tx, then completes)
+  /* -----------------------
+     Top-up (no confirmation)
+     ----------------------- */
   const handleTopUp = (amountParam?: number, providerKey?: string) => {
+    if (!david) return;
     if (david.isFrozen) {
       Alert.alert("Account Frozen", "Cannot top up: account is frozen.");
       return;
     }
 
-    const amount = amountParam ?? Number(topUpAmount);
-    if (!amount || isNaN(amount) || amount <= 0) {
+    const parsedAmount = amountParam ?? Number(topUpAmount);
+    if (!parsedAmount || isNaN(parsedAmount) || parsedAmount <= 0) {
       Alert.alert("Invalid amount", "Enter a valid top-up amount.");
       return;
     }
 
     const txId = `tx_${Date.now()}`;
     const provider = providerKey ?? "Manual";
-
     const pendingTx: Transaction = {
       id: txId,
       provider,
       type: "TopUp",
-      amount,
+      amount: parsedAmount,
       timestamp: new Date().toLocaleString(),
       status: "Pending",
       note: `Top-up via ${provider}`,
@@ -115,81 +177,110 @@ export default function App() {
     addTransaction(pendingTx);
     setTopUpAmount("");
 
-    // simulate network/process delay -> then complete
+    // simulate processing then complete
     setTimeout(() => {
-      // complete transaction and update balance
       setDavid((prev) => {
+        if (!prev) return prev;
         const updatedTxs = prev.transactions.map((t) =>
           t.id === txId ? { ...t, status: "Completed" } : t
         );
-        const newBalance = prev.account + amount;
-        return {
-          ...prev,
-          account: newBalance,
-          transactions: updatedTxs,
-        };
+        const newBalance = prev.account + parsedAmount;
+        return { ...prev, account: newBalance, transactions: updatedTxs };
       });
-      Alert.alert("Top-Up Completed", `$${amount} added to David's account.`);
-    }, 1500);
+      Alert.alert("Top-Up Completed", `$${parsedAmount} added to David's account.`);
+    }, 1200);
   };
 
-  // Freeze / Unfreeze
-  const toggleFreeze = () => {
-    setDavid((prev) => ({ ...prev, isFrozen: !prev.isFrozen }));
-    Alert.alert("Success", `Account ${!david.isFrozen ? "frozen" : "unfrozen"}.`);
+  /* -----------------------
+     Freeze / Unfreeze (with confirmation)
+     ----------------------- */
+  const confirmToggleFreeze = () => {
+    if (!david) return;
+    Alert.alert(
+      `${david.isFrozen ? "Unfreeze" : "Freeze"} Account`,
+      `Are you sure you want to ${david.isFrozen ? "unfreeze" : "freeze"} David's account?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: david.isFrozen ? "Unfreeze" : "Freeze",
+          style: "destructive",
+          onPress: () => {
+            setDavid((prev) => (prev ? { ...prev, isFrozen: !prev.isFrozen } : prev));
+            Alert.alert("Success", `Account ${david.isFrozen ? "unfrozen" : "frozen"}.`);
+          },
+        },
+      ]
+    );
   };
 
-  // Loan functions (simple simulation)
+  /* -----------------------
+     Loan functions (request, approve with confirmation, repay with confirmation)
+     ----------------------- */
   const requestLoan = (amount: number) => {
+    if (!david) return;
     if (amount <= 0 || isNaN(amount)) {
       Alert.alert("Invalid amount", "Enter a valid loan amount.");
       return;
     }
-    // set loan pending
-    setDavid((prev) => ({
-      ...prev,
-      loan: {
-        amount,
-        outstanding: amount,
-        status: "Pending",
-        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString(),
-      },
-    }));
+    setDavid((prev) =>
+      prev
+        ? {
+            ...prev,
+            loan: {
+              amount,
+              outstanding: amount,
+              status: "Pending",
+              dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString(),
+            },
+          }
+        : prev
+    );
     Alert.alert("Loan Requested", `Loan of $${amount} is pending approval.`);
   };
 
-  const approveLoan = () => {
+  const confirmApproveLoan = () => {
+    if (!david) return;
     if (david.loan.status !== "Pending") {
       Alert.alert("No pending loan", "There is no loan pending approval.");
       return;
     }
-    // Approve: add amount to account and mark active
-    setDavid((prev) => {
-      const newBalance = prev.account + prev.loan.amount;
-      const updatedLoan: Loan = {
-        ...prev.loan,
-        status: "Active",
-      };
-      // add transaction for loan disbursement
-      const tx: Transaction = {
-        id: `loan_disburse_${Date.now()}`,
-        type: "Other",
-        amount: prev.loan.amount,
-        timestamp: new Date().toLocaleString(),
-        status: "Completed",
-        note: "Loan disbursed",
-      };
-      return {
-        ...prev,
-        account: newBalance,
-        transactions: [tx, ...prev.transactions],
-        loan: updatedLoan,
-      };
-    });
-    Alert.alert("Loan Approved", "Loan has been disbursed to David's account.");
+    Alert.alert(
+      "Approve Loan",
+      `Approve loan of $${david.loan.amount}? This will disburse funds to David's account.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Approve",
+          onPress: () => {
+            // Approve - add to balance, create a tx
+            setDavid((prev) => {
+              if (!prev) return prev;
+              const newBalance = prev.account + prev.loan.amount;
+              const updatedLoan: Loan = { ...prev.loan, status: "Active" };
+              const tx: Transaction = {
+                id: `loan_disburse_${Date.now()}`,
+                type: "Other",
+                amount: prev.loan.amount,
+                timestamp: new Date().toLocaleString(),
+                status: "Completed",
+                note: "Loan disbursed",
+              };
+              return {
+                ...prev,
+                account: newBalance,
+                transactions: [tx, ...prev.transactions],
+                loan: updatedLoan,
+              };
+            });
+            Alert.alert("Loan Approved", "Loan has been disbursed to David's account.");
+          },
+        },
+      ]
+    );
   };
 
-  const repayLoan = (amount: number) => {
+  const confirmRepayLoan = (amount: number) => {
+    if (!david) return;
     if (david.loan.status !== "Active") {
       Alert.alert("No active loan", "There is no active loan to repay.");
       return;
@@ -203,29 +294,71 @@ export default function App() {
       return;
     }
 
-    setDavid((prev) => {
-      const newOutstanding = Math.max(0, prev.loan.outstanding - amount);
-      const newAccount = prev.account - amount;
-      const loanStatus = newOutstanding === 0 ? "Paid" : "Active";
-      const tx: Transaction = {
-        id: `loan_repay_${Date.now()}`,
-        type: "LoanPayment",
-        amount,
-        timestamp: new Date().toLocaleString(),
-        status: "Completed",
-        note: "Loan repayment",
-      };
-      return {
-        ...prev,
-        account: newAccount,
-        transactions: [tx, ...prev.transactions],
-        loan: { ...prev.loan, outstanding: newOutstanding, status: loanStatus },
-      };
-    });
-    Alert.alert("Repayment Received", `Paid $${amount} towards the loan.`);
+    Alert.alert(
+      "Confirm Repayment",
+      `Repay $${amount} towards the loan? This will deduct the amount from David's account.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Repay",
+          onPress: () => {
+            setDavid((prev) => {
+              if (!prev) return prev;
+              const newOutstanding = Math.max(0, prev.loan.outstanding - amount);
+              const newAccount = prev.account - amount;
+              const loanStatus = newOutstanding === 0 ? "Paid" : "Active";
+              const tx: Transaction = {
+                id: `loan_repay_${Date.now()}`,
+                type: "LoanPayment",
+                amount,
+                timestamp: new Date().toLocaleString(),
+                status: "Completed",
+                note: "Loan repayment",
+              };
+              return {
+                ...prev,
+                account: newAccount,
+                transactions: [tx, ...prev.transactions],
+                loan: { ...prev.loan, outstanding: newOutstanding, status: loanStatus },
+              };
+            });
+            Alert.alert("Repayment Received", `Paid $${amount} towards the loan.`);
+          },
+        },
+      ]
+    );
   };
 
-  // UI helpers
+  /* -----------------------
+     Reset saved data (confirmation)
+     ----------------------- */
+  const confirmResetData = () => {
+    Alert.alert(
+      "Reset David",
+      "This will restore David to the original initial state and clear saved data. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await AsyncStorage.removeItem(STORAGE_KEY);
+              setDavid(initialDavid);
+              Alert.alert("Reset", "David's data has been reset.");
+            } catch (err) {
+              console.error("Error resetting storage:", err);
+              Alert.alert("Error", "Failed to reset data.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  /* -----------------------
+     Small components
+     ----------------------- */
   const SectionButton = ({ onPress, label, icon }: { onPress: () => void; label: string; icon: string }) => (
     <TouchableOpacity style={styles.sectionBtn} onPress={onPress}>
       <Ionicons name={icon as any} size={18} color="#fff" />
@@ -233,17 +366,13 @@ export default function App() {
     </TouchableOpacity>
   );
 
-  // Helpers for quick actions
-  const handleQuickTopUpClick = (amt: number) => handleTopUp(amt, "Quick");
-
-  // Small component: Transaction Row
   const TxRow = ({ tx }: { tx: Transaction }) => (
     <View style={styles.txRow}>
       <View style={{ flex: 1 }}>
         <Text style={styles.txTextType}>
           {tx.type} {tx.provider ? `• ${tx.provider}` : ""}
         </Text>
-        <Text style={styles.txTextSmall}>{tx.note ?? ""}</Text>
+        {tx.note ? <Text style={styles.txTextSmall}>{tx.note}</Text> : null}
       </View>
       <View style={{ alignItems: "flex-end" }}>
         <Text style={styles.txAmount}>${tx.amount.toFixed(2)}</Text>
@@ -255,7 +384,18 @@ export default function App() {
     </View>
   );
 
-  // Render
+  /* -----------------------
+     Render
+     ----------------------- */
+  if (loadingStore || !david) {
+    return (
+      <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color="#00BFFF" />
+        <Text style={{ color: "#ccc", marginTop: 12 }}>Loading...</Text>
+      </View>
+    );
+  }
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.appTitle}>Admin Dashboard</Text>
@@ -299,7 +439,7 @@ export default function App() {
               <TouchableOpacity
                 key={amt}
                 style={styles.quickBtn}
-                onPress={() => handleQuickTopUpClick(amt)}
+                onPress={() => handleTopUp(amt, "Quick")}
               >
                 <Text style={styles.quickBtnText}>+${amt}</Text>
               </TouchableOpacity>
@@ -328,7 +468,7 @@ export default function App() {
 
           <TouchableOpacity
             style={[styles.secondaryBtn, { marginTop: 8 }]}
-            onPress={toggleFreeze}
+            onPress={confirmToggleFreeze}
           >
             <Text style={styles.secondaryBtnText}>
               {david.isFrozen ? "Unfreeze Account" : "Freeze Account"}
@@ -386,34 +526,21 @@ export default function App() {
           <View style={{ marginTop: 12 }}>
             <TouchableOpacity
               style={styles.primaryBtn}
-              onPress={() => {
-                // Request a small loan prompt
-                const amount = 100;
-                requestLoan(amount);
-              }}
+              onPress={() => requestLoan(100)}
             >
               <Text style={styles.primaryBtnText}>Request $100 Loan</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.secondaryBtn, { marginTop: 8 }]}
-              onPress={() => {
-                if (david.loan.status === "Pending") {
-                  approveLoan();
-                } else {
-                  Alert.alert("No pending loan", "There is no pending loan to approve.");
-                }
-              }}
+              onPress={confirmApproveLoan}
             >
               <Text style={styles.secondaryBtnText}>Approve Pending Loan</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.secondaryBtn, { marginTop: 8 }]}
-              onPress={() => {
-                // Repay $50
-                repayLoan(50);
-              }}
+              onPress={() => confirmRepayLoan(50)}
             >
               <Text style={styles.secondaryBtnText}>Repay $50</Text>
             </TouchableOpacity>
@@ -421,12 +548,21 @@ export default function App() {
         </View>
       )}
 
-      {/* Footer / credits */}
-      <View style={{ height: 24 }} />
+      {/* Utility footer */}
+      <View style={{ marginTop: 18, alignItems: "center" }}>
+        <TouchableOpacity style={[styles.secondaryBtn, { width: 180 }]} onPress={confirmResetData}>
+          <Text style={styles.secondaryBtnText}>Reset David (clear storage)</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={{ height: 36 }} />
     </ScrollView>
   );
 }
 
+/* -----------------------
+   Styles
+   ----------------------- */
 const styles = StyleSheet.create({
   container: {
     padding: 18,
