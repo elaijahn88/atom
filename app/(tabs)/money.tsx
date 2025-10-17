@@ -1,530 +1,519 @@
-import React, { useState, useEffect, useRef } from "react";
+// App.tsx
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
   StyleSheet,
+  TouchableOpacity,
   ScrollView,
-  Image,
-  useColorScheme,
-  Animated,
+  TextInput,
+  FlatList,
+  Alert,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { db, auth, database, ref, push, onValue } from "../../firebase";
-import { collection, addDoc, doc, updateDoc, onSnapshot } from "firebase/firestore";
-
-type Account = {
-  id: string;
-  name: string;
-  type: "Bank" | "SACCO" | "Mobile Money";
-  description: string;
-  balance: number;
-  createdBy?: string;
-};
 
 type Transaction = {
-  id?: string;
-  user: string;
-  accountId?: string;
+  id: string;
+  provider?: string;
+  type: "TopUp" | "Deposit" | "LoanPayment" | "Other";
   amount: number;
-  type: string;
-  timestamp: number;
+  timestamp: string;
+  status: "Pending" | "Completed" | "Failed";
+  note?: string;
 };
 
-export default function MoneyManager() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
+type Loan = {
+  amount: number;
+  outstanding: number;
+  status: "NoLoan" | "Active" | "Pending" | "Paid";
+  dueDate?: string | null;
+};
 
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [creatingType, setCreatingType] = useState<Account["type"]>("SACCO");
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [deposit, setDeposit] = useState("");
-  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
-  const [paymentAmount, setPaymentAmount] = useState("");
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
-  const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState<"info" | "success" | "error">("info");
-  const msgAnim = useRef(new Animated.Value(0)).current;
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  account: number;
+  age?: number;
+  isFrozen: boolean;
+  transactions: Transaction[];
+  loan: Loan;
+};
 
-  const currentUserEmail = auth.currentUser?.email || "guest@example.com";
-  const avatarUri = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-    currentUserEmail
-  )}&background=111827&color=fff&size=128`;
-
-  // --- Message helper ---
-  const showMessage = (text: string, type: "info" | "success" | "error" = "info") => {
-    setMessage(text);
-    setMessageType(type);
-    Animated.timing(msgAnim, { toValue: 1, duration: 280, useNativeDriver: true }).start();
-    setTimeout(() => {
-      Animated.timing(msgAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() =>
-        setMessage("")
-      );
-    }, 5000);
-  };
-
-  // --- Load accounts and detect balance changes ---
-  useEffect(() => {
-    let prevBalances: Record<string, number> = {};
-    const accountsCol = collection(db, "accounts");
-
-    const unsubscribe = onSnapshot(
-      accountsCol,
-      (snap) => {
-        const loaded: Account[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-        loaded.forEach((acc) => {
-          const prev = prevBalances[acc.id];
-          if (prev !== undefined && prev !== acc.balance) {
-            showMessage(
-              `${acc.name} balance changed: $${prev.toFixed(2)} → $${acc.balance.toFixed(2)}`,
-              "info"
-            );
-          }
-          prevBalances[acc.id] = acc.balance;
-        });
-        setAccounts(loaded);
+export default function App() {
+  // Hardcoded David
+  const [david, setDavid] = useState<User>({
+    id: "david-1",
+    name: "David",
+    email: "david@example.com",
+    account: 500,
+    age: 29,
+    isFrozen: false,
+    transactions: [
+      {
+        id: "tx_init_1",
+        provider: "Initial",
+        type: "Other",
+        amount: 500,
+        timestamp: new Date().toLocaleString(),
+        status: "Completed",
+        note: "Opening balance",
       },
-      () => showMessage("Failed to load accounts", "error")
-    );
+    ],
+    loan: { amount: 0, outstanding: 0, status: "NoLoan", dueDate: null },
+  });
 
-    return () => unsubscribe();
-  }, []);
+  const [visibleSection, setVisibleSection] = useState<
+    "none" | "deposit" | "viewClient" | "loan"
+  >("none");
 
-  // --- Load transactions for current user ---
-  useEffect(() => {
-    const safeEmail = currentUserEmail.replace(".", "_");
-    const txRef = ref(database, "transactions/" + safeEmail);
-    const unsub = onValue(txRef, (snapshot) => {
-      const data = snapshot.val() || {};
-      const loaded: Transaction[] = Object.entries(data).map(([k, v]: any) => ({ id: k, ...v }));
-      setTransactions(loaded.reverse());
-    });
-    return () => unsub();
-  }, [currentUserEmail]);
+  // Deposit state
+  const [topUpAmount, setTopUpAmount] = useState<string>("");
+  const quickTopUps = [5, 10, 20, 50, 100];
+  const mobileMoneyProviders = [
+    { name: "MTN Mobile Money", key: "MTN" },
+    { name: "AirtelTigo", key: "AirtelTigo" },
+    { name: "Vodafone", key: "Vodafone" },
+    { name: "G-Money", key: "G-Money" },
+  ];
 
-  // --- Create account ---
-  const createAccount = async () => {
-    if (!name.trim() || !description.trim() || !deposit.trim()) {
-      showMessage("Please fill all fields.", "error");
-      return;
-    }
-    const initial = parseFloat(deposit);
-    if (isNaN(initial) || initial < 0) {
-      showMessage("Enter a valid deposit.", "error");
-      return;
-    }
-    try {
-      const payload = {
-        name,
-        description,
-        type: creatingType,
-        balance: initial,
-        createdBy: currentUserEmail,
-      };
-      const docRef = await addDoc(collection(db, "accounts"), payload as any);
-      setAccounts((prev) => [...prev, { id: docRef.id, ...(payload as any) }]);
-      logActivity(`Created ${creatingType} "${name}"`);
-      showMessage(`${creatingType} "${name}" created.`, "success");
-      setModalVisible(false);
-      setName("");
-      setDescription("");
-      setDeposit("");
-    } catch {
-      showMessage("Failed to create account.", "error");
-    }
+  // Utility: add transaction locally
+  const addTransaction = (tx: Transaction) => {
+    setDavid((prev) => ({
+      ...prev,
+      transactions: [tx, ...prev.transactions],
+    }));
   };
 
-  // --- Deposit money ---
-  const sendPayment = async () => {
-    if (!selectedAccount) return;
-    const amt = parseFloat(paymentAmount);
-    if (isNaN(amt) || amt <= 0) {
-      showMessage("Enter a valid amount.", "error");
+  // Simulate top-up via provider (adds pending tx, then completes)
+  const handleTopUp = (amountParam?: number, providerKey?: string) => {
+    if (david.isFrozen) {
+      Alert.alert("Account Frozen", "Cannot top up: account is frozen.");
       return;
     }
-    try {
-      const accRef = doc(db, "accounts", selectedAccount.id);
-      const newBalance = selectedAccount.balance + amt;
-      await updateDoc(accRef, { balance: newBalance });
-      setAccounts((prev) =>
-        prev.map((a) => (a.id === selectedAccount.id ? { ...a, balance: newBalance } : a))
-      );
-      const safeEmail = currentUserEmail.replace(".", "_");
-      await push(ref(database, "transactions/" + safeEmail), {
-        user: currentUserEmail,
-        accountId: selectedAccount.id,
-        amount: amt,
-        type: selectedAccount.type,
-        timestamp: Date.now(),
+
+    const amount = amountParam ?? Number(topUpAmount);
+    if (!amount || isNaN(amount) || amount <= 0) {
+      Alert.alert("Invalid amount", "Enter a valid top-up amount.");
+      return;
+    }
+
+    const txId = `tx_${Date.now()}`;
+    const provider = providerKey ?? "Manual";
+
+    const pendingTx: Transaction = {
+      id: txId,
+      provider,
+      type: "TopUp",
+      amount,
+      timestamp: new Date().toLocaleString(),
+      status: "Pending",
+      note: `Top-up via ${provider}`,
+    };
+
+    addTransaction(pendingTx);
+    setTopUpAmount("");
+
+    // simulate network/process delay -> then complete
+    setTimeout(() => {
+      // complete transaction and update balance
+      setDavid((prev) => {
+        const updatedTxs = prev.transactions.map((t) =>
+          t.id === txId ? { ...t, status: "Completed" } : t
+        );
+        const newBalance = prev.account + amount;
+        return {
+          ...prev,
+          account: newBalance,
+          transactions: updatedTxs,
+        };
       });
-      logActivity(`Deposited $${amt.toFixed(2)} to ${selectedAccount.name}`);
-      showMessage(`Deposited $${amt.toFixed(2)} to ${selectedAccount.name}`, "success");
-      setPaymentAmount("");
-      setSelectedAccount(null);
-    } catch {
-      showMessage("Deposit failed.", "error");
+      Alert.alert("Top-Up Completed", `$${amount} added to David's account.`);
+    }, 1500);
+  };
+
+  // Freeze / Unfreeze
+  const toggleFreeze = () => {
+    setDavid((prev) => ({ ...prev, isFrozen: !prev.isFrozen }));
+    Alert.alert("Success", `Account ${!david.isFrozen ? "frozen" : "unfrozen"}.`);
+  };
+
+  // Loan functions (simple simulation)
+  const requestLoan = (amount: number) => {
+    if (amount <= 0 || isNaN(amount)) {
+      Alert.alert("Invalid amount", "Enter a valid loan amount.");
+      return;
     }
+    // set loan pending
+    setDavid((prev) => ({
+      ...prev,
+      loan: {
+        amount,
+        outstanding: amount,
+        status: "Pending",
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString(),
+      },
+    }));
+    Alert.alert("Loan Requested", `Loan of $${amount} is pending approval.`);
   };
 
-  // --- Log activity ---
-  const logActivity = (action: string) => {
-    const safeEmail = currentUserEmail.replace(".", "_");
-    push(ref(database, "activity/" + safeEmail), { action, timestamp: Date.now() });
+  const approveLoan = () => {
+    if (david.loan.status !== "Pending") {
+      Alert.alert("No pending loan", "There is no loan pending approval.");
+      return;
+    }
+    // Approve: add amount to account and mark active
+    setDavid((prev) => {
+      const newBalance = prev.account + prev.loan.amount;
+      const updatedLoan: Loan = {
+        ...prev.loan,
+        status: "Active",
+      };
+      // add transaction for loan disbursement
+      const tx: Transaction = {
+        id: `loan_disburse_${Date.now()}`,
+        type: "Other",
+        amount: prev.loan.amount,
+        timestamp: new Date().toLocaleString(),
+        status: "Completed",
+        note: "Loan disbursed",
+      };
+      return {
+        ...prev,
+        account: newBalance,
+        transactions: [tx, ...prev.transactions],
+        loan: updatedLoan,
+      };
+    });
+    Alert.alert("Loan Approved", "Loan has been disbursed to David's account.");
   };
 
-  // --- Check loan eligibility for Bank ---
-  const checkLoanEligibility = (account: Account) => {
-    const eligible = account.balance >= 100 ? "Eligible" : "Not Eligible";
-    showMessage(`Loan eligibility for ${account.name}: ${eligible}`, "info");
+  const repayLoan = (amount: number) => {
+    if (david.loan.status !== "Active") {
+      Alert.alert("No active loan", "There is no active loan to repay.");
+      return;
+    }
+    if (amount <= 0 || isNaN(amount)) {
+      Alert.alert("Invalid amount", "Enter a valid repayment amount.");
+      return;
+    }
+    if (amount > david.account) {
+      Alert.alert("Insufficient funds", "David doesn't have enough balance to repay that amount.");
+      return;
+    }
+
+    setDavid((prev) => {
+      const newOutstanding = Math.max(0, prev.loan.outstanding - amount);
+      const newAccount = prev.account - amount;
+      const loanStatus = newOutstanding === 0 ? "Paid" : "Active";
+      const tx: Transaction = {
+        id: `loan_repay_${Date.now()}`,
+        type: "LoanPayment",
+        amount,
+        timestamp: new Date().toLocaleString(),
+        status: "Completed",
+        note: "Loan repayment",
+      };
+      return {
+        ...prev,
+        account: newAccount,
+        transactions: [tx, ...prev.transactions],
+        loan: { ...prev.loan, outstanding: newOutstanding, status: loanStatus },
+      };
+    });
+    Alert.alert("Repayment Received", `Paid $${amount} towards the loan.`);
   };
 
-  // --- View SACCO client history ---
-  const viewClientHistory = (account: Account) => {
-    const relatedTx = transactions.filter((t) => t.accountId === account.id);
-    if (relatedTx.length === 0) return showMessage("No client transactions yet.", "info");
-    let summary = relatedTx.map((t) => `${t.type}: $${t.amount.toFixed(2)}`).join("\n");
-    showMessage(`Client History for ${account.name}:\n${summary}`, "info");
-  };
+  // UI helpers
+  const SectionButton = ({ onPress, label, icon }: { onPress: () => void; label: string; icon: string }) => (
+    <TouchableOpacity style={styles.sectionBtn} onPress={onPress}>
+      <Ionicons name={icon as any} size={18} color="#fff" />
+      <Text style={styles.sectionBtnText}>{label}</Text>
+    </TouchableOpacity>
+  );
 
-  return (
-    <View style={[styles.container, { backgroundColor: isDark ? "#0b0b0b" : "#f7f7f8" }]}>
-      {message ? (
-        <Animated.View
-          style={[
-            styles.messageBox,
-            {
-              opacity: msgAnim,
-              transform: [
-                { translateY: msgAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) },
-              ],
-              backgroundColor:
-                messageType === "error"
-                  ? "#EF4444"
-                  : messageType === "success"
-                  ? "#10B981"
-                  : "#3B82F6",
-            },
-          ]}
-        >
-          <Text style={styles.messageText}>{message}</Text>
-        </Animated.View>
-      ) : null}
+  // Helpers for quick actions
+  const handleQuickTopUpClick = (amt: number) => handleTopUp(amt, "Quick");
 
-      <View style={styles.headerRow}>
-        <View>
-          <Text style={[styles.title, { color: isDark ? "#fff" : "#111" }]}>Money Manager</Text>
-          <Text style={{ color: isDark ? "#bbb" : "#666" }}>{currentUserEmail}</Text>
-        </View>
-        <Image source={{ uri: avatarUri }} style={styles.avatar} />
-      </View>
-
-      <View style={styles.buttonRow}>
-        {(["Bank", "SACCO", "Mobile Money"] as Account["type"][]).map((t) => (
-          <TouchableOpacity
-            key={t}
-            style={[
-              styles.typeBtn,
-              {
-                backgroundColor:
-                  t === "Bank" ? "#3B82F6" : t === "SACCO" ? "#10B981" : "#F59E0B",
-              },
-            ]}
-            onPress={() => {
-              setCreatingType(t);
-              setModalVisible(true);
-            }}
-          >
-            <Ionicons name="add-circle-outline" size={16} color="#fff" />
-            <Text style={styles.typeBtnText}>Create {t}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <TouchableOpacity
-        style={[styles.historyBtn, { backgroundColor: isDark ? "#111827" : "#007AFF" }]}
-        onPress={() => setShowHistory(!showHistory)}
-      >
-        <Ionicons name={showHistory ? "eye-off-outline" : "time-outline"} size={18} color="#fff" />
-        <Text style={styles.historyText}>
-          {showHistory ? "Hide" : "Show"} Transaction History
+  // Small component: Transaction Row
+  const TxRow = ({ tx }: { tx: Transaction }) => (
+    <View style={styles.txRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.txTextType}>
+          {tx.type} {tx.provider ? `• ${tx.provider}` : ""}
         </Text>
-      </TouchableOpacity>
+        <Text style={styles.txTextSmall}>{tx.note ?? ""}</Text>
+      </View>
+      <View style={{ alignItems: "flex-end" }}>
+        <Text style={styles.txAmount}>${tx.amount.toFixed(2)}</Text>
+        <Text style={[styles.txStatus, { color: tx.status === "Completed" ? "#4CAF50" : "#FFD700" }]}>
+          {tx.status}
+        </Text>
+        <Text style={styles.txTextSmall}>{tx.timestamp}</Text>
+      </View>
+    </View>
+  );
 
-      {showHistory && (
-        <>
-          <ScrollView style={{ maxHeight: 220, marginBottom: 10 }}>
-            {transactions.length === 0 && (
-              <Text style={{ color: isDark ? "#aaa" : "#666", textAlign: "center", padding: 12 }}>
-                No transactions yet.
-              </Text>
-            )}
-            {transactions.map((t) => (
-              <View
-                key={t.id}
-                style={[
-                  styles.transactionCard,
-                  { backgroundColor: isDark ? "#0b0b0b" : "#f3f3f3" },
-                ]}
+  // Render
+  return (
+    <ScrollView contentContainerStyle={styles.container}>
+      <Text style={styles.appTitle}>Admin Dashboard</Text>
+
+      {/* Dashboard buttons */}
+      <View style={styles.buttonsRow}>
+        <SectionButton
+          onPress={() => setVisibleSection((s) => (s === "deposit" ? "none" : "deposit"))}
+          label="Deposit / Top-Up"
+          icon="cash-outline"
+        />
+        <SectionButton
+          onPress={() => setVisibleSection((s) => (s === "viewClient" ? "none" : "viewClient"))}
+          label="View Client / Transactions"
+          icon="people-outline"
+        />
+        <SectionButton
+          onPress={() => setVisibleSection((s) => (s === "loan" ? "none" : "loan"))}
+          label="Check Loan / Account"
+          icon="briefcase-outline"
+        />
+      </View>
+
+      {/* Only one visible at a time */}
+      {visibleSection === "deposit" && (
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>💰 Deposit / Top-Up (David)</Text>
+          <Text style={styles.label}>Current Balance: ${david.account.toFixed(2)}</Text>
+
+          <TextInput
+            placeholder="Enter amount"
+            placeholderTextColor="#999"
+            keyboardType="numeric"
+            value={topUpAmount}
+            onChangeText={setTopUpAmount}
+            style={styles.input}
+          />
+
+          <View style={styles.quickRow}>
+            {quickTopUps.map((amt) => (
+              <TouchableOpacity
+                key={amt}
+                style={styles.quickBtn}
+                onPress={() => handleQuickTopUpClick(amt)}
               >
-                <Text style={{ color: isDark ? "#fff" : "#111" }}>
-                  {t.type} • ${t.amount.toFixed(2)}
-                </Text>
-                <Text style={{ color: "#888", fontSize: 12 }}>
-                  {new Date(t.timestamp).toLocaleString()}
-                </Text>
-              </View>
+                <Text style={styles.quickBtnText}>+${amt}</Text>
+              </TouchableOpacity>
             ))}
-          </ScrollView>
+          </View>
 
-          {/* Floating Hide Button */}
+          <Text style={[styles.label, { marginTop: 12 }]}>Providers</Text>
+          <View style={styles.providersRow}>
+            {mobileMoneyProviders.map((p) => (
+              <TouchableOpacity
+                key={p.key}
+                style={styles.providerBtn}
+                onPress={() => handleTopUp(undefined, p.key)}
+              >
+                <Text style={styles.providerText}>{p.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
           <TouchableOpacity
-            style={[
-              styles.fabHideBtn,
-              { backgroundColor: isDark ? "#1f2937" : "#ef4444" },
-            ]}
-            onPress={() => setShowHistory(false)}
+            style={[styles.primaryBtn, { marginTop: 14 }]}
+            onPress={() => handleTopUp(undefined)}
           >
-            <Ionicons name="eye-off-outline" size={20} color="#fff" />
-            <Text style={styles.fabHideText}>Hide</Text>
+            <Text style={styles.primaryBtnText}>Top-Up Manual</Text>
           </TouchableOpacity>
-        </>
+
+          <TouchableOpacity
+            style={[styles.secondaryBtn, { marginTop: 8 }]}
+            onPress={toggleFreeze}
+          >
+            <Text style={styles.secondaryBtnText}>
+              {david.isFrozen ? "Unfreeze Account" : "Freeze Account"}
+            </Text>
+          </TouchableOpacity>
+        </View>
       )}
 
-      <FlatList
-        data={accounts}
-        keyExtractor={(i) => i.id}
-        contentContainerStyle={{ paddingVertical: 18 }}
-        renderItem={({ item }) => (
-          <View style={[styles.accountCard, { backgroundColor: isDark ? "#111" : "#fff" }]}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <View style={{ flex: 1, paddingRight: 12 }}>
-                <Text style={[styles.accountName, { color: isDark ? "#fff" : "#111" }]}>
-                  {item.name} • <Text style={{ fontWeight: "800" }}>{item.type}</Text>
-                </Text>
-                <Text style={{ color: isDark ? "#aaa" : "#555" }}>{item.description}</Text>
-              </View>
-              <View style={{ alignItems: "flex-end" }}>
-                <Text style={{ color: "#00a650", fontWeight: "800" }}>
-                  ${item.balance.toFixed(2)}
-                </Text>
-                <TouchableOpacity
-                  style={styles.payBtn}
-                  onPress={() => {
-                    if (item.type === "Bank") checkLoanEligibility(item);
-                    else if (item.type === "SACCO") viewClientHistory(item);
-                    else setSelectedAccount(item);
-                  }}
-                >
-                  <Text style={styles.payBtnText}>
-                    {item.type === "Bank"
-                      ? "Check Loan"
-                      : item.type === "SACCO"
-                      ? "View Clients"
-                      : "Deposit"}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+      {visibleSection === "viewClient" && (
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>👥 View Client / Transaction History</Text>
+          <View style={styles.clientRow}>
+            <View>
+              <Text style={styles.clientName}>{david.name}</Text>
+              <Text style={styles.clientEmail}>{david.email}</Text>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={styles.clientBalance}>${david.account.toFixed(2)}</Text>
+              <Text style={{ color: david.isFrozen ? "#FF5252" : "#4CAF50" }}>
+                {david.isFrozen ? "Frozen" : "Active"}
+              </Text>
             </View>
           </View>
-        )}
-      />
 
-      {/* Modals */}
-      {modalVisible && (
-        <ScrollView contentContainerStyle={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? "#111" : "#fff" }]}>
-            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#111" }]}>
-              Create {creatingType}
-            </Text>
-            <TextInput
-              placeholder={`${creatingType} Name`}
-              placeholderTextColor={isDark ? "#666" : "#999"}
-              style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]}
-              value={name}
-              onChangeText={setName}
+          <Text style={[styles.label, { marginTop: 10 }]}>Transactions</Text>
+          {david.transactions.length === 0 ? (
+            <Text style={styles.noTx}>No transactions yet.</Text>
+          ) : (
+            <FlatList
+              data={david.transactions}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => <TxRow tx={item} />}
+              style={{ marginTop: 8, width: "100%" }}
+              ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
             />
-            <TextInput
-              placeholder="Description"
-              placeholderTextColor={isDark ? "#666" : "#999"}
-              style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]}
-              value={description}
-              onChangeText={setDescription}
-            />
-            <TextInput
-              placeholder="Initial Deposit"
-              placeholderTextColor={isDark ? "#666" : "#999"}
-              style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]}
-              value={deposit}
-              onChangeText={setDeposit}
-              keyboardType="numeric"
-            />
-            <TouchableOpacity style={styles.modalBtn} onPress={createAccount}>
-              <Text style={styles.modalBtnText}>Create {creatingType}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.modalBtn, { backgroundColor: "#6b7280" }]}
-              onPress={() => setModalVisible(false)}
-            >
-              <Text style={styles.modalBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
+          )}
+        </View>
       )}
 
-      {selectedAccount && (
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? "#111" : "#fff" }]}>
-            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#111" }]}>
-              Deposit to {selectedAccount.name}
-            </Text>
-            <TextInput
-              placeholder="Amount"
-              placeholderTextColor={isDark ? "#666" : "#999"}
-              style={[styles.input, { backgroundColor: isDark ? "#0b0b0b" : "#f1f1f1" }]}
-              value={paymentAmount}
-              onChangeText={setPaymentAmount}
-              keyboardType="numeric"
-            />
-            <TouchableOpacity style={styles.modalBtn} onPress={sendPayment}>
-              <Text style={styles.modalBtnText}>Deposit</Text>
-            </TouchableOpacity>
+      {visibleSection === "loan" && (
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>🏦 Check Loan / Account Management</Text>
+          <Text style={styles.label}>Name: {david.name}</Text>
+          <Text style={styles.label}>Balance: ${david.account.toFixed(2)}</Text>
+          <Text style={styles.label}>Loan Status: {david.loan.status}</Text>
+          {david.loan.status !== "NoLoan" && (
+            <>
+              <Text style={styles.label}>Loan Amount: ${david.loan.amount.toFixed(2)}</Text>
+              <Text style={styles.label}>Outstanding: ${david.loan.outstanding.toFixed(2)}</Text>
+              <Text style={styles.label}>Due: {david.loan.dueDate ?? "—"}</Text>
+            </>
+          )}
+
+          {/* Loan actions */}
+          <View style={{ marginTop: 12 }}>
             <TouchableOpacity
-              style={[styles.modalBtn, { backgroundColor: "#6b7280" }]}
-              onPress={() => setSelectedAccount(null)}
+              style={styles.primaryBtn}
+              onPress={() => {
+                // Request a small loan prompt
+                const amount = 100;
+                requestLoan(amount);
+              }}
             >
-              <Text style={styles.modalBtnText}>Cancel</Text>
+              <Text style={styles.primaryBtnText}>Request $100 Loan</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.secondaryBtn, { marginTop: 8 }]}
+              onPress={() => {
+                if (david.loan.status === "Pending") {
+                  approveLoan();
+                } else {
+                  Alert.alert("No pending loan", "There is no pending loan to approve.");
+                }
+              }}
+            >
+              <Text style={styles.secondaryBtnText}>Approve Pending Loan</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.secondaryBtn, { marginTop: 8 }]}
+              onPress={() => {
+                // Repay $50
+                repayLoan(50);
+              }}
+            >
+              <Text style={styles.secondaryBtnText}>Repay $50</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
-    </View>
+
+      {/* Footer / credits */}
+      <View style={{ height: 24 }} />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 50, paddingHorizontal: 16 },
-  messageBox: {
-    position: "absolute",
-    top: 12,
-    left: 20,
-    right: 20,
-    paddingVertical: 10,
-    borderRadius: 10,
-    zIndex: 999,
+  container: {
+    padding: 18,
+    paddingTop: Platform.OS === "ios" ? 60 : 36,
+    backgroundColor: "#0b0b0b",
+    minHeight: "100%",
   },
-  messageText: { color: "#fff", textAlign: "center", fontWeight: "600" },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 18,
-  },
-  title: { fontSize: 28, fontWeight: "900" },
-  avatar: { width: 48, height: 48, borderRadius: 24 },
-  buttonRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
-  typeBtn: {
+  appTitle: { color: "#00BFFF", fontSize: 24, fontWeight: "700", marginBottom: 16, textAlign: "center" },
+
+  buttonsRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 14 },
+
+  sectionBtn: {
     flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 10,
-    borderRadius: 10,
-    marginHorizontal: 6,
-  },
-  typeBtnText: { color: "#fff", marginLeft: 8, fontWeight: "700" },
-  historyBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: "#1a1a1a",
     padding: 12,
-    borderRadius: 10,
-    marginBottom: 12,
+    marginHorizontal: 4,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  historyText: { color: "#fff", marginLeft: 8, fontWeight: "700" },
-  accountCard: {
+  sectionBtnText: { color: "#fff", marginLeft: 8, fontWeight: "700" },
+
+  sectionCard: {
+    backgroundColor: "#121212",
+    marginTop: 10,
     padding: 14,
     borderRadius: 12,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
-    elevation: 2,
   },
-  accountName: { fontSize: 16, fontWeight: "800", marginBottom: 4 },
-  payBtn: {
-    marginTop: 8,
-    backgroundColor: "#111827",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  payBtnText: { color: "#fff", fontWeight: "700" },
+  sectionTitle: { fontSize: 18, color: "#fff", fontWeight: "700", marginBottom: 8 },
+
+  label: { color: "#ccc", fontSize: 14 },
+
   input: {
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 10,
-    fontSize: 16,
-  },
-  modalOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.6)",
-    zIndex: 1000,
-    padding: 16,
-  },
-  modalContent: {
-    width: "100%",
-    maxWidth: 400,
-    borderRadius: 16,
-    padding: 20,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    marginBottom: 14,
-    textAlign: "center",
-  },
-  modalBtn: {
-    backgroundColor: "#007AFF",
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-    marginTop: 8,
-  },
-  modalBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  transactionCard: {
+    backgroundColor: "#1a1a1a",
+    color: "#fff",
     padding: 12,
     borderRadius: 10,
-    marginBottom: 8,
+    marginTop: 10,
   },
-  fabHideBtn: {
-    position: "absolute",
-    bottom: 30,
-    right: 20,
+
+  quickRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 12 },
+  quickBtn: { backgroundColor: "#00BFFF", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8 },
+  quickBtnText: { color: "#fff", fontWeight: "700" },
+
+  providersRow: { marginTop: 8, flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  providerBtn: {
+    width: "48%",
+    backgroundColor: "#2a2a2a",
+    padding: 12,
+    borderRadius: 10,
+    marginVertical: 4,
+  },
+  providerText: { color: "#fff", fontWeight: "700", textAlign: "center" },
+
+  primaryBtn: {
+    backgroundColor: "#FF9800",
+    padding: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  primaryBtnText: { color: "#fff", fontWeight: "700" },
+
+  secondaryBtn: {
+    backgroundColor: "#333",
+    padding: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  secondaryBtnText: { color: "#fff", fontWeight: "700" },
+
+  clientRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  clientName: { color: "#fff", fontSize: 20, fontWeight: "700" },
+  clientEmail: { color: "#aaa" },
+  clientBalance: { color: "#00BFFF", fontWeight: "700", fontSize: 18 },
+
+  txRow: {
+    backgroundColor: "#151515",
+    padding: 12,
+    borderRadius: 10,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#ef4444",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 30,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 5,
-    elevation: 5,
-    zIndex: 999,
   },
-  fabHideText: { color: "#fff", fontWeight: "700", marginLeft: 6 },
+  txTextType: { color: "#fff", fontWeight: "700" },
+  txTextSmall: { color: "#aaa", fontSize: 12 },
+  txAmount: { color: "#fff", fontWeight: "700" },
+  txStatus: { fontSize: 12 },
+
+  noTx: { color: "#888", marginTop: 10, textAlign: "center" },
 });
