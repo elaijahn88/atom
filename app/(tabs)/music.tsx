@@ -14,12 +14,15 @@ import {
 } from "react-native";
 import Video from "react-native-video";
 import { Ionicons } from "@expo/vector-icons";
-import { auth, database, ref, onValue, push } from "../../firebase";
+import { auth, db } from "../../firebase";
+import { doc, onSnapshot, push, ref as rtdbRef, onValue } from "firebase/database";
 
 const { width } = Dimensions.get("window");
 
 export default function MusicScreen() {
   const [paused, setPaused] = useState(false);
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+  const [videos, setVideos] = useState<string[]>([]);
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [comments, setComments] = useState<any[]>([]);
@@ -30,40 +33,27 @@ export default function MusicScreen() {
   const commentScrollRef = useRef<ScrollView>(null);
   const heartScale = useRef(new Animated.Value(1)).current;
 
-  const videoItem = {
-    id: "1",
-    title: "Chill Beats",
-    artist: "DJ Relax",
-    artwork: "https://picsum.photos/400/400?random=11",
-    promoVideo: "https://xlijah.com/soso.mp4",
-    profilePic: "https://randomuser.me/api/portraits/men/10.jpg",
-    links: {
-      collaborate: "https://example.com/collab/djrelax",
-      produce: "https://example.com/produce/djrelax",
-    },
-  };
-
-  // Load likes and comments from database
+  // 🔄 Load video URLs from Firestore collection `music` document `name` field `oma` (array)
   useEffect(() => {
-    const likesRef = ref(database, `likes/${videoItem.id}`);
-    const unsubscribeLikes = onValue(likesRef, (snapshot) => {
-      const data = snapshot.val() || {};
-      const userId = auth.currentUser?.uid || "guest";
-      setLiked(!!data[userId]);
-      setLikeCount(Object.keys(data).length);
+    const docRef = doc(db, "music", "name");
+    const unsubscribe = onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (Array.isArray(data?.oma)) {
+          setVideos(data.oma);
+          setCurrentVideoIndex(0);
+        } else {
+          console.warn("'oma' field is missing or not an array!");
+        }
+      }
     });
-
-    const commentsRef = ref(database, `comments/${videoItem.id}`);
-    const unsubscribeComments = onValue(commentsRef, (snapshot) => {
-      const data = snapshot.val() || {};
-      setComments(Object.values(data));
-    });
-
-    return () => {
-      unsubscribeLikes();
-      unsubscribeComments();
-    };
+    return () => unsubscribe();
   }, []);
+
+  // Loop videos
+  const handleEnd = () => {
+    setCurrentVideoIndex((prev) => (prev + 1) % videos.length);
+  };
 
   // Auto-scroll comments
   useEffect(() => {
@@ -73,7 +63,7 @@ export default function MusicScreen() {
   // Like button handler with floating heart
   const handleLike = () => {
     const userId = auth.currentUser?.uid || "guest";
-    const likesRef = ref(database, `likes/${videoItem.id}/${userId}`);
+    const likesRef = rtdbRef(db, `likes/video1/${userId}`);
 
     setShowHeart(true);
     Animated.sequence([
@@ -88,63 +78,37 @@ export default function MusicScreen() {
   const handleAddComment = () => {
     if (!commentText.trim()) return;
     const userId = auth.currentUser?.uid || "guest";
-    const commentsRef = ref(database, `comments/${videoItem.id}`);
+    const commentsRef = rtdbRef(db, `comments/video1`);
     push(commentsRef, { userId, text: commentText.trim(), timestamp: Date.now() });
     setCommentText("");
   };
 
-  // Show inline label for temporary messages
+  // Show inline label
   const showLabel = (msg: string) => {
     setLabelMessage(msg);
     setTimeout(() => setLabelMessage(""), 3000);
   };
 
-  // Collaborate button
-  const handleCollaborate = async () => {
-    const url = videoItem.links.collaborate;
+  // Example collaborate/produce buttons (static links)
+  const handleLink = async (url: string, type: string) => {
     const userId = auth.currentUser?.uid || "guest";
     try {
-      const userActionsRef = ref(database, `users/${userId}/actions`);
-      push(userActionsRef, { type: "collaborate", videoId: videoItem.id, timestamp: Date.now() });
-
       const supported = await Linking.canOpenURL(url);
       if (supported) await Linking.openURL(url);
-      else showLabel("Cannot open Collaborate link");
-    } catch (err) {
-      console.log(err);
-      showLabel("Error opening Collaborate link");
-    }
-  };
-
-  // Produce button
-  const handleProduce = async () => {
-    const url = videoItem.links.produce;
-    const userId = auth.currentUser?.uid || "guest";
-    try {
-      const userActionsRef = ref(database, `users/${userId}/actions`);
-      push(userActionsRef, { type: "produce", videoId: videoItem.id, timestamp: Date.now() });
-
-      const supported = await Linking.canOpenURL(url);
-      if (supported) await Linking.openURL(url);
-      else showLabel("Cannot open Produce link");
-    } catch (err) {
-      console.log(err);
-      showLabel("Error opening Produce link");
+      else showLabel(`Cannot open ${type} link`);
+    } catch {
+      showLabel(`Error opening ${type} link`);
     }
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-
-      {/* Inline label */}
       {labelMessage ? (
         <View style={styles.labelContainer}>
           <Text style={styles.labelText}>{labelMessage}</Text>
         </View>
       ) : null}
-
-      {/* Floating heart */}
       {showHeart && (
         <Animated.View
           style={{
@@ -162,20 +126,16 @@ export default function MusicScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
         {/* Video Player */}
         <View style={styles.videoContainer}>
-          <Video
-            source={{ uri: videoItem.promoVideo }}
-            style={styles.playerVideo}
-            resizeMode="cover"
-            repeat
-            paused={paused}
-          />
-        </View>
-
-        {/* Video Info */}
-        <View style={styles.playerInfo}>
-          <Image source={{ uri: videoItem.profilePic }} style={styles.profilePic} />
-          <Text style={styles.playerTitle}>{videoItem.title}</Text>
-          <Text style={styles.playerArtist}>{videoItem.artist}</Text>
+          {videos.length > 0 && (
+            <Video
+              source={{ uri: videos[currentVideoIndex] }}
+              style={styles.playerVideo}
+              resizeMode="cover"
+              repeat={false}
+              paused={paused}
+              onEnd={handleEnd}
+            />
+          )}
         </View>
 
         {/* Controls */}
@@ -187,19 +147,6 @@ export default function MusicScreen() {
           <TouchableOpacity onPress={() => setPaused(!paused)}>
             <Ionicons name={paused ? "play-circle" : "pause-circle"} size={68} color="#1DB954" />
           </TouchableOpacity>
-        </View>
-
-        {/* Collaborate & Produce */}
-        <View style={styles.collabSection}>
-          <Text style={styles.collabTitle}>Promote & Collaborate</Text>
-          <View style={{ flexDirection: "row", justifyContent: "center", gap: 15 }}>
-            <TouchableOpacity onPress={handleCollaborate} style={styles.collabButton}>
-              <Text style={styles.collabText}>Collaborate</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleProduce} style={styles.collabButton}>
-              <Text style={styles.collabText}>Produce</Text>
-            </TouchableOpacity>
-          </View>
         </View>
 
         {/* Comments */}
@@ -244,10 +191,6 @@ const styles = StyleSheet.create({
   labelText: { color: "#fff", fontSize: 14 },
   videoContainer: { marginTop: 20, alignItems: "center" },
   playerVideo: { width: width * 0.9, height: 250, borderRadius: 12 },
-  playerInfo: { alignItems: "center", marginVertical: 15 },
-  profilePic: { width: 60, height: 60, borderRadius: 30, marginBottom: 10 },
-  playerTitle: { color: "#fff", fontSize: 24, fontWeight: "700" },
-  playerArtist: { color: "#aaa", fontSize: 16 },
   controls: {
     flexDirection: "row",
     alignItems: "center",
@@ -256,10 +199,6 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginVertical: 15,
   },
-  collabSection: { marginVertical: 15, alignItems: "center" },
-  collabTitle: { color: "#1DB954", fontSize: 18, fontWeight: "700", marginBottom: 10 },
-  collabButton: { backgroundColor: "#222", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
-  collabText: { color: "#fff", fontSize: 16 },
   commentList: {
     width: "90%",
     maxHeight: 150,
