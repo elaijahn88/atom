@@ -12,6 +12,7 @@ import {
   FlatList,
   Dimensions,
   StatusBar,
+  Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase";
@@ -27,7 +28,6 @@ interface IUserData {
   email: string;
   name: string;
   account: number;
-  age: number;
   createdAt: Date;
   avatar?: string;
 }
@@ -40,7 +40,6 @@ export default function App() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
   const [account, setAccount] = useState("");
-  const [age, setAge] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [isLoginMode, setIsLoginMode] = useState(true);
@@ -51,6 +50,8 @@ export default function App() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [videos, setVideos] = useState<any[]>([]);
   const [showVideoFeed, setShowVideoFeed] = useState(false);
+  const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const videoRefs = useRef<Video[]>([]);
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
@@ -83,7 +84,6 @@ export default function App() {
     if (!isLoginMode) {
       if (!name.trim()) return setMsg("Full name is required");
       if (password !== confirmPassword) return setMsg("Passwords do not match");
-      if (isNaN(Number(age)) || Number(age) <= 0) return setMsg("Enter valid age");
     }
     return true;
   };
@@ -100,7 +100,6 @@ export default function App() {
         email: user.email || email,
         name,
         account: Number(account) || 0,
-        age: Number(age) || 0,
         createdAt: new Date(),
         avatar: `https://i.pravatar.cc/150?u=${email}`,
       };
@@ -145,6 +144,52 @@ export default function App() {
     setShowVideoFeed(false);
   };
 
+  // 💰 Mobile Money button with label + animation
+  const handleMobileMoney = async () => {
+    if (!user) return;
+    try {
+      const userRef = doc(db, "users", auth.currentUser?.uid || "");
+      const userSnap = await getDoc(userRef);
+
+      let balance = user.account;
+      if (userSnap.exists()) {
+        const data = userSnap.data() as IUserData;
+        balance = data.account;
+      }
+
+      const transactionAmount = 10;
+
+      if (balance >= transactionAmount) {
+        const newBalance = balance - transactionAmount;
+        await setDoc(userRef, { ...user, account: newBalance }, { merge: true });
+        setUser({ ...user, account: newBalance });
+
+        // Success message + animation
+        setMessage(`✅ Transaction complete! $${transactionAmount} deducted. New balance: $${newBalance}`);
+        setShowSuccessOverlay(true);
+
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => {
+          setTimeout(() => {
+            Animated.timing(fadeAnim, {
+              toValue: 0,
+              duration: 500,
+              useNativeDriver: true,
+            }).start(() => setShowSuccessOverlay(false));
+          }, 2000);
+        });
+      } else {
+        setMessage(`⚠️ Insufficient funds. Balance: $${balance}. Need $${transactionAmount}.`);
+      }
+    } catch (error) {
+      console.error(error);
+      setMessage("❌ Unable to process transaction. Please try again later.");
+    }
+  };
+
   // 🎥 Show welcome video for 10 seconds, then show feed
   useEffect(() => {
     if (isLoggedIn && user) {
@@ -165,17 +210,12 @@ export default function App() {
             style={styles.fullscreenVideo}
             resizeMode="cover"
             repeat
-            muted={false}
-            paused={false}
-            playInBackground={false}
-            playWhenInactive={false}
-            ignoreSilentSwitch="obey"
           />
         </View>
       );
     }
 
-    // 🎞️ Firestore video feed (looping forever)
+    // 🎞️ Firestore video feed
     return (
       <View style={styles.darkContainer}>
         <StatusBar hidden />
@@ -190,13 +230,7 @@ export default function App() {
                 style={styles.video}
                 resizeMode="cover"
                 repeat
-                muted={false}
                 paused={currentIndex !== index}
-                onError={(e) => console.warn("Video error:", e)}
-                onBuffer={() => {}}
-                playInBackground={false}
-                playWhenInactive={false}
-                ignoreSilentSwitch="obey"
               />
             </View>
           )}
@@ -205,6 +239,37 @@ export default function App() {
           onViewableItemsChanged={onViewableItemsChanged.current}
           viewabilityConfig={viewConfigRef.current}
         />
+
+        {/* 💰 Mobile Money Button */}
+        <TouchableOpacity style={styles.moneyButton} onPress={handleMobileMoney}>
+          <Ionicons name="cash-outline" size={22} color="#fff" />
+          <Text style={styles.moneyButtonText}>Mobile Money</Text>
+        </TouchableOpacity>
+
+        {message ? (
+          <Text
+            style={[
+              styles.msg,
+              message.includes("✅")
+                ? { color: "#00FF88" }
+                : message.includes("⚠️")
+                ? { color: "#FFD700" }
+                : { color: "#FF5252" },
+            ]}
+          >
+            {message}
+          </Text>
+        ) : null}
+
+        {/* 🎉 Animated Overlay */}
+        {showSuccessOverlay && (
+          <Animated.View style={[styles.overlayContainer, { opacity: fadeAnim }]}>
+            <View style={styles.overlayBox}>
+              <Ionicons name="checkmark-circle-outline" size={64} color="#00FF88" />
+              <Text style={styles.overlayText}>Transaction Complete</Text>
+            </View>
+          </Animated.View>
+        )}
       </View>
     );
   }
@@ -236,7 +301,6 @@ export default function App() {
             <>
               <DarkField label="Full Name" value={name} onChangeText={setName} />
               <DarkField label="Account" value={account} onChangeText={setAccount} keyboardType="numeric" />
-              <DarkField label="Age" value={age} onChangeText={setAge} keyboardType="numeric" />
             </>
           )}
           <TouchableOpacity
@@ -316,4 +380,45 @@ const styles = StyleSheet.create({
   msg: { textAlign: "center", marginTop: 12, fontSize: 14 },
   fullscreenVideo: { position: "absolute", top: 0, left: 0, width: "100%", height: "100%" },
   video: { width: "100%", height: "100%" },
+  moneyButton: {
+    position: "absolute",
+    bottom: 80,
+    left: "25%",
+    right: "25%",
+    backgroundColor: "#00BFFF",
+    paddingVertical: 12,
+    borderRadius: 20,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  moneyButtonText: { color: "#fff", fontSize: 16, fontWeight: "600", marginLeft: 8 },
+  overlayContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 100,
+  },
+  overlayBox: {
+    backgroundColor: "#111",
+    borderRadius: 20,
+    paddingVertical: 30,
+    paddingHorizontal: 50,
+    alignItems: "center",
+    shadowColor: "#00FF88",
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  overlayText: {
+    color: "#00FF88",
+    fontSize: 18,
+    fontWeight: "700",
+    marginTop: 10,
+  },
 });
