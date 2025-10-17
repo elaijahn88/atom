@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   StyleSheet,
   View,
@@ -8,142 +8,104 @@ import {
   Image,
   ScrollView,
 } from "react-native";
-import { auth, db } from "../../firebase";
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-} from "firebase/auth";
-import { doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
+import { db } from "../../firebase";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 
 export default function App() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
   const [message, setMessage] = useState("");
-  const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
-  const [view, setView] = useState<"login" | "signup" | "account" | "profile">("login");
+  const [view, setView] = useState<"login" | "account" | "profile">("login");
 
-  // ✅ Signup and create Firestore user
-  const handleSignup = async () => {
-    setMessage("");
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const newUser = userCredential.user;
-      setUser(newUser);
+  const docRef = doc(db, "acc", "elijah");
 
-      await setDoc(doc(db, "acc", newUser.email), {
-        Name: "Nabimanya Elijah",
-        age: 26,
-        bod: "12 2 1999",
-        father: "Ziriganira Robert",
-        idno: 18535416,
-        mother: "Winnie Kenturegye Zebra",
-        net: 200000,
-        nin: "CM9900910LFEAF",
-        nok: "Atukunda Timothy",
-        phone: 746524088,
-      });
-
-      setView("account");
-      setMessage("✅ Account created and profile stored!");
-    } catch (error: any) {
-      setMessage("⚠️ " + error.message);
+  // ✅ Login by checking if name matches the "Name" field in doc "elijah"
+  const handleLoginByName = async () => {
+    if (!name.trim()) {
+      setMessage("⚠️ Please enter your name.");
+      return;
     }
-  };
 
-  // ✅ Login and fetch Firestore profile
-  const handleLogin = async () => {
-    setMessage("");
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const currentUser = userCredential.user;
-      setUser(currentUser);
-
-      // Get Firestore profile
-      const docRef = doc(db, "acc", currentUser.email);
       const snap = await getDoc(docRef);
 
       if (snap.exists()) {
-        setProfile(snap.data());
-        setMessage("✅ Profile loaded successfully!");
+        const data = snap.data();
+        if (data.Name.toLowerCase() === name.trim().toLowerCase()) {
+          setProfile(data);
+          setView("account");
+          setMessage(`✅ Welcome back, ${data.Name}!`);
+        } else {
+          setMessage("❌ Invalid name. Access denied.");
+        }
       } else {
-        setMessage("⚠️ No profile found for this account.");
+        // If document “elijah” does not exist, create it with defaults
+        await setDoc(docRef, {
+          Name: "Nabimanya Elijah",
+          father: "Ziriganira Robert",
+          mother: "Winnie Kenturegye Zebra",
+          nok: "Atukunda Timothy",
+          idno: 18535416,
+          nin: "CM9900910LFEAF",
+          phone: 746524088,
+          net: 200000,
+        });
+        setProfile({
+          Name: "Nabimanya Elijah",
+          father: "Ziriganira Robert",
+          mother: "Winnie Kenturegye Zebra",
+          nok: "Atukunda Timothy",
+          idno: 18535416,
+          nin: "CM9900910LFEAF",
+          phone: 746524088,
+          net: 200000,
+        });
+        setView("account");
+        setMessage("✅ Default profile created and logged in as Elijah.");
       }
-
-      setView("account");
     } catch (error: any) {
       setMessage("⚠️ " + error.message);
     }
   };
 
-  // ✅ Update profile field (edit + save)
+  // ✅ Update a field in the "elijah" document
   const handleProfileUpdate = async (field: string, value: any) => {
-    if (!user) return;
-    const docRef = doc(db, "acc", user.email);
     await updateDoc(docRef, { [field]: value });
-
-    // Refresh profile after update
     const snap = await getDoc(docRef);
     setProfile(snap.data());
     setMessage(`✅ Updated ${field}!`);
   };
 
   // ✅ Logout
-  const handleLogout = async () => {
-    await signOut(auth);
-    setUser(null);
+  const handleLogout = () => {
     setProfile(null);
+    setName("");
     setView("login");
     setMessage("👋 Logged out successfully.");
   };
 
   // ===================
-  // 🔒 LOGIN / SIGNUP
+  // 🔒 LOGIN SCREEN
   // ===================
-  if (view === "login" || view === "signup") {
+  if (view === "login") {
     return (
       <View style={styles.container}>
         <Image
           source={{ uri: "https://i.imgur.com/3G4sQO5.png" }}
           style={styles.logo}
         />
-        <Text style={styles.title}>Firestore Profile Example</Text>
+        <Text style={styles.title}>Login with Name</Text>
 
         <TextInput
           style={styles.input}
-          placeholder="Email"
+          placeholder="Enter your name"
           placeholderTextColor="#aaa"
-          value={email}
-          onChangeText={setEmail}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="#aaa"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
+          value={name}
+          onChangeText={setName}
         />
 
-        <TouchableOpacity
-          style={styles.primaryBtn}
-          onPress={view === "login" ? handleLogin : handleSignup}
-        >
-          <Text style={styles.btnText}>
-            {view === "login" ? "Login" : "Sign Up"}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.secondaryBtn}
-          onPress={() => setView(view === "login" ? "signup" : "login")}
-        >
-          <Text style={styles.linkText}>
-            {view === "login"
-              ? "Don't have an account? Sign up"
-              : "Already have an account? Login"}
-          </Text>
+        <TouchableOpacity style={styles.primaryBtn} onPress={handleLoginByName}>
+          <Text style={styles.btnText}>Continue</Text>
         </TouchableOpacity>
 
         {message ? <Text style={styles.message}>{message}</Text> : null}
@@ -161,7 +123,7 @@ export default function App() {
           source={{ uri: "https://i.imgur.com/3G4sQO5.png" }}
           style={styles.profilePic}
         />
-        <Text style={styles.userName}>{user?.email}</Text>
+        <Text style={styles.userName}>{profile?.Name}</Text>
 
         <TouchableOpacity
           style={styles.primaryBtn}
@@ -185,7 +147,7 @@ export default function App() {
   if (view === "profile") {
     return (
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>User Profile</Text>
+        <Text style={styles.title}>Profile Details</Text>
 
         {profile ? (
           Object.entries(profile).map(([key, value]) => (
@@ -199,7 +161,7 @@ export default function App() {
             </View>
           ))
         ) : (
-          <Text style={{ color: "#ccc" }}>Loading profile...</Text>
+          <Text style={{ color: "#ccc" }}>Loading...</Text>
         )}
 
         <TouchableOpacity
@@ -243,7 +205,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 10,
   },
-  secondaryBtn: { marginTop: 10 },
   logoutBtn: {
     backgroundColor: "#FF9800",
     width: "100%",
@@ -253,7 +214,6 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   btnText: { color: "#fff", fontWeight: "700" },
-  linkText: { color: "#00BFFF", marginTop: 10 },
   message: { color: "#ccc", marginTop: 20, textAlign: "center" },
   profilePic: { width: 90, height: 90, borderRadius: 45, marginBottom: 10 },
   userName: { color: "#fff", fontSize: 18, fontWeight: "700", marginBottom: 20 },
