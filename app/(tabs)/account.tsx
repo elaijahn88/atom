@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, Image, ScrollView } from "react-native";
-import { auth, db, database, ref, push, onValue } from ".././firebase";
+import { auth, db, database, ref, push, onValue } from "../../firebase";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
