@@ -1,235 +1,309 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
-  StyleSheet,
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  Image,
   ScrollView,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
 } from "react-native";
 import { db } from "../../firebase";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+} from "firebase/firestore";
 
-export default function App() {
+export default function AccountAndMoneyManager() {
   const [name, setName] = useState("");
-  const [message, setMessage] = useState("");
+  const [view, setView] = useState("login");
   const [profile, setProfile] = useState<any>(null);
-  const [view, setView] = useState<"login" | "account" | "profile">("login");
+  const [loading, setLoading] = useState(false);
+  const [topUpAmount, setTopUpAmount] = useState("");
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [label, setLabel] = useState("");
+  const quickTopUps = [5, 10, 20, 50, 100];
 
-  const docRef = doc(db, "acc", "elijah");
-
-  // ✅ Login by checking if name matches the "Name" field in doc "elijah"
-  const handleLoginByName = async () => {
+  // --- LOGIN FUNCTION ---
+  const handleLogin = async () => {
     if (!name.trim()) {
-      setMessage("⚠️ Please enter your name.");
+      setLabel("Please enter your name.");
       return;
     }
 
+    setLoading(true);
+    const docRef = doc(db, "acc", name.trim().toLowerCase());
+
     try {
       const snap = await getDoc(docRef);
-
       if (snap.exists()) {
         const data = snap.data();
-        if (data.Name.toLowerCase() === name.trim().toLowerCase()) {
-          setProfile(data);
-          setView("account");
-          setMessage(`✅ Welcome back, ${data.Name}!`);
-        } else {
-          setMessage("❌ Invalid name. Access denied.");
-        }
-      } else {
-        // If document “elijah” does not exist, create it with defaults
-        await setDoc(docRef, {
-          Name: "Nabimanya Elijah",
-          father: "Ziriganira Robert",
-          mother: "Winnie Kenturegye Zebra",
-          nok: "Atukunda Timothy",
-          idno: 18535416,
-          nin: "CM9900910LFEAF",
-          phone: 746524088,
-          net: 200000,
-        });
-        setProfile({
-          Name: "Nabimanya Elijah",
-          father: "Ziriganira Robert",
-          mother: "Winnie Kenturegye Zebra",
-          nok: "Atukunda Timothy",
-          idno: 18535416,
-          nin: "CM9900910LFEAF",
-          phone: 746524088,
-          net: 200000,
-        });
+        if (!("net" in data)) data.net = 0; // ensure net field exists
+        await updateDoc(docRef, { net: data.net }); // keep schema updated
+        setProfile(data);
+        setTransactions(data.transactions || []);
         setView("account");
-        setMessage("✅ Default profile created and logged in as Elijah.");
+      } else {
+        const defaultData = {
+          Name: name.trim(),
+          net: 0, // balance stored here
+          transactions: [],
+          isFrozen: false,
+          createdAt: new Date().toISOString(),
+        };
+        await setDoc(docRef, defaultData);
+        setProfile(defaultData);
+        setTransactions([]);
+        setView("account");
       }
-    } catch (error: any) {
-      setMessage("⚠️ " + error.message);
+    } catch (err) {
+      console.error(err);
+      setLabel("Login failed.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  // ✅ Update a field in the "elijah" document
-  const handleProfileUpdate = async (field: string, value: any) => {
-    await updateDoc(docRef, { [field]: value });
-    const snap = await getDoc(docRef);
-    setProfile(snap.data());
-    setMessage(`✅ Updated ${field}!`);
+  // --- FIRESTORE UPDATER ---
+  const updateFirestore = async (updates: any) => {
+    if (!profile?.Name) return;
+    const docRef = doc(db, "acc", profile.Name.toLowerCase());
+    await updateDoc(docRef, updates);
   };
 
-  // ✅ Logout
-  const handleLogout = () => {
-    setProfile(null);
-    setName("");
-    setView("login");
-    setMessage("👋 Logged out successfully.");
+  // --- TOP UP FUNCTION ---
+  const simulateTopUp = async (amount: number, method?: string) => {
+    if (profile?.isFrozen) {
+      setLabel("Account is frozen. Cannot top up.");
+      return;
+    }
+
+    if (!amount || isNaN(amount)) {
+      setLabel("Enter valid amount.");
+      return;
+    }
+
+    const newTx = {
+      receiver: method || "Top-Up",
+      amount,
+      timestamp: new Date().toLocaleString(),
+      proof: `MM#${Math.floor(Math.random() * 10000)}`,
+      status: "Completed",
+    };
+
+    const newNet = (profile?.net || 0) + amount;
+    const updatedTxs = [newTx, ...transactions];
+    setProfile({ ...profile, net: newNet });
+    setTransactions(updatedTxs);
+    setTopUpAmount("");
+    setLabel(`Top-up of $${amount} via ${method || "manual"} successful!`);
+
+    await updateFirestore({
+      net: newNet,
+      transactions: updatedTxs,
+    });
   };
 
-  // ===================
-  // 🔒 LOGIN SCREEN
-  // ===================
-  if (view === "login") {
+  // --- FREEZE / UNFREEZE ---
+  const toggleFreeze = async () => {
+    const newStatus = !profile.isFrozen;
+    setProfile({ ...profile, isFrozen: newStatus });
+    await updateFirestore({ isFrozen: newStatus });
+    setLabel(`Account ${newStatus ? "frozen" : "unfrozen"}!`);
+  };
+
+  // --- MANUAL BALANCE UPDATE ---
+  const updateNetManually = async (value: string) => {
+    const newNet = Number(value);
+    if (isNaN(newNet)) {
+      setLabel("Invalid number.");
+      return;
+    }
+    setProfile({ ...profile, net: newNet });
+    await updateFirestore({ net: newNet });
+    setLabel("Net (balance) updated.");
+  };
+
+  const mobileMoneyProviders = [
+    { name: "MTN Mobile Money", color: "#FFD700" },
+    { name: "Airtel Money", color: "#FF4500" },
+    { name: "Other MM", color: "#4CAF50" },
+  ];
+
+  // --- UI RENDER ---
+  if (loading)
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#fff" />
+      </View>
+    );
+
+  if (view === "login")
     return (
       <View style={styles.container}>
-        <Image
-          source={{ uri: "https://i.imgur.com/3G4sQO5.png" }}
-          style={styles.logo}
-        />
-        <Text style={styles.title}>Login with Name</Text>
-
+        <Text style={styles.title}>Login to Your Account</Text>
         <TextInput
           style={styles.input}
           placeholder="Enter your name"
-          placeholderTextColor="#aaa"
+          placeholderTextColor="#888"
           value={name}
           onChangeText={setName}
         />
-
-        <TouchableOpacity style={styles.primaryBtn} onPress={handleLoginByName}>
-          <Text style={styles.btnText}>Continue</Text>
+        <TouchableOpacity style={styles.button} onPress={handleLogin}>
+          <Text style={styles.buttonText}>Login</Text>
         </TouchableOpacity>
-
-        {message ? <Text style={styles.message}>{message}</Text> : null}
+        {label ? <Text style={styles.label}>{label}</Text> : null}
       </View>
     );
-  }
 
-  // ===================
-  // 👤 ACCOUNT SCREEN
-  // ===================
-  if (view === "account") {
-    return (
-      <View style={styles.container}>
-        <Image
-          source={{ uri: "https://i.imgur.com/3G4sQO5.png" }}
-          style={styles.profilePic}
+  // --- ACCOUNT + MONEY MANAGER VIEW ---
+  return (
+    <ScrollView contentContainerStyle={styles.container}>
+      <Text style={styles.title}>👤 {profile?.Name}</Text>
+      <Text style={styles.balanceText}>💰 Net: ${profile?.net?.toFixed(2)}</Text>
+      <Text style={[styles.statusText, { color: profile?.isFrozen ? "#FF5252" : "#4CAF50" }]}>
+        {profile?.isFrozen ? "❌ Frozen" : "✅ Active"}
+      </Text>
+
+      <View style={styles.buttonRow}>
+        <TouchableOpacity
+          style={[styles.actionButton, { backgroundColor: "#FF9800" }]}
+          onPress={() => updateNetManually(prompt("Enter new net value:") || "0")}
+        >
+          <Text style={styles.actionButtonText}>Manual Update</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionButton, { backgroundColor: profile?.isFrozen ? "#4CAF50" : "#FF5252" }]}
+          onPress={toggleFreeze}
+        >
+          <Text style={styles.actionButtonText}>
+            {profile?.isFrozen ? "Unfreeze" : "Freeze"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.sectionTitle}>Top-Up Account</Text>
+      <View style={styles.card}>
+        <TextInput
+          style={styles.input}
+          placeholder="Enter amount"
+          placeholderTextColor="#999"
+          keyboardType="numeric"
+          value={topUpAmount}
+          onChangeText={setTopUpAmount}
         />
-        <Text style={styles.userName}>{profile?.Name}</Text>
+
+        <View style={styles.quickTopUps}>
+          {quickTopUps.map((amt) => (
+            <TouchableOpacity
+              key={amt}
+              style={styles.quickTopUpBtn}
+              onPress={() => simulateTopUp(amt, "Manual")}
+            >
+              <Text style={styles.quickTopUpText}>${amt}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Mobile Money</Text>
+        <View style={styles.mmRow}>
+          {mobileMoneyProviders.map((provider) => (
+            <TouchableOpacity
+              key={provider.name}
+              style={[styles.mmBtn, { backgroundColor: provider.color }]}
+              onPress={() => simulateTopUp(Number(topUpAmount), provider.name)}
+            >
+              <Text style={styles.mmText}>{provider.name}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
         <TouchableOpacity
-          style={styles.primaryBtn}
-          onPress={() => setView("profile")}
+          style={[styles.topUpButton]}
+          onPress={() => simulateTopUp(Number(topUpAmount))}
         >
-          <Text style={styles.btnText}>View Profile</Text>
+          <Text style={styles.topUpButtonText}>Top-Up Now</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-          <Text style={styles.btnText}>Logout</Text>
-        </TouchableOpacity>
-
-        {message ? <Text style={styles.message}>{message}</Text> : null}
       </View>
-    );
-  }
 
-  // ===================
-  // 🧍 PROFILE SCREEN
-  // ===================
-  if (view === "profile") {
-    return (
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Profile Details</Text>
-
-        {profile ? (
-          Object.entries(profile).map(([key, value]) => (
-            <View key={key} style={styles.infoCard}>
-              <Text style={styles.infoLabel}>{key}:</Text>
-              <TextInput
-                style={styles.infoInput}
-                value={String(value)}
-                onChangeText={(text) => handleProfileUpdate(key, text)}
-              />
+      <Text style={styles.sectionTitle}>Transaction History</Text>
+      {transactions.length > 0 ? (
+        <FlatList
+          data={transactions}
+          keyExtractor={(_, i) => i.toString()}
+          renderItem={({ item }) => (
+            <View style={styles.txCard}>
+              <Text style={styles.txText}>➡️ To: {item.receiver}</Text>
+              <Text style={styles.txText}>💲 Amount: {item.amount}</Text>
+              <Text style={styles.txText}>🕒 {item.timestamp}</Text>
+              <Text style={styles.txText}>📄 Proof: {item.proof}</Text>
+              <Text
+                style={[
+                  styles.txText,
+                  { color: item.status === "Completed" ? "#4CAF50" : "#FFD700" },
+                ]}
+              >
+                Status: {item.status}
+              </Text>
             </View>
-          ))
-        ) : (
-          <Text style={{ color: "#ccc" }}>Loading...</Text>
-        )}
+          )}
+        />
+      ) : (
+        <Text style={styles.noTx}>No transactions yet.</Text>
+      )}
 
-        <TouchableOpacity
-          style={styles.logoutBtn}
-          onPress={() => setView("account")}
-        >
-          <Text style={styles.btnText}>Back</Text>
-        </TouchableOpacity>
+      <TouchableOpacity style={styles.logoutButton} onPress={() => setView("login")}>
+        <Text style={styles.logoutText}>Logout</Text>
+      </TouchableOpacity>
 
-        {message ? <Text style={styles.message}>{message}</Text> : null}
-      </ScrollView>
-    );
-  }
-
-  return null;
+      {label ? <Text style={styles.label}>{label}</Text> : null}
+    </ScrollView>
+  );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    backgroundColor: "#0a0a0a",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 20,
-  },
-  logo: { width: 80, height: 80, marginBottom: 20, borderRadius: 20 },
-  title: { color: "#fff", fontSize: 22, fontWeight: "700", marginBottom: 20 },
+  container: { flexGrow: 1, padding: 15, backgroundColor: "#121212" },
+  centered: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#000" },
+  title: { fontSize: 22, fontWeight: "700", color: "#fff", marginBottom: 12 },
+  balanceText: { fontSize: 20, color: "#fff", marginVertical: 5 },
+  statusText: { fontSize: 16, marginBottom: 10 },
   input: {
+    width: "100%",
     backgroundColor: "#1a1a1a",
     color: "#fff",
-    width: "100%",
-    padding: 12,
-    borderRadius: 10,
-    marginVertical: 6,
-  },
-  primaryBtn: {
-    backgroundColor: "#00BFFF",
-    width: "100%",
+    borderRadius: 12,
     padding: 14,
-    borderRadius: 10,
+    marginBottom: 12,
+    fontSize: 16,
+  },
+  button: { backgroundColor: "#007bff", padding: 14, borderRadius: 20, alignItems: "center" },
+  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  label: { color: "#ccc", textAlign: "center", marginTop: 10 },
+  buttonRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 15 },
+  actionButton: {
+    flex: 1,
+    borderRadius: 20,
+    paddingVertical: 12,
+    marginHorizontal: 5,
     alignItems: "center",
-    marginTop: 10,
   },
-  logoutBtn: {
-    backgroundColor: "#FF9800",
-    width: "100%",
-    padding: 14,
-    borderRadius: 10,
-    alignItems: "center",
-    marginTop: 20,
-  },
-  btnText: { color: "#fff", fontWeight: "700" },
-  message: { color: "#ccc", marginTop: 20, textAlign: "center" },
-  profilePic: { width: 90, height: 90, borderRadius: 45, marginBottom: 10 },
-  userName: { color: "#fff", fontSize: 18, fontWeight: "700", marginBottom: 20 },
-  infoCard: {
-    backgroundColor: "#1a1a1a",
-    width: "100%",
-    padding: 10,
-    borderRadius: 10,
-    marginVertical: 6,
-  },
-  infoLabel: { color: "#aaa", fontSize: 14, marginBottom: 4 },
-  infoInput: {
-    color: "#fff",
-    backgroundColor: "#151515",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
+  actionButtonText: { color: "#fff", fontWeight: "700" },
+  sectionTitle: { fontSize: 20, color: "#fff", fontWeight: "600", marginVertical: 10 },
+  card: { backgroundColor: "#1f1f1f", borderRadius: 15, padding: 15, marginBottom: 15 },
+  quickTopUps: { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
+  quickTopUpBtn: { backgroundColor: "#333", padding: 10, borderRadius: 10 },
+  quickTopUpText: { color: "#fff", fontWeight: "600" },
+  mmRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
+  mmBtn: { flex: 1, marginHorizontal: 3, borderRadius: 10, paddingVertical: 10, alignItems: "center" },
+  mmText: { color: "#fff", fontWeight: "700" },
+  topUpButton: { backgroundColor: "#FF5722", padding: 14, borderRadius: 20, alignItems: "center" },
+  topUpButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  txCard: { backgroundColor: "#1a1a1a", borderRadius: 10, padding: 10, marginBottom: 10 },
+  txText: { color: "#fff", fontSize: 14 },
+  noTx: { color: "#aaa", textAlign: "center", marginVertical: 10 },
+  logoutButton: { backgroundColor: "#333", padding: 10, borderRadius: 10, marginTop: 10 },
+  logoutText: { color: "#fff", textAlign: "center", fontWeight: "600" },
 });
