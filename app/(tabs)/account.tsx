@@ -24,9 +24,9 @@ export default function AccountAndMoneyManager() {
   const quickTopUps = [5, 10, 20, 50, 100];
 
   const mobileMoneyProviders = [
-    { name: "MTN Mobile Money", color: "#FFD700" },
-    { name: "Airtel Money", color: "#FF4500" },
-    { name: "Other MM", color: "#4CAF50" },
+    { name: "T-Money", color: "#FFD700" },
+    { name: "X-Money", color: "#FF4500" },
+    { name: "E-Money", color: "#4CAF50" },
   ];
 
   // --- LOGIN FUNCTION ---
@@ -149,10 +149,10 @@ export default function AccountAndMoneyManager() {
   if (view === "login")
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>Login to Your Account</Text>
+        <Text style={styles.title}> Account</Text>
         <TextInput
           style={styles.input}
-          placeholder="Enter your name"
+          placeholder="name"
           placeholderTextColor="#888"
           value={name}
           onChangeText={setName}
@@ -167,7 +167,7 @@ export default function AccountAndMoneyManager() {
   // --- ACCOUNT + MONEY MANAGER VIEW ---
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>👤 {profile?.Name}</Text>
+      <Text style={styles.title}> {profile?.Name}</Text>
       <Text style={styles.balanceText}>Net: ${profile?.net?.toFixed(2)}</Text>
       <Text
         style={[
@@ -175,19 +175,19 @@ export default function AccountAndMoneyManager() {
           { color: profile?.isFrozen ? "#FF5252" : "#4CAF50" },
         ]}
       >
-        {profile?.isFrozen ? "❌ Frozen" : "✅ Active"}
+        {profile?.isFrozen ? " Frozen" : "✅ Active"}
       </Text>
 
       {/* --- PERSONAL INFO --- */}
       <View style={styles.infoCard}>
-        <Text style={styles.infoText}>📅 Age: {profile?.age}</Text>
-        <Text style={styles.infoText}>🎂 BOD: {profile?.bod}</Text>
-        <Text style={styles.infoText}>👨 Father: {profile?.father}</Text>
-        <Text style={styles.infoText}>👩 Mother: {profile?.mother}</Text>
-        <Text style={styles.infoText}>🆔 ID No: {profile?.idno}</Text>
-        <Text style={styles.infoText}>💳 NIN: {profile?.nin}</Text>
-        <Text style={styles.infoText}>📞 Phone: {profile?.phone}</Text>
-        <Text style={styles.infoText}>👤 NOK: {profile?.nok}</Text>
+        <Text style={styles.infoText}>Age: {profile?.age}</Text>
+        <Text style={styles.infoText}> BOD: {profile?.bod}</Text>
+        <Text style={styles.infoText}>Father: {profile?.father}</Text>
+        <Text style={styles.infoText}>Mother: {profile?.mother}</Text>
+        <Text style={styles.infoText}>ID No: {profile?.idno}</Text>
+        <Text style={styles.infoText}>NIN: {profile?.nin}</Text>
+        <Text style={styles.infoText}>Phone: {profile?.phone}</Text>
+        <Text style={styles.infoText}>NOK: {profile?.nok}</Text>
       </View>
 
       <View style={styles.buttonRow}>
@@ -264,10 +264,10 @@ export default function AccountAndMoneyManager() {
           keyExtractor={(_, i) => i.toString()}
           renderItem={({ item }) => (
             <View style={styles.txCard}>
-              <Text style={styles.txText}>➡️ To: {item.receiver}</Text>
-              <Text style={styles.txText}>💲 Amount: {item.amount}</Text>
-              <Text style={styles.txText}>🕒 {item.timestamp}</Text>
-              <Text style={styles.txText}>📄 Proof: {item.proof}</Text>
+              <Text style={styles.txText}>To: {item.receiver}</Text>
+              <Text style={styles.txText}>Amount: {item.amount}</Text>
+              <Text style={styles.txText}>{item.timestamp}</Text>
+              <Text style={styles.txText}>Proof: {item.proof}</Text>
               <Text
                 style={[
                   styles.txText,
