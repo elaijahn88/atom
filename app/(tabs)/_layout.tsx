@@ -11,6 +11,9 @@ export default function TabLayout() {
   const activeColor = Colors[colorScheme ?? 'light'].tint;
   const inactiveColor = Colors[colorScheme ?? 'light'].tabIconDefault ?? '#999';
 
+  // Set the dark background color
+  const darkBackground = '#121212'; // Dark gray/black
+
   return (
     <Tabs
       screenOptions={{
@@ -18,7 +21,7 @@ export default function TabLayout() {
         tabBarActiveTintColor: activeColor,
         tabBarInactiveTintColor: inactiveColor,
         tabBarStyle: {
-          backgroundColor: Colors[colorScheme ?? 'light'].background,
+          backgroundColor: darkBackground,
           borderTopWidth: 0,
           elevation: 5,
           shadowOpacity: 0.1,
@@ -28,6 +31,7 @@ export default function TabLayout() {
           fontSize: 12,
           fontWeight: '600',
           marginBottom: 5,
+          color: '#fff', // Ensure label is visible on dark background
         },
         tabBarButton: HapticTab,
       }}
@@ -67,7 +71,6 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="atom" color={color} />,
         }}
       />
-      {/* New Account Tab */}
       <Tabs.Screen
         name="account"
         options={{
