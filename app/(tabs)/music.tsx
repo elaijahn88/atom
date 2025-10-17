@@ -14,8 +14,8 @@ import {
 import Video from "react-native-video";
 import { Ionicons } from "@expo/vector-icons";
 import { auth, db } from "../../firebase";
-import { doc, onSnapshot } from "firebase/firestore"; // Firestore
-import { ref as rtdbRef, push, onValue } from "firebase/database"; // Realtime DB
+import { doc, onSnapshot } from "firebase/firestore";
+import { ref as rtdbRef, set, onValue } from "firebase/database";
 
 const { width } = Dimensions.get("window");
 
@@ -33,7 +33,7 @@ export default function MusicScreen() {
   const commentScrollRef = useRef<ScrollView>(null);
   const heartScale = useRef(new Animated.Value(1)).current;
 
-  // 🔄 Load video URLs from Firestore collection `music` document `name` field `oma` (array)
+  // 🔄 Load video URLs from Firestore
   useEffect(() => {
     const docRef = doc(db, "music", "name");
     const unsubscribe = onSnapshot(docRef, (snapshot) => {
@@ -47,10 +47,10 @@ export default function MusicScreen() {
         }
       }
     });
-    return () => unsubscribe();
+    return unsubscribe; // Correct unsubscribe
   }, []);
 
-  // 🔄 Load comments from Realtime Database
+  // 🔄 Load comments from Realtime DB
   useEffect(() => {
     const commentsRef = rtdbRef(db, "comments/video1");
     const unsubscribe = onValue(commentsRef, (snapshot) => {
@@ -58,12 +58,12 @@ export default function MusicScreen() {
       const arr = Object.values(data);
       setComments(arr);
     });
-    return () => unsubscribe();
+    return () => unsubscribe(); // Safe cleanup
   }, []);
 
   // Auto-scroll comments
   useEffect(() => {
-    if (commentScrollRef.current) commentScrollRef.current.scrollToEnd({ animated: true });
+    commentScrollRef.current?.scrollToEnd({ animated: true });
   }, [comments]);
 
   // Loop videos
@@ -85,7 +85,7 @@ export default function MusicScreen() {
     ]).start(() => setShowHeart(false));
 
     setLiked((prev) => !prev);
-    push(likesRef, !liked ? true : null);
+    set(likesRef, !liked ? true : false); // Use set instead of push to avoid null
   };
 
   // Add comment handler
@@ -103,7 +103,6 @@ export default function MusicScreen() {
     setTimeout(() => setLabelMessage(""), 3000);
   };
 
-  // Example collaborate/produce buttons (static links)
   const handleLink = async (url: string, type: string) => {
     try {
       const supported = await Linking.canOpenURL(url);
@@ -138,11 +137,10 @@ export default function MusicScreen() {
       )}
 
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        {/* Video Player */}
         <View style={styles.videoContainer}>
           {videos.length > 0 ? (
             <Video
-              key={currentVideoIndex} // Important to force reload
+              key={currentVideoIndex}
               source={{ uri: videos[currentVideoIndex] }}
               style={styles.playerVideo}
               resizeMode="cover"
@@ -157,10 +155,13 @@ export default function MusicScreen() {
           )}
         </View>
 
-        {/* Controls */}
         <View style={styles.controls}>
           <TouchableOpacity onPress={handleLike}>
-            <Ionicons name={liked ? "heart" : "heart-outline"} size={34} color={liked ? "#1DB954" : "#fff"} />
+            <Ionicons
+              name={liked ? "heart" : "heart-outline"}
+              size={34}
+              color={liked ? "#1DB954" : "#fff"}
+            />
           </TouchableOpacity>
           <Text style={{ color: "#fff", fontSize: 16 }}>{likeCount}</Text>
           <TouchableOpacity onPress={() => setPaused(!paused)}>
@@ -168,9 +169,8 @@ export default function MusicScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Comments */}
         <ScrollView ref={commentScrollRef} style={styles.commentList}>
-          {comments.map((c, i) => (
+          {comments.map((c: any, i: number) => (
             <View key={i}>
               <Text style={styles.comment}>
                 {c.userId}: {c.text}
@@ -179,7 +179,6 @@ export default function MusicScreen() {
           ))}
         </ScrollView>
 
-        {/* Comment Input */}
         <View style={styles.commentBox}>
           <TextInput
             style={styles.input}
