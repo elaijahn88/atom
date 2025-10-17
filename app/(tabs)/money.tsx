@@ -1,347 +1,418 @@
-// App.tsx
+// MergedAccountSacco.tsx
 import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
   TextInput,
+  TouchableOpacity,
   FlatList,
+  StyleSheet,
+  Modal,
+  ScrollView,
+  useColorScheme,
   Alert,
   Platform,
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { db } from "../../firebase";
+import {
+  collection,
+  addDoc,
+  doc,
+  updateDoc,
+  getDocs,
+  getDoc,
+  setDoc,
+} from "firebase/firestore";
 
 /* -----------------------
    Types
    ----------------------- */
-type Transaction = {
-  id: string;
-  provider?: string;
-  type: "TopUp" | "Deposit" | "LoanPayment" | "Other";
-  amount: number;
-  timestamp: string;
-  status: "Pending" | "Completed" | "Failed";
-  note?: string;
-};
-
-type Loan = {
-  amount: number;
-  outstanding: number;
-  status: "NoLoan" | "Active" | "Pending" | "Paid";
-  dueDate?: string | null;
-};
-
-type User = {
+type Sacco = {
   id: string;
   name: string;
-  email: string;
-  account: number;
-  age?: number;
-  isFrozen: boolean;
-  transactions: Transaction[];
-  loan: Loan;
+  description: string;
+  balance: number;
+  createdBy?: string;
+};
+
+type Tx = {
+  id: string;
+  user?: string; // who initiated
+  provider?: string; // sacco or MM provider
+  saccoId?: string;
+  recipient?: string; // recipient username/email
+  amount: number;
+  type: "sacco" | "gift" | "topup" | "loan" | "other";
+  timestamp: number;
+  note?: string;
+  status?: "Pending" | "Completed" | "Failed";
 };
 
 /* -----------------------
-   App
+   Component
    ----------------------- */
-export default function App() {
-  const initialDavid: User = {
-    id: "david-1",
-    name: "David",
-    email: "david@example.com",
-    account: 500,
-    age: 29,
-    isFrozen: false,
-    transactions: [
-      {
-        id: "tx_init_1",
-        provider: "Initial",
-        type: "Other",
-        amount: 500,
-        timestamp: new Date().toLocaleString(),
-        status: "Completed",
-        note: "Opening balance",
-      },
-    ],
-    loan: { amount: 0, outstanding: 0, status: "NoLoan", dueDate: null },
-  };
+export default function MergedAccountSacco() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === "dark";
 
-  const [david, setDavid] = useState<User | null>(null);
-  const [loadingStore, setLoadingStore] = useState(true);
+  // UI / local states
+  const [loading, setLoading] = useState(true);
 
-  // UI state
-  const [visibleSection, setVisibleSection] = useState<
-    "none" | "deposit" | "viewClient" | "loan"
-  >("none");
+  // saccos + modal states
+  const [saccos, setSaccos] = useState<Sacco[]>([]);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [saccoName, setSaccoName] = useState("");
+  const [saccoDesc, setSaccoDesc] = useState("");
+  const [saccoDeposit, setSaccoDeposit] = useState("");
 
-  // deposit UI
-  const [topUpAmount, setTopUpAmount] = useState<string>("");
-  const quickTopUps = [5, 10, 20, 50, 100];
-  const mobileMoneyProviders = [
-    { name: "MTN Mobile Money", key: "MTN" },
-    { name: "AirtelTigo", key: "AirtelTigo" },
-    { name: "Vodafone", key: "Vodafone" },
-    { name: "G-Money", key: "G-Money" },
-  ];
+  // payment/gift states
+  const [selectedSacco, setSelectedSacco] = useState<Sacco | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [giftEmail, setGiftEmail] = useState("");
+
+  // Profile (acc/elijah)
+  const USER_DOC_ID = "elijah"; // fixed as requested
+  const userDocRef = doc(db, "acc", USER_DOC_ID);
+  const [profile, setProfile] = useState<any>(null);
+  const [transactions, setTransactions] = useState<Tx[]>([]);
 
   /* -----------------------
-     Initialize David (no AsyncStorage)
+     Load initial data: user doc and saccos
      ----------------------- */
   useEffect(() => {
-    setTimeout(() => {
-      setDavid(initialDavid);
-      setLoadingStore(false);
-    }, 500);
+    let mounted = true;
+    const load = async () => {
+      setLoading(true);
+      try {
+        // load elijah doc (create if missing)
+        const snap = await getDoc(userDocRef);
+        if (!snap.exists()) {
+          // create default elijah doc
+          const defaultData = {
+            Name: "Nabimanya Elijah",
+            father: "Ziriganira Robert",
+            mother: "Winnie Kenturegye Zebra",
+            nok: "Atukunda Timothy",
+            idno: 18535416,
+            nin: "CM9900910LFEAF",
+            phone: 746524088,
+            net: 200000, // initial balance as you used earlier
+            isFrozen: false,
+            transactions: [],
+            createdAt: new Date().toISOString(),
+          };
+          await setDoc(userDocRef, defaultData);
+          if (!mounted) return;
+          setProfile(defaultData);
+          setTransactions(defaultData.transactions || []);
+        } else {
+          const data = snap.data();
+          if (!("net" in data)) data.net = 0;
+          if (!("transactions" in data)) data.transactions = [];
+          if (!mounted) return;
+          setProfile(data);
+          // ensure transactions typed correctly
+          setTransactions((data.transactions || []) as Tx[]);
+        }
+
+        // load saccos from collection
+        const saccoSnap = await getDocs(collection(db, "saccos"));
+        const loadedSaccos = saccoSnap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as any),
+        })) as Sacco[];
+        if (!mounted) return;
+        setSaccos(loadedSaccos);
+      } catch (err) {
+        console.error("Load error:", err);
+        Alert.alert("Error", "Failed loading data.");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   /* -----------------------
-     Helpers: update state and transactions
+     Helpers
      ----------------------- */
-  const addTransaction = (tx: Transaction) => {
-    setDavid((prev) =>
-      prev ? { ...prev, transactions: [tx, ...prev.transactions] } : prev
-    );
+  const pushTxToProfile = async (tx: Tx) => {
+    try {
+      const newTxs = [tx, ...(profile.transactions || [])];
+      await updateDoc(userDocRef, { transactions: newTxs });
+      setProfile((p: any) => ({ ...p, transactions: newTxs }));
+      setTransactions(newTxs);
+    } catch (err) {
+      console.error("pushTxToProfile error:", err);
+    }
+  };
+
+  const updateProfileNet = async (newNet: number) => {
+    try {
+      await updateDoc(userDocRef, { net: newNet });
+      setProfile((p: any) => ({ ...p, net: newNet }));
+    } catch (err) {
+      console.error("updateProfileNet error:", err);
+      Alert.alert("Error", "Failed to update balance.");
+    }
   };
 
   /* -----------------------
-     Top-up (no confirmation)
+     SACCO: Create
      ----------------------- */
-  const handleTopUp = (amountParam?: number, providerKey?: string) => {
-    if (!david) return;
-    if (david.isFrozen) {
-      Alert.alert("Account Frozen", "Cannot top up: account is frozen.");
+  const createSacco = async () => {
+    if (!saccoName.trim() || !saccoDesc.trim() || !saccoDeposit.trim()) {
+      Alert.alert("Incomplete", "Please fill all fields.");
+      return;
+    }
+    const initial = parseFloat(saccoDeposit);
+    if (isNaN(initial) || initial < 0) {
+      Alert.alert("Invalid deposit", "Enter a valid initial deposit.");
       return;
     }
 
-    const parsedAmount = amountParam ?? Number(topUpAmount);
-    if (!parsedAmount || isNaN(parsedAmount) || parsedAmount <= 0) {
-      Alert.alert("Invalid amount", "Enter a valid top-up amount.");
-      return;
+    try {
+      const newSacco = {
+        name: saccoName.trim(),
+        description: saccoDesc.trim(),
+        balance: initial,
+        createdBy: USER_DOC_ID,
+        createdAt: Date.now(),
+      };
+      const refDoc = await addDoc(collection(db, "saccos"), newSacco);
+      setSaccos((prev) => [...prev, { id: refDoc.id, ...newSacco }]);
+
+      // log transaction to elijah (treat as deposit into sacco, but not from elijah)
+      const tx: Tx = {
+        id: `tx_${Date.now()}`,
+        user: USER_DOC_ID,
+        type: "other",
+        amount: initial,
+        provider: "SaccoCreated",
+        saccoId: refDoc.id,
+        timestamp: Date.now(),
+        note: `Created SACCO ${saccoName.trim()}`,
+        status: "Completed",
+      };
+      await pushTxToProfile(tx);
+
+      setSaccoName("");
+      setSaccoDesc("");
+      setSaccoDeposit("");
+      setModalVisible(false);
+      Alert.alert("Created", `SACCO "${newSacco.name}" created.`);
+    } catch (err) {
+      console.error("createSacco error:", err);
+      Alert.alert("Error", "Failed to create SACCO.");
     }
-
-    const txId = `tx_${Date.now()}`;
-    const provider = providerKey ?? "Manual";
-    const pendingTx: Transaction = {
-      id: txId,
-      provider,
-      type: "TopUp",
-      amount: parsedAmount,
-      timestamp: new Date().toLocaleString(),
-      status: "Pending",
-      note: `Top-up via ${provider}`,
-    };
-
-    addTransaction(pendingTx);
-    setTopUpAmount("");
-
-    // simulate processing then complete
-    setTimeout(() => {
-      setDavid((prev) => {
-        if (!prev) return prev;
-        const updatedTxs = prev.transactions.map((t) =>
-          t.id === txId ? { ...t, status: "Completed" } : t
-        );
-        const newBalance = prev.account + parsedAmount;
-        return { ...prev, account: newBalance, transactions: updatedTxs };
-      });
-      Alert.alert("Top-Up Completed", `$${parsedAmount} added to David's account.`);
-    }, 1200);
   };
 
   /* -----------------------
-     Freeze / Unfreeze
+     Send Payment to SACCO
+     Deduct from acc/elijah.net and add to sacco.balance
+     Also record a Tx inside elijah document (transactions array)
      ----------------------- */
-  const confirmToggleFreeze = () => {
-    if (!david) return;
-    Alert.alert(
-      `${david.isFrozen ? "Unfreeze" : "Freeze"} Account`,
-      `Are you sure you want to ${david.isFrozen ? "unfreeze" : "freeze"} David's account?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: david.isFrozen ? "Unfreeze" : "Freeze",
-          style: "destructive",
-          onPress: () => {
-            setDavid((prev) => (prev ? { ...prev, isFrozen: !prev.isFrozen } : prev));
-            Alert.alert("Success", `Account ${david.isFrozen ? "unfrozen" : "frozen"}.`);
-          },
-        },
-      ]
-    );
+  const sendPayment = async () => {
+    if (!selectedSacco) return;
+    const amt = parseFloat(paymentAmount);
+    if (isNaN(amt) || amt <= 0) {
+      Alert.alert("Invalid amount", "Enter a valid payment amount.");
+      return;
+    }
+    if (!profile) return;
+    if (profile.isFrozen) {
+      Alert.alert("Account Frozen", "Cannot make payment while account is frozen.");
+      return;
+    }
+    if ((profile.net || 0) < amt) {
+      Alert.alert("Insufficient funds", "Not enough net to complete payment.");
+      return;
+    }
+
+    try {
+      // update sacco document
+      const saccoRef = doc(db, "saccos", selectedSacco.id);
+      const newSaccoBalance = selectedSacco.balance + amt;
+      await updateDoc(saccoRef, { balance: newSaccoBalance });
+
+      // update local saccos list
+      setSaccos((prev) =>
+        prev.map((s) =>
+          s.id === selectedSacco.id ? { ...s, balance: newSaccoBalance } : s
+        )
+      );
+
+      // deduct from elijah.net
+      const newNet = (profile.net || 0) - amt;
+      await updateProfileNet(newNet);
+
+      // create tx in elijah doc
+      const tx: Tx = {
+        id: `tx_${Date.now()}`,
+        user: USER_DOC_ID,
+        saccoId: selectedSacco.id,
+        amount: amt,
+        type: "sacco",
+        provider: "SaccoPayment",
+        timestamp: Date.now(),
+        note: `Paid to SACCO ${selectedSacco.name}`,
+        status: "Completed",
+      };
+      await pushTxToProfile(tx);
+
+      Alert.alert("Success", `Sent $${amt.toFixed(2)} to ${selectedSacco.name}`);
+      setPaymentAmount("");
+      setSelectedSacco(null);
+    } catch (err) {
+      console.error("sendPayment error:", err);
+      Alert.alert("Error", "Failed to send payment.");
+    }
   };
 
   /* -----------------------
-     Loan functions
+     Send Gift
+     Deduct from elijah.net, credit recipient's acc/<recipient> net,
+     append tx both sides' transactions arrays
      ----------------------- */
-  const requestLoan = (amount: number) => {
-    if (!david) return;
-    if (amount <= 0 || isNaN(amount)) {
-      Alert.alert("Invalid amount", "Enter a valid loan amount.");
+  const sendGift = async () => {
+    if (!giftEmail.trim() || !paymentAmount.trim()) {
+      Alert.alert("Incomplete", "Enter recipient and amount.");
       return;
     }
-    setDavid((prev) =>
-      prev
-        ? {
-            ...prev,
-            loan: {
-              amount,
-              outstanding: amount,
-              status: "Pending",
-              dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString(),
-            },
-          }
-        : prev
-    );
-    Alert.alert("Loan Requested", `Loan of $${amount} is pending approval.`);
-  };
-
-  const confirmApproveLoan = () => {
-    if (!david) return;
-    if (david.loan.status !== "Pending") {
-      Alert.alert("No pending loan", "There is no loan pending approval.");
+    const amt = parseFloat(paymentAmount);
+    if (isNaN(amt) || amt <= 0) {
+      Alert.alert("Invalid amount", "Enter a valid amount.");
       return;
     }
-    Alert.alert(
-      "Approve Loan",
-      `Approve loan of $${david.loan.amount}? This will disburse funds to David's account.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Approve",
-          onPress: () => {
-            setDavid((prev) => {
-              if (!prev) return prev;
-              const newBalance = prev.account + prev.loan.amount;
-              const updatedLoan: Loan = { ...prev.loan, status: "Active" };
-              const tx: Transaction = {
-                id: `loan_disburse_${Date.now()}`,
-                type: "Other",
-                amount: prev.loan.amount,
-                timestamp: new Date().toLocaleString(),
-                status: "Completed",
-                note: "Loan disbursed",
-              };
-              return {
-                ...prev,
-                account: newBalance,
-                transactions: [tx, ...prev.transactions],
-                loan: updatedLoan,
-              };
-            });
-            Alert.alert("Loan Approved", "Loan has been disbursed to David's account.");
-          },
-        },
-      ]
-    );
-  };
-
-  const confirmRepayLoan = (amount: number) => {
-    if (!david) return;
-    if (david.loan.status !== "Active") {
-      Alert.alert("No active loan", "There is no active loan to repay.");
+    if (!profile) return;
+    if (profile.isFrozen) {
+      Alert.alert("Account Frozen", "Cannot send gift while account is frozen.");
       return;
     }
-    if (amount <= 0 || isNaN(amount)) {
-      Alert.alert("Invalid amount", "Enter a valid repayment amount.");
-      return;
-    }
-    if (amount > david.account) {
-      Alert.alert("Insufficient funds", "David doesn't have enough balance to repay that amount.");
+    if ((profile.net || 0) < amt) {
+      Alert.alert("Insufficient funds", "Not enough net to send gift.");
       return;
     }
 
-    Alert.alert(
-      "Confirm Repayment",
-      `Repay $${amount} towards the loan? This will deduct the amount from David's account.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Repay",
-          onPress: () => {
-            setDavid((prev) => {
-              if (!prev) return prev;
-              const newOutstanding = Math.max(0, prev.loan.outstanding - amount);
-              const newAccount = prev.account - amount;
-              const loanStatus = newOutstanding === 0 ? "Paid" : "Active";
-              const tx: Transaction = {
-                id: `loan_repay_${Date.now()}`,
-                type: "LoanPayment",
-                amount,
-                timestamp: new Date().toLocaleString(),
-                status: "Completed",
-                note: "Loan repayment",
-              };
-              return {
-                ...prev,
-                account: newAccount,
-                transactions: [tx, ...prev.transactions],
-                loan: { ...prev.loan, outstanding: newOutstanding, status: loanStatus },
-              };
-            });
-            Alert.alert("Repayment Received", `Paid $${amount} towards the loan.`);
-          },
-        },
-      ]
-    );
-  };
+    // recipient doc id: normalize email -> use without domain or full? We'll assume the recipient doc id is the part before @ or full email sanitized.
+    // We'll try both: preferring doc with exact string as provided, otherwise use local part before @.
+    const recipientKeyCandidates = [
+      giftEmail.trim().toLowerCase(),
+      giftEmail.trim().toLowerCase().replace(".", "_"),
+      (giftEmail.split("@")[0] || "").toLowerCase(),
+    ].filter(Boolean);
 
-  /* -----------------------
-     Reset data (no storage)
-     ----------------------- */
-  const confirmResetData = () => {
-    Alert.alert(
-      "Reset David",
-      "This will restore David to the original initial state. Continue?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Reset",
-          style: "destructive",
-          onPress: () => {
-            setDavid(initialDavid);
-            Alert.alert("Reset", "David's data has been reset.");
-          },
-        },
-      ]
-    );
+    try {
+      // find recipient doc
+      let recipientRef: any = null;
+      let recipientSnap: any = null;
+      for (const key of recipientKeyCandidates) {
+        const candRef = doc(db, "acc", key);
+        const snap = await getDoc(candRef);
+        if (snap.exists()) {
+          recipientRef = candRef;
+          recipientSnap = snap;
+          break;
+        }
+      }
+
+      // if not found, create recipient doc with default profile (so they get credited)
+      if (!recipientRef) {
+        const newRecipientId = recipientKeyCandidates[0] || `user_${Date.now()}`;
+        const newRecipientRef = doc(db, "acc", newRecipientId);
+        const newRecipientData = {
+          Name: giftEmail.split("@")[0] || newRecipientId,
+          net: amt,
+          transactions: [],
+          isFrozen: false,
+          createdAt: new Date().toISOString(),
+        };
+        await setDoc(newRecipientRef, newRecipientData);
+        recipientRef = newRecipientRef;
+        recipientSnap = await getDoc(newRecipientRef);
+      }
+
+      // debit elijah
+      const newNetSender = (profile.net || 0) - amt;
+      await updateProfileNet(newNetSender);
+
+      // credit recipient
+      const recipientData = recipientSnap.data();
+      const recipientNet = (recipientData.net || 0) + amt;
+      await updateDoc(recipientRef, { net: recipientNet });
+
+      // create tx objects
+      const txId = `tx_${Date.now()}`;
+
+      const senderTx: Tx = {
+        id: txId + "_s",
+        user: USER_DOC_ID,
+        recipient: recipientRef.id,
+        amount: amt,
+        type: "gift",
+        timestamp: Date.now(),
+        note: `Gifted to ${recipientRef.id}`,
+        status: "Completed",
+      };
+
+      const recipientTx: Tx = {
+        id: txId + "_r",
+        user: recipientRef.id,
+        recipient: USER_DOC_ID,
+        amount: amt,
+        type: "gift",
+        timestamp: Date.now(),
+        note: `Received gift from ${USER_DOC_ID}`,
+        status: "Completed",
+      };
+
+      // push sender tx to elijah
+      await pushTxToProfile(senderTx);
+
+      // push recipient tx into their transactions array
+      try {
+        const recipientTxs = recipientData.transactions || [];
+        const updatedRecipientTxs = [recipientTx, ...recipientTxs];
+        await updateDoc(recipientRef, { transactions: updatedRecipientTxs });
+      } catch (err) {
+        console.error("writing recipient tx failed:", err);
+      }
+
+      Alert.alert("Success", `Sent $${amt.toFixed(2)} gift to ${giftEmail}`);
+      setPaymentAmount("");
+      setGiftEmail("");
+    } catch (err) {
+      console.error("sendGift error:", err);
+      Alert.alert("Error", "Failed to send gift.");
+    }
   };
 
   /* -----------------------
-     UI components
+     Freeze toggle (on profile)
      ----------------------- */
-  const SectionButton = ({ onPress, label, icon }: { onPress: () => void; label: string; icon: string }) => (
-    <TouchableOpacity style={styles.sectionBtn} onPress={onPress}>
-      <Ionicons name={icon as any} size={18} color="#fff" />
-      <Text style={styles.sectionBtnText}>{label}</Text>
-    </TouchableOpacity>
-  );
-
-  const TxRow = ({ tx }: { tx: Transaction }) => (
-    <View style={styles.txRow}>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.txTextType}>
-          {tx.type} {tx.provider ? `• ${tx.provider}` : ""}
-        </Text>
-        {tx.note ? <Text style={styles.txTextSmall}>{tx.note}</Text> : null}
-      </View>
-      <View style={{ alignItems: "flex-end" }}>
-        <Text style={styles.txAmount}>${tx.amount.toFixed(2)}</Text>
-        <Text style={[styles.txStatus, { color: tx.status === "Completed" ? "#4CAF50" : "#FFD700" }]}>
-          {tx.status}
-        </Text>
-        <Text style={styles.txTextSmall}>{tx.timestamp}</Text>
-      </View>
-    </View>
-  );
+  const toggleFreeze = async () => {
+    if (!profile) return;
+    try {
+      const newStatus = !profile.isFrozen;
+      await updateDoc(userDocRef, { isFrozen: newStatus });
+      setProfile((p: any) => ({ ...p, isFrozen: newStatus }));
+      Alert.alert("Success", `Account ${newStatus ? "frozen" : "unfrozen"}`);
+    } catch (err) {
+      console.error("toggleFreeze error:", err);
+      Alert.alert("Error", "Failed to update status.");
+    }
+  };
 
   /* -----------------------
-     Render
+     UI Rendering
      ----------------------- */
-  if (loadingStore || !david) {
+  if (loading) {
     return (
       <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
         <ActivityIndicator size="large" color="#00BFFF" />
@@ -351,144 +422,155 @@ export default function App() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.appTitle}>Admin Dashboard</Text>
+    <View style={[styles.container, { backgroundColor: isDark ? "#121212" : "#f9f9f9" }]}>
+      <Text style={[styles.header, { color: isDark ? "#fff" : "#000" }]}>SACCO & Account Manager</Text>
 
-      {/* Dashboard buttons */}
-      <View style={styles.buttonsRow}>
-        <SectionButton
-          onPress={() => setVisibleSection((s) => (s === "deposit" ? "none" : "deposit"))}
-          label="Deposit / Top-Up"
-          icon="cash-outline"
-        />
-        <SectionButton
-          onPress={() => setVisibleSection((s) => (s === "viewClient" ? "none" : "viewClient"))}
-          label="View Client / Transactions"
-          icon="people-outline"
-        />
-        <SectionButton
-          onPress={() => setVisibleSection((s) => (s === "loan" ? "none" : "loan"))}
-          label="Check Loan / Account"
-          icon="briefcase-outline"
-        />
+      {/* Profile / Balance */}
+      <View style={[styles.profileCard, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
+        <Text style={[styles.saccoName, { color: isDark ? "#fff" : "#000" }]}>{profile?.Name}</Text>
+        <Text style={[styles.saccoDesc, { color: isDark ? "#aaa" : "#555" }]}>Phone: {profile?.phone}</Text>
+        <Text style={[styles.saccoBalance, { color: "#00a650" }]}>Net (Balance): ${Number(profile?.net || 0).toFixed(2)}</Text>
+        <Text style={{ color: profile?.isFrozen ? "#FF5252" : "#4CAF50", marginTop: 6 }}>
+          {profile?.isFrozen ? "Frozen" : "Active"}
+        </Text>
+
+        <View style={{ flexDirection: "row", marginTop: 10 }}>
+          <TouchableOpacity style={[styles.payBtn, { marginRight: 8 }]} onPress={toggleFreeze}>
+            <Text style={styles.payBtnText}>{profile?.isFrozen ? "Unfreeze" : "Freeze"}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Deposit Section */}
-      {visibleSection === "deposit" && (
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>💰 Deposit / Top-Up (David)</Text>
-          <Text style={styles.label}>Current Balance: ${david.account.toFixed(2)}</Text>
+      {/* Create SACCO */}
+      <TouchableOpacity style={styles.createBtn} onPress={() => setModalVisible(true)}>
+        <Ionicons name="add-circle-outline" size={20} color="#fff" />
+        <Text style={styles.createBtnText}>Create New SACCO</Text>
+      </TouchableOpacity>
 
-          <TextInput
-            placeholder="Enter amount"
-            placeholderTextColor="#999"
-            keyboardType="numeric"
-            value={topUpAmount}
-            onChangeText={setTopUpAmount}
-            style={styles.input}
-          />
+      {/* SACCO list */}
+      <FlatList
+        data={saccos}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ paddingVertical: 10 }}
+        renderItem={({ item }) => (
+          <View style={[styles.saccoCard, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
+            <Text style={[styles.saccoName, { color: isDark ? "#fff" : "#000" }]}>{item.name}</Text>
+            <Text style={[styles.saccoDesc, { color: isDark ? "#aaa" : "#555" }]}>{item.description}</Text>
+            <Text style={[styles.saccoBalance, { color: "#00a650" }]}>Balance: ${item.balance.toFixed(2)}</Text>
 
-          <View style={styles.quickRow}>
-            {quickTopUps.map((amt) => (
-              <TouchableOpacity key={amt} style={styles.quickBtn} onPress={() => handleTopUp(amt, "Quick")}>
-                <Text style={styles.quickBtnText}>+${amt}</Text>
-              </TouchableOpacity>
-            ))}
+            <TouchableOpacity style={styles.payBtn} onPress={() => setSelectedSacco(item)}>
+              <Text style={styles.payBtnText}>Send Payment</Text>
+            </TouchableOpacity>
           </View>
+        )}
+      />
 
-          <Text style={[styles.label, { marginTop: 12 }]}>Providers</Text>
-          <View style={styles.providersRow}>
-            {mobileMoneyProviders.map((p) => (
-              <TouchableOpacity key={p.key} style={styles.providerBtn} onPress={() => handleTopUp(undefined, p.key)}>
-                <Text style={styles.providerText}>{p.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <TouchableOpacity style={[styles.primaryBtn, { marginTop: 14 }]} onPress={() => handleTopUp(undefined)}>
-            <Text style={styles.primaryBtnText}>Top-Up Manual</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={[styles.secondaryBtn, { marginTop: 8 }]} onPress={confirmToggleFreeze}>
-            <Text style={styles.secondaryBtnText}>
-              {david.isFrozen ? "Unfreeze Account" : "Freeze Account"}
+      {/* Transaction History (from profile.transactions) */}
+      <Text style={[styles.sectionHeader, { color: isDark ? "#fff" : "#000" }]}>Transaction History</Text>
+      <FlatList
+        data={transactions}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ paddingBottom: 120 }}
+        renderItem={({ item }) => (
+          <View style={[styles.transactionCard, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
+            <Text style={{ color: isDark ? "#fff" : "#000", fontWeight: "700" }}>
+              {item.type === "sacco" ? `Paid $${item.amount} to SACCO` : item.type === "gift" ? `Gift $${item.amount}` : `${item.type} $${item.amount}`}
             </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* View Client */}
-      {visibleSection === "viewClient" && (
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>👥 View Client / Transaction History</Text>
-          <View style={styles.clientRow}>
-            <View>
-              <Text style={styles.clientName}>{david.name}</Text>
-              <Text style={styles.clientEmail}>{david.email}</Text>
-            </View>
-            <View style={{ alignItems: "flex-end" }}>
-              <Text style={styles.clientBalance}>${david.account.toFixed(2)}</Text>
-              <Text style={{ color: david.isFrozen ? "#FF5252" : "#4CAF50" }}>
-                {david.isFrozen ? "Frozen" : "Active"}
-              </Text>
-            </View>
+            <Text style={{ color: "#888", fontSize: 12 }}>{new Date(item.timestamp).toLocaleString()}</Text>
+            {item.note ? <Text style={{ color: "#aaa", marginTop: 6 }}>{item.note}</Text> : null}
           </View>
+        )}
+      />
 
-          <Text style={[styles.label, { marginTop: 10 }]}>Transactions</Text>
-          {david.transactions.length === 0 ? (
-            <Text style={styles.noTx}>No transactions yet.</Text>
-          ) : (
-            <FlatList
-              data={david.transactions}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => <TxRow tx={item} />}
-              style={{ marginTop: 8, width: "100%" }}
-              ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+      {/* Create SACCO Modal */}
+      <Modal visible={modalVisible} transparent animationType="slide">
+        <ScrollView contentContainerStyle={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
+            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#000" }]}>Create SACCO</Text>
+            <TextInput
+              placeholder="SACCO Name"
+              placeholderTextColor={isDark ? "#888" : "#aaa"}
+              value={saccoName}
+              onChangeText={setSaccoName}
+              style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]}
             />
-          )}
-        </View>
-      )}
+            <TextInput
+              placeholder="Description"
+              placeholderTextColor={isDark ? "#888" : "#aaa"}
+              value={saccoDesc}
+              onChangeText={setSaccoDesc}
+              style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]}
+            />
+            <TextInput
+              placeholder="Initial Deposit"
+              placeholderTextColor={isDark ? "#888" : "#aaa"}
+              value={saccoDeposit}
+              onChangeText={setSaccoDeposit}
+              keyboardType="numeric"
+              style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]}
+            />
 
-      {/* Loan Section */}
-      {visibleSection === "loan" && (
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>🏦 Check Loan / Account Management</Text>
-          <Text style={styles.label}>Name: {david.name}</Text>
-          <Text style={styles.label}>Balance: ${david.account.toFixed(2)}</Text>
-          <Text style={styles.label}>Loan Status: {david.loan.status}</Text>
-          {david.loan.status !== "NoLoan" && (
-            <>
-              <Text style={styles.label}>Loan Amount: ${david.loan.amount.toFixed(2)}</Text>
-              <Text style={styles.label}>Outstanding: ${david.loan.outstanding.toFixed(2)}</Text>
-              <Text style={styles.label}>Due: {david.loan.dueDate ?? "—"}</Text>
-            </>
-          )}
-
-          <View style={{ marginTop: 12 }}>
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => requestLoan(100)}>
-              <Text style={styles.primaryBtnText}>Request $100 Loan</Text>
+            <TouchableOpacity style={styles.modalBtn} onPress={createSacco}>
+              <Text style={styles.modalBtnText}>Create SACCO</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.secondaryBtn, { marginTop: 8 }]} onPress={confirmApproveLoan}>
-              <Text style={styles.secondaryBtnText}>Approve Pending Loan</Text>
+            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ccc" }]} onPress={() => setModalVisible(false)}>
+              <Text style={[styles.modalBtnText, { color: "#333" }]}>Cancel</Text>
             </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </Modal>
 
-            <TouchableOpacity style={[styles.secondaryBtn, { marginTop: 8 }]} onPress={() => confirmRepayLoan(50)}>
-              <Text style={styles.secondaryBtnText}>Repay $50</Text>
+      {/* SACCO Payment Modal */}
+      <Modal visible={!!selectedSacco} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
+            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#000" }]}>
+              Send Payment to {selectedSacco?.name}
+            </Text>
+            <TextInput
+              placeholder="Amount"
+              placeholderTextColor={isDark ? "#888" : "#aaa"}
+              value={paymentAmount}
+              onChangeText={setPaymentAmount}
+              keyboardType="numeric"
+              style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]}
+            />
+
+            <TouchableOpacity style={styles.modalBtn} onPress={sendPayment}>
+              <Text style={styles.modalBtnText}>Send Payment</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ccc" }]} onPress={() => setSelectedSacco(null)}>
+              <Text style={[styles.modalBtnText, { color: "#333" }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
-      )}
+      </Modal>
 
-      {/* Reset */}
-      <View style={{ marginTop: 18, alignItems: "center" }}>
-        <TouchableOpacity style={[styles.secondaryBtn, { width: 180 }]} onPress={confirmResetData}>
-          <Text style={styles.secondaryBtnText}>Reset David</Text>
+      {/* Gift Payment */}
+      <View style={{ marginTop: 18 }}>
+        <Text style={[styles.sectionHeader, { color: isDark ? "#fff" : "#000" }]}>Send Gift</Text>
+        <TextInput
+          placeholder="Recipient Key (acc doc id or email)"
+          placeholderTextColor={isDark ? "#888" : "#aaa"}
+          value={giftEmail}
+          onChangeText={setGiftEmail}
+          style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]}
+        />
+        <TextInput
+          placeholder="Amount"
+          placeholderTextColor={isDark ? "#888" : "#aaa"}
+          value={paymentAmount}
+          onChangeText={setPaymentAmount}
+          keyboardType="numeric"
+          style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]}
+        />
+        <TouchableOpacity style={styles.modalBtn} onPress={sendGift}>
+          <Text style={styles.modalBtnText}>Send Gift</Text>
         </TouchableOpacity>
       </View>
 
       <View style={{ height: 36 }} />
-    </ScrollView>
+    </View>
   );
 }
 
@@ -496,47 +578,23 @@ export default function App() {
    Styles
    ----------------------- */
 const styles = StyleSheet.create({
-  container: {
-    padding: 18,
-    paddingTop: Platform.OS === "ios" ? 60 : 36,
-    backgroundColor: "#0b0b0b",
-    minHeight: "100%",
-  },
-  appTitle: { color: "#00BFFF", fontSize: 24, fontWeight: "700", marginBottom: 16, textAlign: "center" },
-  buttonsRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 14 },
-  sectionBtn: {
-    flex: 1,
-    backgroundColor: "#1a1a1a",
-    padding: 12,
-    marginHorizontal: 4,
-    borderRadius: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sectionBtnText: { color: "#fff", marginLeft: 8, fontWeight: "700" },
-  sectionCard: { backgroundColor: "#121212", marginTop: 10, padding: 14, borderRadius: 12 },
-  sectionTitle: { fontSize: 18, color: "#fff", fontWeight: "700", marginBottom: 8 },
-  label: { color: "#ccc", fontSize: 14 },
-  input: { backgroundColor: "#1a1a1a", color: "#fff", padding: 12, borderRadius: 10, marginTop: 10 },
-  quickRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 12 },
-  quickBtn: { backgroundColor: "#00BFFF", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8 },
-  quickBtnText: { color: "#fff", fontWeight: "700" },
-  providersRow: { marginTop: 8, flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
-  providerBtn: { width: "48%", backgroundColor: "#2a2a2a", padding: 12, borderRadius: 10, marginVertical: 4 },
-  providerText: { color: "#fff", fontWeight: "700", textAlign: "center" },
-  primaryBtn: { backgroundColor: "#FF9800", padding: 12, borderRadius: 10, alignItems: "center" },
-  primaryBtnText: { color: "#fff", fontWeight: "700" },
-  secondaryBtn: { backgroundColor: "#333", padding: 12, borderRadius: 10, alignItems: "center" },
-  secondaryBtnText: { color: "#fff", fontWeight: "700" },
-  clientRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  clientName: { color: "#fff", fontSize: 20, fontWeight: "700" },
-  clientEmail: { color: "#aaa" },
-  clientBalance: { color: "#00BFFF", fontWeight: "700", fontSize: 18 },
-  txRow: { backgroundColor: "#151515", padding: 12, borderRadius: 10, flexDirection: "row", alignItems: "center" },
-  txTextType: { color: "#fff", fontWeight: "700" },
-  txTextSmall: { color: "#aaa", fontSize: 12 },
-  txAmount: { color: "#fff", fontWeight: "700" },
-  txStatus: { fontSize: 12 },
-  noTx: { color: "#888", marginTop: 10, textAlign: "center" },
+  container: { flex: 1, paddingTop: Platform.OS === "ios" ? 60 : 36, paddingHorizontal: 16 },
+  header: { fontSize: 24, fontWeight: "800", marginBottom: 12, textAlign: "center" },
+  createBtn: { flexDirection: "row", backgroundColor: "#25D366", padding: 12, borderRadius: 12, alignItems: "center", justifyContent: "center", marginBottom: 10 },
+  createBtnText: { color: "#fff", fontWeight: "700", marginLeft: 8 },
+  saccoCard: { padding: 16, borderRadius: 16, marginBottom: 12, shadowColor: "#000", shadowOpacity: 0.08, shadowOffset: { width: 0, height: 2 }, shadowRadius: 4 },
+  saccoName: { fontSize: 18, fontWeight: "800", marginBottom: 4 },
+  saccoDesc: { fontSize: 14, marginBottom: 8 },
+  saccoBalance: { fontSize: 16, fontWeight: "700", marginBottom: 8 },
+  payBtn: { backgroundColor: "#007aff", padding: 10, borderRadius: 12, alignItems: "center" },
+  payBtnText: { color: "#fff", fontWeight: "700" },
+  sectionHeader: { fontSize: 20, fontWeight: "800", marginVertical: 10 },
+  transactionCard: { padding: 12, borderRadius: 12, marginBottom: 8 },
+  modalOverlay: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.6)", padding: 20 },
+  modalContent: { width: "100%", borderRadius: 16, padding: 18 },
+  modalTitle: { fontSize: 20, fontWeight: "800", marginBottom: 12, textAlign: "center" },
+  input: { borderRadius: 12, padding: 12, fontSize: 15, marginBottom: 12 },
+  modalBtn: { backgroundColor: "#25D366", padding: 12, borderRadius: 12, alignItems: "center", marginTop: 6 },
+  modalBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  profileCard: { padding: 14, borderRadius: 12, marginBottom: 12 },
 });
