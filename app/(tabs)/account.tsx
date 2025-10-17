@@ -168,7 +168,7 @@ export default function AccountAndMoneyManager() {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>👤 {profile?.Name}</Text>
-      <Text style={styles.balanceText}>💰 Net: ${profile?.net?.toFixed(2)}</Text>
+      <Text style={styles.balanceText}>Net: ${profile?.net?.toFixed(2)}</Text>
       <Text
         style={[
           styles.statusText,
