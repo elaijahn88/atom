@@ -132,7 +132,7 @@ export default function MyStore() {
 
   const removeFromCart = (id: string) => {
     setCart((prev) => prev.filter((p) => p.id !== id));
-    showToast("Removed from cart ❌", "error");
+    showToast("Removed from cart ", "error");
   };
 
   const cartTotal = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
@@ -189,7 +189,7 @@ export default function MyStore() {
 
       {/* ✅ Header */}
       <View style={styles.headerRow}>
-        <Text style={styles.header}>iPhones</Text>
+        <Text style={styles.header}>Stom</Text>
         <Text style={{ color: "#ff7f00", fontWeight: "bold" }}>
           Cart: ${cartTotal.toFixed(2)}
         </Text>
