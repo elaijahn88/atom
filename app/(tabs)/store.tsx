@@ -37,7 +37,7 @@ export default function MyStore() {
   const [search, setSearch] = useState("");
   const toastAnim = useRef(new Animated.Value(-60)).current;
 
-  // ✅ Load only fields 12–17 and loop over them
+  // ✅ Load all fields dynamically
   const loadProducts = async () => {
     try {
       const docRef = doc(db, "phones", "iphone");
@@ -47,19 +47,19 @@ export default function MyStore() {
         const data = snap.data();
         const arr: Product[] = [];
 
-        for (let i = 12; i <= 17; i++) {
-          const url = data[i];
-          if (url) {
+        // Loop through all fields dynamically
+        Object.entries(data).forEach(([key, value], index) => {
+          if (typeof value === "string" && value.startsWith("http")) {
             arr.push({
-              id: String(i),
-              name: `iPhone ${i}`,
-              price: i * 10,
-              image: url,
-              description: `Apple iPhone ${i} — sleek and powerful.`,
-              featured: i === 16 || i === 17,
+              id: key,
+              name: `iPhone ${key}`,
+              price: (index + 1) * 10,
+              image: value,
+              description: `Apple iPhone ${key} — sleek and powerful.`,
+              featured: (index + 1) % 5 === 0, // mark every 5th as featured
             });
           }
-        }
+        });
 
         setProducts(arr);
         showToast("📱 Products loaded successfully!", "success");
@@ -80,19 +80,19 @@ export default function MyStore() {
         const data = snap.data();
         const arr: Product[] = [];
 
-        for (let i = 12; i <= 17; i++) {
-          const url = data[i];
-          if (url) {
+        Object.entries(data).forEach(([key, value], index) => {
+          if (typeof value === "string" && value.startsWith("http")) {
             arr.push({
-              id: String(i),
-              name: `iPhone ${i}`,
-              price: i * 10,
-              image: url,
-              description: `Apple iPhone ${i}`,
-              featured: i === 16 || i === 17,
+              id: key,
+              name: `iPhone ${key}`,
+              price: (index + 1) * 10,
+              image: value,
+              description: `Apple iPhone ${key} — sleek and powerful.`,
+              featured: (index + 1) % 5 === 0,
             });
           }
-        }
+        });
+
         setProducts(arr);
       }
     });
@@ -189,7 +189,7 @@ export default function MyStore() {
 
       {/* ✅ Header */}
       <View style={styles.headerRow}>
-        <Text style={styles.header}>Stom</Text>
+        <Text style={styles.header}>Store</Text>
         <Text style={{ color: "#ff7f00", fontWeight: "bold" }}>
           Cart: ${cartTotal.toFixed(2)}
         </Text>
