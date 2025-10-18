@@ -1,311 +1,224 @@
-import React, { useRef, useState, useEffect } from "react";
+// MediaAutoPlay.tsx
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   Dimensions,
-  Image,
-  TouchableOpacity,
-  Animated,
-  Easing,
   StatusBar,
-  useColorScheme,
-  TouchableWithoutFeedback,
-  Modal,
-  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import Video from "react-native-video";
-import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
+import { db } from "../../firebase"; // adjust path to your firebase export
+import { doc, getDoc } from "firebase/firestore";
 
-const { height, width } = Dimensions.get("window");
+const { width, height } = Dimensions.get("window");
 
-type MediaItem = {
-  id: string;
-  title: string;
-  artist: string;
-  artwork: string;
-  audioUrl: string;
-  promoVideo?: string;
-  price?: number; // optional price for gifts
-};
-
-const mediaData: MediaItem[] = [
-  {
-    id: "1",
-    title: "Chill Beats",
-    artist: "DJ Relax",
-    artwork: "https://picsum.photos/300/300?random=1",
-    audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-    promoVideo: "https://www.w3schools.com/html/mov_bbb.mp4",
-    price: 2.5,
-  },
-  {
-    id: "2",
-    title: "Upbeat Energy",
-    artist: "Electro Vibes",
-    artwork: "https://picsum.photos/300/300?random=2",
-    audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
-    price: 1.0,
-  },
-  {
-    id: "3",
-    title: "Summer Vibes",
-    artist: "Sunny Tunes",
-    artwork: "https://picsum.photos/300/300?random=3",
-    audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
-    promoVideo: "https://www.w3schools.com/html/mov_bbb.mp4",
-    price: 3.0,
-  },
-];
-
-export default function MediaFeed() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
-
+export default function MediaAutoPlay() {
+  const [urls, setUrls] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [paused, setPaused] = useState(false);
-  const [likes, setLikes] = useState<{ [key: string]: boolean }>({});
-  const [doubleTapLike, setDoubleTapLike] = useState<{ [key: string]: boolean }>({});
-  const [giftModalVisible, setGiftModalVisible] = useState(false);
-  const [giftAmount, setGiftAmount] = useState<number>(0);
+  const [muted, setMuted] = useState(false);
+  const [errorLoading, setErrorLoading] = useState<string | null>(null);
 
-  const videoRefs = useRef<Array<Video | null>>([]);
-  const flatListRef = useRef<FlatList>(null);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const spinAnim = useRef(new Animated.Value(0)).current;
+  const videoRef = useRef<Video | null>(null);
 
-  // Spin animation for album artwork
-  const startSpin = () => {
-    spinAnim.setValue(0);
-    Animated.loop(
-      Animated.timing(spinAnim, {
-        toValue: 1,
-        duration: 6000,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    ).start();
-  };
-
+  // Fetch the document "name" from collection "music" and read field "oma" (array)
   useEffect(() => {
-    startSpin();
-  }, [currentIndex]);
+    const load = async () => {
+      setLoading(true);
+      setErrorLoading(null);
+      try {
+        const docRef = doc(db, "music", "name");
+        const snap = await getDoc(docRef);
+        if (!snap.exists()) {
+          setErrorLoading("Firestore document 'music/name' not found.");
+          setUrls([]);
+          setLoading(false);
+          return;
+        }
+        const data = snap.data();
+        // expecting field `oma` to be an array of URLs
+        const omaArray = Array.isArray(data?.oma) ? data.oma : [];
+        // Filter valid strings
+        const filtered = omaArray.filter((u: any) => typeof u === "string" && u.length > 0);
+        if (filtered.length === 0) {
+          setErrorLoading("No URLs found in field 'oma'.");
+        }
+        setUrls(filtered);
+      } catch (err: any) {
+        console.error("Error fetching 'music/name' document:", err);
+        setErrorLoading(String(err?.message ?? err));
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  // Fade animation for crossfade between items
+    load();
+  }, []);
+
+  // when urls change, reset playback to first item
   useEffect(() => {
-    fadeAnim.setValue(0);
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-  }, [currentIndex]);
+    setCurrentIndex(0);
+    setPaused(false);
+  }, [urls]);
 
-  // Double-tap like handler
-  const handleDoubleTap = (item: MediaItem) => {
-    setLikes({ ...likes, [item.id]: true });
-    setDoubleTapLike({ ...doubleTapLike, [item.id]: true });
+  // Called when current video ends -> advance to next (loop)
+  const handleEnd = () => {
+    if (urls.length === 0) return;
+    const next = (currentIndex + 1) % urls.length;
+    setCurrentIndex(next);
+    // small delay to ensure state update before play
     setTimeout(() => {
-      setDoubleTapLike({ ...doubleTapLike, [item.id]: false });
-    }, 1000);
-  };
-
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) {
-      setCurrentIndex(viewableItems[0].index);
       setPaused(false);
-    }
-  }).current;
-
-  const viewConfigRef = useRef({ viewAreaCoveragePercentThreshold: 80 });
-
-  const handleSendGift = () => {
-    alert(`Gift of $${giftAmount.toFixed(2)} sent to creator!`);
-    setGiftModalVisible(false);
+    }, 50);
   };
+
+  // Called when a video errors
+  const handleError = (err: any) => {
+    console.warn("Video playback error:", err);
+    // try skipping to next
+    if (urls.length > 1) {
+      handleEnd();
+    } else {
+      Alert.alert("Playback error", "Could not play this media.");
+    }
+  };
+
+  // Play/pause toggle
+  const togglePaused = () => setPaused((p) => !p);
+
+  // Mute toggle
+  const toggleMuted = () => setMuted((m) => !m);
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" />
+        <Text style={{ marginTop: 12 }}>Loading media...</Text>
+      </View>
+    );
+  }
+
+  if (errorLoading) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <Text style={{ color: "red", textAlign: "center", marginBottom: 12 }}>
+          {errorLoading}
+        </Text>
+        <TouchableOpacity
+          style={styles.retryBtn}
+          onPress={() => {
+            // re-run fetching by remounting effect: easiest is to reload the screen
+            // but here we just re-run fetch manually:
+            setLoading(true);
+            setErrorLoading(null);
+            (async () => {
+              try {
+                const docRef = doc(db, "music", "name");
+                const snap = await getDoc(docRef);
+                if (!snap.exists()) {
+                  setErrorLoading("Firestore document 'music/name' not found.");
+                  setUrls([]);
+                  setLoading(false);
+                  return;
+                }
+                const data = snap.data();
+                const omaArray = Array.isArray(data?.oma) ? data.oma : [];
+                const filtered = omaArray.filter((u: any) => typeof u === "string" && u.length > 0);
+                if (filtered.length === 0) setErrorLoading("No URLs found in field 'oma'.");
+                setUrls(filtered);
+              } catch (err: any) {
+                console.error(err);
+                setErrorLoading(String(err?.message ?? err));
+              } finally {
+                setLoading(false);
+              }
+            })();
+          }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "700" }}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (urls.length === 0) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <Text>No media URLs available in `music/name.oma`.</Text>
+      </View>
+    );
+  }
+
+  const currentUrl = urls[currentIndex];
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? "#000" : "#f9f9f9" }]}>
-      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
-
-      <FlatList
-        ref={flatListRef}
-        data={mediaData}
-        keyExtractor={(item) => item.id}
-        pagingEnabled
-        showsVerticalScrollIndicator={false}
-        snapToInterval={height}
-        decelerationRate="fast"
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewConfigRef.current}
-        renderItem={({ item, index }) => (
-          <TouchableWithoutFeedback onPress={() => handleDoubleTap(item)}>
-            <Animated.View
-              style={[
-                styles.card,
-                { opacity: index === currentIndex ? fadeAnim : 0 },
-              ]}
-            >
-              {/* Video or audio */}
-              {item.promoVideo ? (
-                <Video
-                  source={{ uri: item.promoVideo }}
-                  ref={(ref) => (videoRefs.current[index] = ref)}
-                  style={styles.video}
-                  resizeMode="cover"
-                  repeat
-                  paused={index !== currentIndex || paused}
-                />
-              ) : (
-                <Video
-                  source={{ uri: item.audioUrl }}
-                  ref={(ref) => (videoRefs.current[index] = ref)}
-                  style={styles.video}
-                  audioOnly
-                  paused={index !== currentIndex || paused}
-                />
-              )}
-
-              {/* Overlay */}
-              <View style={styles.overlay}>
-                <Text style={[styles.title, { color: "#fff" }]}>{item.title}</Text>
-                <Text style={[styles.artist, { color: "#ccc" }]}>{item.artist}</Text>
-
-                {/* Spinning artwork */}
-                {!item.promoVideo && (
-                  <Animated.Image
-                    source={{ uri: item.artwork }}
-                    style={[
-                      styles.artwork,
-                      {
-                        transform: [
-                          {
-                            rotate: spinAnim.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: ["0deg", "360deg"],
-                            }),
-                          },
-                        ],
-                      },
-                    ]}
-                  />
-                )}
-
-                {/* Play/Pause */}
-                <TouchableOpacity
-                  style={styles.playPauseBtn}
-                  onPress={() => setPaused(!paused)}
-                >
-                  <Ionicons
-                    name={paused || index !== currentIndex ? "play-circle" : "pause-circle"}
-                    size={60}
-                    color="#fff"
-                  />
-                </TouchableOpacity>
-
-                {/* Double tap heart animation */}
-                {doubleTapLike[item.id] && (
-                  <Animated.View style={styles.heartOverlay}>
-                    <Ionicons name="heart" size={120} color="red" />
-                  </Animated.View>
-                )}
-
-                {/* Social Buttons */}
-                <View style={styles.socialRow}>
-                  <TouchableOpacity
-                    style={styles.socialBtn}
-                    onPress={() => setLikes({ ...likes, [item.id]: !likes[item.id] })}
-                  >
-                    <Ionicons
-                      name={likes[item.id] ? "heart" : "heart-outline"}
-                      size={32}
-                      color={likes[item.id] ? "red" : "#fff"}
-                    />
-                    <Text style={styles.socialText}>Like</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.socialBtn}
-                    onPress={() => setGiftModalVisible(true)}
-                  >
-                    <Ionicons name="gift" size={32} color="#fff" />
-                    <Text style={styles.socialText}>Gift</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.socialBtn}>
-                    <Ionicons name="chatbubble-outline" size={32} color="#fff" />
-                    <Text style={styles.socialText}>Comment</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.socialBtn}>
-                    <MaterialIcons name="share" size={32} color="#fff" />
-                    <Text style={styles.socialText}>Share</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </Animated.View>
-          </TouchableWithoutFeedback>
-        )}
+    <View style={styles.container}>
+      <StatusBar hidden />
+      <Video
+        ref={(r) => (videoRef.current = r)}
+        source={{ uri: currentUrl }}
+        style={styles.video}
+        resizeMode="cover"
+        paused={paused}
+        muted={muted}
+        onEnd={handleEnd}
+        onError={handleError}
+        repeat={false} // we'll handle loop between items
       />
 
-      {/* Gift Modal */}
-      <Modal visible={giftModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Send a Gift</Text>
-            <Text style={styles.modalSubtitle}>
-              Enter amount in USD or choose preset
-            </Text>
+      {/* Overlay controls */}
+      <View style={styles.overlay}>
+        <Text numberOfLines={1} style={styles.trackText}>
+          Playing {currentIndex + 1} / {urls.length}
+        </Text>
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 10 }}>
-              {[1, 2, 5, 10].map((amount) => (
-                <TouchableOpacity
-                  key={amount}
-                  style={[
-                    styles.giftAmountBtn,
-                    giftAmount === amount && { backgroundColor: "#25D366" },
-                  ]}
-                  onPress={() => setGiftAmount(amount)}
-                >
-                  <Text style={styles.giftAmountText}>${amount}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+        <View style={styles.controls}>
+          <TouchableOpacity onPress={() => {
+            // go to previous
+            if (urls.length <= 1) return;
+            const prev = (currentIndex - 1 + urls.length) % urls.length;
+            setCurrentIndex(prev);
+            setPaused(false);
+          }} style={styles.controlBtn}>
+            <Ionicons name="play-skip-back" size={36} color="#fff" />
+          </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.modalButton, { backgroundColor: "#25D366" }]}
-              onPress={handleSendGift}
-            >
-              <Text style={styles.modalButtonText}>
-                Send ${giftAmount || 0}
-              </Text>
-            </TouchableOpacity>
+          <TouchableOpacity onPress={togglePaused} style={styles.controlBtn}>
+            <Ionicons name={paused ? "play" : "pause"} size={48} color="#fff" />
+          </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.modalButton, { backgroundColor: "#ccc" }]}
-              onPress={() => setGiftModalVisible(false)}
-            >
-              <Text style={[styles.modalButtonText, { color: "#333" }]}>
-                Cancel
-              </Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity onPress={() => {
+            // next
+            if (urls.length <= 1) return;
+            const next = (currentIndex + 1) % urls.length;
+            setCurrentIndex(next);
+            setPaused(false);
+          }} style={styles.controlBtn}>
+            <Ionicons name="play-skip-forward" size={36} color="#fff" />
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={toggleMuted} style={[styles.controlBtn, { marginLeft: 10 }]}>
+            <Ionicons name={muted ? "volume-mute" : "volume-high"} size={28} color="#fff" />
+          </TouchableOpacity>
         </View>
-      </Modal>
+
+        <Text numberOfLines={1} style={styles.urlText}>
+          {currentUrl}
+        </Text>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  card: {
-    width,
-    height,
-    justifyContent: "flex-end",
-    alignItems: "center",
-    backgroundColor: "#000",
-  },
+  container: { flex: 1, backgroundColor: "#000" },
+  center: { justifyContent: "center", alignItems: "center" },
   video: {
     width,
     height,
@@ -314,91 +227,42 @@ const styles = StyleSheet.create({
     left: 0,
   },
   overlay: {
-    width,
-    padding: 20,
     position: "absolute",
-    bottom: 60,
+    bottom: 40,
+    left: 0,
+    right: 0,
     alignItems: "center",
+    paddingHorizontal: 18,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "900",
-    marginBottom: 6,
-  },
-  artist: {
-    fontSize: 16,
-    marginBottom: 12,
-  },
-  artwork: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    marginBottom: 12,
-  },
-  playPauseBtn: {
-    alignSelf: "center",
-    marginBottom: 12,
-  },
-  socialRow: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginTop: 12,
-    width: "90%",
-  },
-  socialBtn: {
-    alignItems: "center",
-    marginHorizontal: 6,
-  },
-  socialText: {
+  trackText: {
     color: "#fff",
-    marginTop: 4,
-    fontSize: 12,
-  },
-  heartOverlay: {
-    position: "absolute",
-    top: "40%",
-    left: "40%",
-    opacity: 0.8,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContent: {
-    width: "85%",
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 20,
-    alignItems: "center",
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: "900",
-    marginBottom: 6,
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    color: "#666",
+    fontWeight: "700",
     marginBottom: 12,
-    textAlign: "center",
+    fontSize: 16,
   },
-  giftAmountBtn: {
-    backgroundColor: "#eee",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginHorizontal: 6,
+  controls: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.35)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 40,
   },
-  giftAmountText: { fontSize: 16, fontWeight: "700" },
-  modalButton: {
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 30,
+  controlBtn: {
+    marginHorizontal: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  urlText: {
+    color: "#ddd",
+    fontSize: 12,
     marginTop: 12,
     width: "100%",
-    alignItems: "center",
   },
-  modalButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  retryBtn: {
+    backgroundColor: "#2196F3",
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
 });
