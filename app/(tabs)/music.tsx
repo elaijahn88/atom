@@ -1,4 +1,4 @@
-// MediaAutoPlay.tsx
+// MediaAutoPlayAds.tsx
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -17,7 +17,7 @@ import { doc, getDoc } from "firebase/firestore";
 
 const { width, height } = Dimensions.get("window");
 
-export default function MediaAutoPlay() {
+export default function MediaAutoPlayAds() {
   const [urls, setUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -27,31 +27,29 @@ export default function MediaAutoPlay() {
 
   const videoRef = useRef<Video | null>(null);
 
-  // Fetch the document "name" from collection "music" and read field "oma" (array)
+  // Fetch the document "paid" from collection "ads" and read field "1" (array)
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       setErrorLoading(null);
       try {
-        const docRef = doc(db, "music", "name");
+        const docRef = doc(db, "ads", "paid");
         const snap = await getDoc(docRef);
         if (!snap.exists()) {
-          setErrorLoading("Firestore document 'music/name' not found.");
+          setErrorLoading("Firestore document 'ads/paid' not found.");
           setUrls([]);
           setLoading(false);
           return;
         }
         const data = snap.data();
-        // expecting field `oma` to be an array of URLs
-        const omaArray = Array.isArray(data?.oma) ? data.oma : [];
-        // Filter valid strings
-        const filtered = omaArray.filter((u: any) => typeof u === "string" && u.length > 0);
+        const urlArray = Array.isArray(data?.["1"]) ? data["1"] : [];
+        const filtered = urlArray.filter((u: any) => typeof u === "string" && u.length > 0);
         if (filtered.length === 0) {
-          setErrorLoading("No URLs found in field 'oma'.");
+          setErrorLoading("No URLs found in field '1'.");
         }
         setUrls(filtered);
       } catch (err: any) {
-        console.error("Error fetching 'music/name' document:", err);
+        console.error("Error fetching 'ads/paid' document:", err);
         setErrorLoading(String(err?.message ?? err));
       } finally {
         setLoading(false);
@@ -61,27 +59,21 @@ export default function MediaAutoPlay() {
     load();
   }, []);
 
-  // when urls change, reset playback to first item
+  // reset playback when URLs update
   useEffect(() => {
     setCurrentIndex(0);
     setPaused(false);
   }, [urls]);
 
-  // Called when current video ends -> advance to next (loop)
   const handleEnd = () => {
     if (urls.length === 0) return;
     const next = (currentIndex + 1) % urls.length;
     setCurrentIndex(next);
-    // small delay to ensure state update before play
-    setTimeout(() => {
-      setPaused(false);
-    }, 50);
+    setTimeout(() => setPaused(false), 50);
   };
 
-  // Called when a video errors
   const handleError = (err: any) => {
     console.warn("Video playback error:", err);
-    // try skipping to next
     if (urls.length > 1) {
       handleEnd();
     } else {
@@ -89,10 +81,7 @@ export default function MediaAutoPlay() {
     }
   };
 
-  // Play/pause toggle
   const togglePaused = () => setPaused((p) => !p);
-
-  // Mute toggle
   const toggleMuted = () => setMuted((m) => !m);
 
   if (loading) {
@@ -113,24 +102,22 @@ export default function MediaAutoPlay() {
         <TouchableOpacity
           style={styles.retryBtn}
           onPress={() => {
-            // re-run fetching by remounting effect: easiest is to reload the screen
-            // but here we just re-run fetch manually:
             setLoading(true);
             setErrorLoading(null);
             (async () => {
               try {
-                const docRef = doc(db, "music", "name");
+                const docRef = doc(db, "ads", "paid");
                 const snap = await getDoc(docRef);
                 if (!snap.exists()) {
-                  setErrorLoading("Firestore document 'music/name' not found.");
+                  setErrorLoading("Firestore document 'ads/paid' not found.");
                   setUrls([]);
                   setLoading(false);
                   return;
                 }
                 const data = snap.data();
-                const omaArray = Array.isArray(data?.oma) ? data.oma : [];
-                const filtered = omaArray.filter((u: any) => typeof u === "string" && u.length > 0);
-                if (filtered.length === 0) setErrorLoading("No URLs found in field 'oma'.");
+                const urlArray = Array.isArray(data?.["1"]) ? data["1"] : [];
+                const filtered = urlArray.filter((u: any) => typeof u === "string" && u.length > 0);
+                if (filtered.length === 0) setErrorLoading("No URLs found in field '1'.");
                 setUrls(filtered);
               } catch (err: any) {
                 console.error(err);
@@ -150,7 +137,7 @@ export default function MediaAutoPlay() {
   if (urls.length === 0) {
     return (
       <View style={[styles.container, styles.center]}>
-        <Text>No media URLs available in `music/name.oma`.</Text>
+        <Text>No media URLs available in `ads/paid.1`.</Text>
       </View>
     );
   }
@@ -169,23 +156,24 @@ export default function MediaAutoPlay() {
         muted={muted}
         onEnd={handleEnd}
         onError={handleError}
-        repeat={false} // we'll handle loop between items
+        repeat={false}
       />
 
-      {/* Overlay controls */}
       <View style={styles.overlay}>
         <Text numberOfLines={1} style={styles.trackText}>
           Playing {currentIndex + 1} / {urls.length}
         </Text>
 
         <View style={styles.controls}>
-          <TouchableOpacity onPress={() => {
-            // go to previous
-            if (urls.length <= 1) return;
-            const prev = (currentIndex - 1 + urls.length) % urls.length;
-            setCurrentIndex(prev);
-            setPaused(false);
-          }} style={styles.controlBtn}>
+          <TouchableOpacity
+            onPress={() => {
+              if (urls.length <= 1) return;
+              const prev = (currentIndex - 1 + urls.length) % urls.length;
+              setCurrentIndex(prev);
+              setPaused(false);
+            }}
+            style={styles.controlBtn}
+          >
             <Ionicons name="play-skip-back" size={36} color="#fff" />
           </TouchableOpacity>
 
@@ -193,13 +181,15 @@ export default function MediaAutoPlay() {
             <Ionicons name={paused ? "play" : "pause"} size={48} color="#fff" />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => {
-            // next
-            if (urls.length <= 1) return;
-            const next = (currentIndex + 1) % urls.length;
-            setCurrentIndex(next);
-            setPaused(false);
-          }} style={styles.controlBtn}>
+          <TouchableOpacity
+            onPress={() => {
+              if (urls.length <= 1) return;
+              const next = (currentIndex + 1) % urls.length;
+              setCurrentIndex(next);
+              setPaused(false);
+            }}
+            style={styles.controlBtn}
+          >
             <Ionicons name="play-skip-forward" size={36} color="#fff" />
           </TouchableOpacity>
 
