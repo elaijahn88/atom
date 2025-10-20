@@ -3,7 +3,7 @@ import React from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, StatusBar, FlatList, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Video from "react-native-video";
-import { useAuthLogic } from "./useAuthLogic";
+import { useAuthLogic } from "../logic/index";
 
 const { width, height } = Dimensions.get("window");
 
