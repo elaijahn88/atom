@@ -1,3 +1,6 @@
+// =======================
+// Imports
+// =======================
 import React, { useState, useRef, useEffect } from "react";
 import {
   View,
@@ -14,6 +17,7 @@ import {
   StatusBar,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import Video from "react-native-video";
 import { auth, db } from "../../firebase";
 import {
   createUserWithEmailAndPassword,
@@ -21,8 +25,10 @@ import {
   signOut,
 } from "firebase/auth";
 import { doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
-import Video from "react-native-video";
 
+// =======================
+// Types/Interfaces
+// =======================
 interface IUserData {
   email: string;
   name: string;
@@ -34,7 +40,11 @@ interface IUserData {
 
 const { width, height } = Dimensions.get("window");
 
+// =======================
+// Main Component
+// =======================
 export default function App() {
+  // ===== State =====
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -58,7 +68,9 @@ export default function App() {
   });
   const viewConfigRef = useRef({ viewAreaCoveragePercentThreshold: 80 });
 
-  // 🔄 Fetch single video from Firestore document `videos/ads`
+  // =======================
+  // Firestore Video Fetch
+  // =======================
   useEffect(() => {
     const unsubscribe = onSnapshot(doc(db, "videos", "ads"), (snapshot) => {
       if (snapshot.exists()) {
@@ -75,11 +87,13 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // ✅ Auto-play first video
   useEffect(() => {
     if (videos.length > 0) setCurrentIndex(0);
   }, [videos]);
 
+  // =======================
+  // Validation Helpers
+  // =======================
   const validateEmail = (email: string): boolean =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -96,22 +110,20 @@ export default function App() {
     if (!isLoginMode) {
       if (!name.trim()) return setMsg("Full name is required");
       if (password !== confirmPassword) return setMsg("Passwords do not match");
-      if (isNaN(Number(age)) || Number(age) <= 0)
-        return setMsg("Enter valid age");
+      if (isNaN(Number(age)) || Number(age) <= 0) return setMsg("Enter valid age");
     }
     return true;
   };
 
+  // =======================
+  // Auth Handlers
+  // =======================
   const handleSignUp = async () => {
     if (!validateForm()) return;
     setLoading(true);
     setMessage("");
     try {
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
       const userData: IUserData = {
@@ -139,11 +151,7 @@ export default function App() {
     setLoading(true);
     setMessage("");
     try {
-      const userCredential = await signInWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       const docRef = doc(db, "users", user.uid);
       const docSnap = await getDoc(docRef);
@@ -167,7 +175,9 @@ export default function App() {
     setShowVideoFeed(false);
   };
 
-  // 🎥 After login/signup show welcome video for 10 seconds
+  // =======================
+  // Post-login video timer
+  // =======================
   useEffect(() => {
     if (isLoggedIn && user) {
       const timer = setTimeout(() => setShowVideoFeed(true), 10000);
@@ -175,9 +185,10 @@ export default function App() {
     }
   }, [isLoggedIn, user]);
 
-  // 🔹 Logged-in Screens
+  // =======================
+  // Render Logged-in Screens
+  // =======================
   if (isLoggedIn && user) {
-    // Welcome video
     if (!showVideoFeed) {
       return (
         <View style={styles.darkContainer}>
@@ -186,7 +197,7 @@ export default function App() {
             source={{ uri: "https://xlijah.com/soso.mp4" }}
             style={styles.fullscreenVideo}
             resizeMode="cover"
-            repeat={true}
+            repeat
             paused={false}
             muted={false}
           />
@@ -194,22 +205,13 @@ export default function App() {
       );
     }
 
-    // Firestore video feed
     return (
       <View style={styles.darkContainer}>
         <StatusBar hidden />
         {videos.length === 0 ? (
-          <View
-            style={{
-              flex: 1,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
+          <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
             <ActivityIndicator size="large" color="#00BFFF" />
-            <Text style={{ color: "#ccc", marginTop: 10 }}>
-              Loading video...
-            </Text>
+            <Text style={{ color: "#ccc", marginTop: 10 }}>Loading video...</Text>
           </View>
         ) : (
           <FlatList
@@ -222,7 +224,7 @@ export default function App() {
                   source={{ uri: item.uri }}
                   style={styles.video}
                   resizeMode="cover"
-                  repeat={true}
+                  repeat
                   paused={currentIndex !== index}
                   onError={(e) => console.warn("Video error:", e)}
                   ignoreSilentSwitch="obey"
@@ -246,7 +248,9 @@ export default function App() {
     );
   }
 
-  // 🔐 Login/Signup Screen
+  // =======================
+  // Render Login/Signup Screen
+  // =======================
   return (
     <KeyboardAvoidingView
       style={styles.darkContainer}
@@ -264,79 +268,32 @@ export default function App() {
         </View>
 
         <View style={styles.darkForm}>
-          <DarkField
-            label="Email"
-            value={email}
-            placeholder="you@example.com"
-            onChangeText={setEmail}
-          />
-          <DarkPasswordField
-            label="Password"
-            value={password}
-            onChangeText={setPassword}
-            show={showPassword}
-            toggle={() => setShowPassword(!showPassword)}
-          />
+          <DarkField label="Email" value={email} placeholder="you@example.com" onChangeText={setEmail} />
+          <DarkPasswordField label="Password" value={password} onChangeText={setPassword} show={showPassword} toggle={() => setShowPassword(!showPassword)} />
           {!isLoginMode && (
-            <DarkPasswordField
-              label="Confirm Password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              show={showConfirmPassword}
-              toggle={() => setShowConfirmPassword(!showConfirmPassword)}
-            />
+            <DarkPasswordField label="Confirm Password" value={confirmPassword} onChangeText={setConfirmPassword} show={showConfirmPassword} toggle={() => setShowConfirmPassword(!showConfirmPassword)} />
           )}
           {!isLoginMode && (
             <>
-              <DarkField
-                label="Full Name"
-                value={name}
-                onChangeText={setName}
-              />
-              <DarkField
-                label="Account"
-                value={account}
-                onChangeText={setAccount}
-                keyboardType="numeric"
-              />
-              <DarkField
-                label="Age"
-                value={age}
-                onChangeText={setAge}
-                keyboardType="numeric"
-              />
+              <DarkField label="Full Name" value={name} onChangeText={setName} />
+              <DarkField label="Account" value={account} onChangeText={setAccount} keyboardType="numeric" />
+              <DarkField label="Age" value={age} onChangeText={setAge} keyboardType="numeric" />
             </>
           )}
-          <TouchableOpacity
-            style={[styles.darkButton, loading && { opacity: 0.6 }]}
-            onPress={isLoginMode ? handleSignIn : handleSignUp}
-            disabled={loading}
-          >
-            <Text style={styles.darkButtonText}>
-              {isLoginMode ? "Sign In" : "Sign Up"}
-            </Text>
+
+          <TouchableOpacity style={[styles.darkButton, loading && { opacity: 0.6 }]} onPress={isLoginMode ? handleSignIn : handleSignUp} disabled={loading}>
+            <Text style={styles.darkButtonText}>{isLoginMode ? "Sign In" : "Sign Up"}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity onPress={() => setIsLoginMode(!isLoginMode)}>
-            <Text style={styles.switchText}>
-              {isLoginMode
-                ? "Don’t have an account? Sign Up"
-                : "Already have one? Sign In"}
-            </Text>
+            <Text style={styles.switchText}>{isLoginMode ? "Don’t have an account? Sign Up" : "Already have one? Sign In"}</Text>
           </TouchableOpacity>
 
-          {message ? (
-            <Text
-              style={[
-                styles.msg,
-                message.includes("✅")
-                  ? { color: "#4CAF50" }
-                  : { color: "#FF5252" },
-              ]}
-            >
+          {message && (
+            <Text style={[styles.msg, message.includes("✅") ? { color: "#4CAF50" } : { color: "#FF5252" }]}>
               {message}
             </Text>
-          ) : null}
+          )}
         </View>
 
         {loading && <ActivityIndicator size="large" color="#00BFFF" />}
@@ -345,14 +302,10 @@ export default function App() {
   );
 }
 
-/* 🔹 Reusable Input Fields */
-const DarkField = ({
-  label,
-  value,
-  onChangeText,
-  keyboardType = "default",
-  placeholder,
-}: any) => (
+// =======================
+// Reusable Input Components
+// =======================
+const DarkField = ({ label, value, onChangeText, keyboardType = "default", placeholder }: any) => (
   <View style={{ marginBottom: 14 }}>
     <Text style={styles.darkLabel}>{label}</Text>
     <TextInput
@@ -379,17 +332,15 @@ const DarkPasswordField = ({ label, value, onChangeText, show, toggle }: any) =>
         secureTextEntry={!show}
       />
       <TouchableOpacity onPress={toggle} style={{ padding: 4 }}>
-        <Ionicons
-          name={show ? "eye-off-outline" : "eye-outline"}
-          size={20}
-          color="#999"
-        />
+        <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={20} color="#999" />
       </TouchableOpacity>
     </View>
   </View>
 );
 
-/* 🎨 Styles */
+// =======================
+// Styles
+// =======================
 const styles = StyleSheet.create({
   darkContainer: { flex: 1, backgroundColor: "#0a0a0a" },
   scrollContainer: { flexGrow: 1, justifyContent: "center", padding: 20 },
@@ -398,30 +349,11 @@ const styles = StyleSheet.create({
   darkSubtitle: { color: "#999", fontSize: 15, marginTop: 4 },
   darkForm: { backgroundColor: "#1a1a1a", padding: 24, borderRadius: 20 },
   darkLabel: { color: "#ccc", fontSize: 14, marginBottom: 4 },
-  darkInput: {
-    backgroundColor: "#111",
-    color: "#fff",
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    fontSize: 16,
-  },
-  darkButton: {
-    backgroundColor: "#00BFFF",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 10,
-  },
+  darkInput: { backgroundColor: "#111", color: "#fff", borderRadius: 10, paddingVertical: 12, paddingHorizontal: 14, fontSize: 16 },
+  darkButton: { backgroundColor: "#00BFFF", paddingVertical: 14, borderRadius: 12, alignItems: "center", marginTop: 10 },
   darkButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   switchText: { color: "#00BFFF", textAlign: "center", marginTop: 16 },
   msg: { textAlign: "center", marginTop: 12, fontSize: 14 },
-  fullscreenVideo: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: "100%",
-    height: "100%",
-  },
+  fullscreenVideo: { position: "absolute", top: 0, left: 0, width: "100%", height: "100%" },
   video: { width: "100%", height: "100%" },
 });
