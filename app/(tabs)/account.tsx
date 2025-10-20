@@ -1,4 +1,5 @@
-// src/screens/AccountManager.tsx
+
+
 import React from "react";
 import {
   View,
