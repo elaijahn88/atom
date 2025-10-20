@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
-import { useAccountLogic } from "../logic/accountLogic";
+import { useAccountLogic } from "../logic/account";
 
 export default function AccountManager() {
   const logic = useAccountLogic();
