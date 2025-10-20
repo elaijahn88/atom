@@ -1,4 +1,3 @@
-// src/screens/MyStore.tsx
 import React from "react";
 import {
   View,
@@ -11,12 +10,37 @@ import {
   Animated,
   StyleSheet,
   Dimensions,
+  ListRenderItemInfo,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useStoreLogic } from "../logic/storeLogic";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 48) / 2;
+
+// 🛍️ Define item type
+interface Product {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  image: string;
+  featured?: boolean;
+}
+
+// 🔁 Hook return type (optional if already typed inside storeLogic.ts)
+interface StoreLogic {
+  filtered: Product[];
+  cartTotal: number;
+  toast: { type: "success" | "error"; message: string } | null;
+  toastAnim: Animated.Value;
+  search: string;
+  setSearch: React.Dispatch<React.SetStateAction<string>>;
+  addToCart: (item: Product) => void;
+  removeFromCart: (id: string) => void;
+  onRefresh: () => void;
+  refreshing: boolean;
+}
 
 export default function MyStore() {
   const {
@@ -30,9 +54,9 @@ export default function MyStore() {
     removeFromCart,
     onRefresh,
     refreshing,
-  } = useStoreLogic();
+  }: StoreLogic = useStoreLogic();
 
-  const renderItem = ({ item }) => (
+  const renderItem = ({ item }: ListRenderItemInfo<Product>) => (
     <TouchableOpacity style={styles.card}>
       {item.featured && (
         <View style={styles.featuredBadge}>
