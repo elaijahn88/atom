@@ -1,5 +1,19 @@
+/* AuthAndVideoUI.tsx */
 import React from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, StatusBar, ScrollView, KeyboardAvoidingView, Platform, FlatList, ActivityIndicator, Dimensions } from "react-native";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  StatusBar,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  FlatList,
+  ActivityIndicator,
+  Dimensions,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Video from "react-native-video";
 import { useAuthAndVideo } from "../logic/ads";
@@ -72,7 +86,10 @@ export default function AuthAndVideoUI() {
 
   // 🔐 Login/Signup Screen
   return (
-    <KeyboardAvoidingView style={styles.darkContainer} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+    <KeyboardAvoidingView
+      style={styles.darkContainer}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
           <Ionicons name="lock-closed-outline" size={52} color="#00BFFF" />
@@ -94,7 +111,11 @@ export default function AuthAndVideoUI() {
             </>
           )}
 
-          <TouchableOpacity style={[styles.darkButton, loading && { opacity: 0.6 }]} onPress={isLoginMode ? handleSignIn : handleSignUp} disabled={loading}>
+          <TouchableOpacity
+            style={[styles.darkButton, loading && { opacity: 0.6 }]}
+            onPress={isLoginMode ? handleSignIn : handleSignUp}
+            disabled={loading}
+          >
             <Text style={styles.darkButtonText}>{isLoginMode ? "Sign In" : "Sign Up"}</Text>
           </TouchableOpacity>
 
@@ -115,7 +136,14 @@ export default function AuthAndVideoUI() {
 const DarkField = ({ label, value, onChangeText, keyboardType = "default", placeholder }: any) => (
   <View style={{ marginBottom: 14 }}>
     <Text style={styles.darkLabel}>{label}</Text>
-    <TextInput style={styles.darkInput} placeholder={placeholder} placeholderTextColor="#666" value={value} onChangeText={onChangeText} keyboardType={keyboardType} />
+    <TextInput
+      style={styles.darkInput}
+      placeholder={placeholder}
+      placeholderTextColor="#666"
+      value={value}
+      onChangeText={onChangeText}
+      keyboardType={keyboardType}
+    />
   </View>
 );
 
@@ -123,7 +151,14 @@ const DarkPasswordField = ({ label, value, onChangeText, show, toggle }: any) =>
   <View style={{ marginBottom: 14 }}>
     <Text style={styles.darkLabel}>{label}</Text>
     <View style={{ flexDirection: "row", alignItems: "center" }}>
-      <TextInput style={[styles.darkInput, { flex: 1 }]} placeholder="••••••" placeholderTextColor="#666" value={value} onChangeText={onChangeText} secureTextEntry={!show} />
+      <TextInput
+        style={[styles.darkInput, { flex: 1 }]}
+        placeholder="••••••"
+        placeholderTextColor="#666"
+        value={value}
+        onChangeText={onChangeText}
+        secureTextEntry={!show}
+      />
       <TouchableOpacity onPress={toggle} style={{ padding: 4 }}>
         <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={20} color="#999" />
       </TouchableOpacity>
@@ -145,4 +180,7 @@ const styles = StyleSheet.create({
   darkButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   switchText: { color: "#00BFFF", textAlign: "center", marginTop: 16 },
   msg: { textAlign: "center", marginTop: 12, fontSize: 14 },
-  fullscreenVideo
+  fullscreenVideo: { position: "absolute", top: 0, left: 0, width: "100%", height: "100%" },
+  video: { width: "100%", height: "100%" },
+  center: { justifyContent: "center", alignItems: "center" },
+});
