@@ -1,31 +1,10 @@
-import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  FlatList,
-  StyleSheet,
-  Modal,
-  ScrollView,
-  useColorScheme,
-  Alert,
-  Platform,
-  ActivityIndicator,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// src/logic/creditSavingsLogic.ts
+import { useEffect, useState } from "react";
+import { Alert } from "react-native";
 import { db } from "../../firebase";
-import {
-  collection,
-  addDoc,
-  doc,
-  updateDoc,
-  getDocs,
-  getDoc,
-  setDoc,
-} from "firebase/firestore";
+import { collection, doc, addDoc, updateDoc, getDocs, getDoc, setDoc } from "firebase/firestore";
 
-type Service = {
+export type Service = {
   id: string;
   name: string;
   description: string;
@@ -33,7 +12,7 @@ type Service = {
   createdBy?: string;
 };
 
-type Tx = {
+export type Tx = {
   id: string;
   user?: string;
   provider?: string;
@@ -45,12 +24,14 @@ type Tx = {
   status?: "Pending" | "Completed" | "Failed";
 };
 
-export default function CreditSavingsServices() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
+const USER_DOC_ID = "elijah";
 
+export const useCreditSavingsLogic = () => {
   const [loading, setLoading] = useState(true);
   const [services, setServices] = useState<Service[]>([]);
+  const [profile, setProfile] = useState<any>(null);
+  const [transactions, setTransactions] = useState<Tx[]>([]);
+
   const [modalVisible, setModalVisible] = useState(false);
   const [serviceName, setServiceName] = useState("");
   const [serviceDesc, setServiceDesc] = useState("");
@@ -59,13 +40,11 @@ export default function CreditSavingsServices() {
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
 
-  const USER_DOC_ID = "elijah";
   const userDocRef = doc(db, "acc", USER_DOC_ID);
-  const [profile, setProfile] = useState<any>(null);
-  const [transactions, setTransactions] = useState<Tx[]>([]);
 
   useEffect(() => {
     let mounted = true;
+
     const load = async () => {
       setLoading(true);
       try {
@@ -181,13 +160,12 @@ export default function CreditSavingsServices() {
   };
 
   const sendPayment = async () => {
-    if (!selectedService) return;
+    if (!selectedService || !profile) return;
     const amt = parseFloat(paymentAmount);
     if (isNaN(amt) || amt <= 0) {
       Alert.alert("Invalid amount", "Enter a valid payment amount.");
       return;
     }
-    if (!profile) return;
     if (profile.isFrozen) {
       Alert.alert("Account Frozen", "Cannot make payment while account is frozen.");
       return;
@@ -243,162 +221,25 @@ export default function CreditSavingsServices() {
     }
   };
 
-  if (loading) {
-    return (
-      <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
-        <ActivityIndicator size="large" color="#00BFFF" />
-        <Text style={{ color: "#ccc", marginTop: 12 }}>Loading...</Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={[styles.container, { backgroundColor: isDark ? "#121212" : "#f9f9f9" }]}>
-      <Text style={[styles.header, { color: isDark ? "#fff" : "#000" }]}>Credit & Savings Services</Text>
-
-      {/* Profile Card */}
-      <View style={[styles.profileCard, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
-        <Text style={[styles.serviceName, { color: isDark ? "#fff" : "#000" }]}>{profile?.Name}</Text>
-        <Text style={[styles.serviceDesc, { color: isDark ? "#aaa" : "#555" }]}>Phone: {profile?.phone}</Text>
-        <Text style={[styles.serviceBalance, { color: "#00a650" }]}>
-          Balance: ${Number(profile?.net || 0).toFixed(2)}
-        </Text>
-        <Text style={{ color: profile?.isFrozen ? "#FF5252" : "#4CAF50", marginTop: 6 }}>
-          {profile?.isFrozen ? "Frozen" : "Active"}
-        </Text>
-
-        <TouchableOpacity style={[styles.payBtn, { marginTop: 10 }]} onPress={toggleFreeze}>
-          <Text style={styles.payBtnText}>{profile?.isFrozen ? "Unfreeze" : "Freeze"}</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Create Service Button */}
-      <TouchableOpacity style={styles.createBtn} onPress={() => setModalVisible(true)}>
-        <Ionicons name="add-circle-outline" size={20} color="#fff" />
-        <Text style={styles.createBtnText}>Create New Service</Text>
-      </TouchableOpacity>
-
-      {/* Services List */}
-      <FlatList
-        data={services}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingVertical: 10 }}
-        renderItem={({ item }) => (
-          <View style={[styles.serviceCard, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
-            <Text style={[styles.serviceName, { color: isDark ? "#fff" : "#000" }]}>{item.name}</Text>
-            <Text style={[styles.serviceDesc, { color: isDark ? "#aaa" : "#555" }]}>{item.description}</Text>
-            <Text style={[styles.serviceBalance, { color: "#00a650" }]}>Balance: ${item.balance.toFixed(2)}</Text>
-            <TouchableOpacity style={styles.payBtn} onPress={() => setSelectedService(item)}>
-              <Text style={styles.payBtnText}>Pay</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      />
-
-      {/* Transaction History */}
-      <Text style={[styles.sectionHeader, { color: isDark ? "#fff" : "#000" }]}>Transaction History</Text>
-      <FlatList
-        data={transactions}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: 120 }}
-        renderItem={({ item }) => (
-          <View style={[styles.transactionCard, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
-            <Text style={{ color: isDark ? "#fff" : "#000", fontWeight: "700" }}>
-              {item.type === "credit" ? `Paid $${item.amount}` : `${item.type} $${item.amount}`}
-            </Text>
-            <Text style={{ color: "#888", fontSize: 12 }}>{new Date(item.timestamp).toLocaleString()}</Text>
-            {item.note ? <Text style={{ color: "#aaa", marginTop: 6 }}>{item.note}</Text> : null}
-          </View>
-        )}
-      />
-
-      {/* Create Service Modal */}
-      <Modal visible={modalVisible} transparent animationType="slide">
-        <ScrollView contentContainerStyle={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
-            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#000" }]}>Create Service</Text>
-            <TextInput
-              placeholder="Service Name"
-              placeholderTextColor={isDark ? "#888" : "#aaa"}
-              value={serviceName}
-              onChangeText={setServiceName}
-              style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]}
-            />
-            <TextInput
-              placeholder="Description"
-              placeholderTextColor={isDark ? "#888" : "#aaa"}
-              value={serviceDesc}
-              onChangeText={setServiceDesc}
-              style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]}
-            />
-            <TextInput
-              placeholder="Initial Deposit"
-              placeholderTextColor={isDark ? "#888" : "#aaa"}
-              value={serviceDeposit}
-              onChangeText={setServiceDeposit}
-              keyboardType="numeric"
-              style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]}
-            />
-
-            <TouchableOpacity style={styles.modalBtn} onPress={createService}>
-              <Text style={styles.modalBtnText}>Create Service</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ccc" }]} onPress={() => setModalVisible(false)}>
-              <Text style={[styles.modalBtnText, { color: "#333" }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </Modal>
-
-      {/* Payment Modal */}
-      <Modal visible={!!selectedService} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
-            <Text style={[styles.modalTitle, { color: isDark ? "#fff" : "#000" }]}>
-              Pay {selectedService?.name}
-            </Text>
-            <TextInput
-              placeholder="Amount"
-              placeholderTextColor={isDark ? "#888" : "#aaa"}
-              value={paymentAmount}
-              onChangeText={setPaymentAmount}
-              keyboardType="numeric"
-              style={[styles.input, { backgroundColor: isDark ? "#121212" : "#f0f0f0" }]}
-            />
-
-            <TouchableOpacity style={styles.modalBtn} onPress={sendPayment}>
-              <Text style={styles.modalBtnText}>Send Payment</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ccc" }]} onPress={() => setSelectedService(null)}>
-              <Text style={[styles.modalBtnText, { color: "#333" }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      <View style={{ height: 36 }} />
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: Platform.OS === "ios" ? 60 : 36, paddingHorizontal: 16 },
-  header: { fontSize: 24, fontWeight: "800", marginBottom: 12, textAlign: "center" },
-  createBtn: { flexDirection: "row", backgroundColor: "#25D366", padding: 12, borderRadius: 12, alignItems: "center", justifyContent: "center", marginBottom: 10 },
-  createBtnText: { color: "#fff", fontWeight: "700", marginLeft: 8 },
-  serviceCard: { padding: 16, borderRadius: 16, marginBottom: 12, shadowColor: "#000", shadowOpacity: 0.08, shadowOffset: { width: 0, height: 2 }, shadowRadius: 4 },
-  serviceName: { fontSize: 18, fontWeight: "800", marginBottom: 4 },
-  serviceDesc: { fontSize: 14, marginBottom: 8 },
-  serviceBalance: { fontSize: 16, fontWeight: "700", marginBottom: 8 },
-  payBtn: { backgroundColor: "#007aff", padding: 10, borderRadius: 12, alignItems: "center" },
-  payBtnText: { color: "#fff", fontWeight: "700" },
-  sectionHeader: { fontSize: 20, fontWeight: "800", marginVertical: 10 },
-  transactionCard: { padding: 12, borderRadius: 12, marginBottom: 8 },
-  modalOverlay: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.6)", padding: 20 },
-  modalContent: { width: "100%", borderRadius: 16, padding: 18 },
-  modalTitle: { fontSize: 20, fontWeight: "800", marginBottom: 12, textAlign: "center" },
-  input: { borderRadius: 12, padding: 12, fontSize: 15, marginBottom: 12 },
-  modalBtn: { backgroundColor: "#25D366", padding: 12, borderRadius: 12, alignItems: "center", marginTop: 6 },
-  modalBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
-  profileCard: { padding: 14, borderRadius: 12, marginBottom: 12 },
-});
+  return {
+    loading,
+    services,
+    profile,
+    transactions,
+    modalVisible,
+    setModalVisible,
+    serviceName,
+    setServiceName,
+    serviceDesc,
+    setServiceDesc,
+    serviceDeposit,
+    setServiceDeposit,
+    selectedService,
+    setSelectedService,
+    paymentAmount,
+    setPaymentAmount,
+    createService,
+    sendPayment,
+    toggleFreeze,
+  };
+};
