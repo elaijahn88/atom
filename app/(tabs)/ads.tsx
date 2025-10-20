@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, StatusBar, ScrollView, KeyboardAvoidingView, Platform, FlatList, ActivityIndicator, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Video from "react-native-video";
-import { useAuthAndVideo } from "./useAuthAndVideo";
+import { useAuthAndVideo } from "../logic/ads";
 
 const { width, height } = Dimensions.get("window");
 
