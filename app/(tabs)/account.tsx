@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+// src/screens/AccountManager.tsx
+import React from "react";
 import {
   View,
   Text,
@@ -6,168 +7,44 @@ import {
   TouchableOpacity,
   ScrollView,
   FlatList,
-  StyleSheet,
   ActivityIndicator,
-  Alert,
+  StyleSheet,
 } from "react-native";
-import { db } from "../../firebase";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { useAccountLogic } from "../logic/accountLogic";
 
-export default function AccountAndMoneyManager() {
-  const [name, setName] = useState("");
-  const [view, setView] = useState("login");
-  const [profile, setProfile] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-  const [topUpAmount, setTopUpAmount] = useState("");
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [label, setLabel] = useState("");
-  const quickTopUps = [5, 10, 20, 50, 100];
+export default function AccountManager() {
+  const logic = useAccountLogic();
 
-  const mobileMoneyProviders = [
-    { name: "T-Money", color: "#FFD700" },
-    { name: "X-Money", color: "#FF4500" },
-    { name: "E-Money", color: "#4CAF50" },
-  ];
-
-  // --- LOGIN FUNCTION ---
-  const handleLogin = async () => {
-    if (!name.trim()) {
-      setLabel("Please enter your name.");
-      return;
-    }
-
-    setLoading(true);
-    const docRef = doc(db, "acc", name.trim().toLowerCase());
-
-    try {
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        const data = snap.data();
-        if (!("net" in data)) data.net = 0;
-        if (!("transactions" in data)) data.transactions = [];
-        await updateDoc(docRef, { net: data.net, transactions: data.transactions });
-        setProfile(data);
-        setTransactions(data.transactions);
-        setView("account");
-      } else {
-        const defaultData = {
-          Name: name.trim(),
-          age: 26,
-          bod: "12 2 1999",
-          father: "Ziriganira robert",
-          mother: "Winnie kenturegye zebra",
-          idno: 18535416,
-          nin: "CM9900910LFEAF",
-          nok: "Atukunda timothy",
-          phone: 746524088,
-          net: 0,
-          transactions: [],
-          isFrozen: false,
-          createdAt: new Date().toISOString(),
-        };
-        await setDoc(docRef, defaultData);
-        setProfile(defaultData);
-        setTransactions([]);
-        setView("account");
-      }
-    } catch (err) {
-      console.error(err);
-      setLabel("Login failed.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // --- FIRESTORE UPDATER ---
-  const updateFirestore = async (updates: any) => {
-    if (!profile?.Name) return;
-    const docRef = doc(db, "acc", profile.Name.toLowerCase());
-    await updateDoc(docRef, updates);
-  };
-
-  // --- TOP UP FUNCTION ---
-  const simulateTopUp = async (amount: number, method?: string) => {
-    if (profile?.isFrozen) {
-      setLabel("Account is frozen. Cannot top up.");
-      return;
-    }
-
-    if (!amount || isNaN(amount)) {
-      setLabel("Enter valid amount.");
-      return;
-    }
-
-    const newTx = {
-      receiver: method || "Top-Up",
-      amount,
-      timestamp: new Date().toLocaleString(),
-      proof: `MM#${Math.floor(Math.random() * 10000)}`,
-      status: "Completed",
-    };
-
-    const newNet = (profile?.net || 0) + amount;
-    const updatedTxs = [newTx, ...transactions];
-    setProfile({ ...profile, net: newNet });
-    setTransactions(updatedTxs);
-    setTopUpAmount("");
-    setLabel(`Top-up of $${amount} via ${method || "manual"} successful!`);
-
-    await updateFirestore({
-      net: newNet,
-      transactions: updatedTxs,
-    });
-  };
-
-  // --- FREEZE / UNFREEZE ---
-  const toggleFreeze = async () => {
-    const newStatus = !profile.isFrozen;
-    setProfile({ ...profile, isFrozen: newStatus });
-    await updateFirestore({ isFrozen: newStatus });
-    setLabel(`Account ${newStatus ? "frozen" : "unfrozen"}!`);
-  };
-
-  // --- MANUAL BALANCE UPDATE ---
-  const updateNetManually = async (value: string) => {
-    const newNet = Number(value);
-    if (isNaN(newNet)) {
-      setLabel("Invalid number.");
-      return;
-    }
-    setProfile({ ...profile, net: newNet });
-    await updateFirestore({ net: newNet });
-    setLabel("Net (balance) updated.");
-  };
-
-  // --- UI RENDER ---
-  if (loading)
+  if (logic.loading)
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#fff" />
       </View>
     );
 
-  if (view === "login")
+  if (logic.view === "login")
     return (
       <View style={styles.container}>
-        <Text style={styles.title}> Account</Text>
+        <Text style={styles.title}>Account</Text>
         <TextInput
           style={styles.input}
-          placeholder="name"
+          placeholder="Name"
           placeholderTextColor="#888"
-          value={name}
-          onChangeText={setName}
+          value={logic.name}
+          onChangeText={logic.setName}
         />
-        <TouchableOpacity style={styles.button} onPress={handleLogin}>
+        <TouchableOpacity style={styles.button} onPress={logic.handleLogin}>
           <Text style={styles.buttonText}>Login</Text>
         </TouchableOpacity>
-        {label ? <Text style={styles.label}>{label}</Text> : null}
+        {logic.label ? <Text style={styles.label}>{logic.label}</Text> : null}
       </View>
     );
 
-  // --- ACCOUNT + MONEY MANAGER VIEW ---
+  const { profile, transactions, quickTopUps, mobileMoneyProviders } = logic;
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}> {profile?.Name}</Text>
+      <Text style={styles.title}>{profile?.Name}</Text>
       <Text style={styles.balanceText}>Net: ${profile?.net?.toFixed(2)}</Text>
       <Text
         style={[
@@ -175,13 +52,13 @@ export default function AccountAndMoneyManager() {
           { color: profile?.isFrozen ? "#FF5252" : "#4CAF50" },
         ]}
       >
-        {profile?.isFrozen ? " Frozen" : "✅ Active"}
+        {profile?.isFrozen ? "Frozen" : "✅ Active"}
       </Text>
 
-      {/* --- PERSONAL INFO --- */}
+      {/* Personal Info */}
       <View style={styles.infoCard}>
         <Text style={styles.infoText}>Age: {profile?.age}</Text>
-        <Text style={styles.infoText}> BOD: {profile?.bod}</Text>
+        <Text style={styles.infoText}>BOD: {profile?.bod}</Text>
         <Text style={styles.infoText}>Father: {profile?.father}</Text>
         <Text style={styles.infoText}>Mother: {profile?.mother}</Text>
         <Text style={styles.infoText}>ID No: {profile?.idno}</Text>
@@ -190,12 +67,13 @@ export default function AccountAndMoneyManager() {
         <Text style={styles.infoText}>NOK: {profile?.nok}</Text>
       </View>
 
+      {/* Action Buttons */}
       <View style={styles.buttonRow}>
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: "#FF9800" }]}
           onPress={() => {
             const val = prompt("Enter new net value:") || "0";
-            updateNetManually(val);
+            logic.updateNetManually(val);
           }}
         >
           <Text style={styles.actionButtonText}>Manual Update</Text>
@@ -205,7 +83,7 @@ export default function AccountAndMoneyManager() {
             styles.actionButton,
             { backgroundColor: profile?.isFrozen ? "#4CAF50" : "#FF5252" },
           ]}
-          onPress={toggleFreeze}
+          onPress={logic.toggleFreeze}
         >
           <Text style={styles.actionButtonText}>
             {profile?.isFrozen ? "Unfreeze" : "Freeze"}
@@ -213,6 +91,7 @@ export default function AccountAndMoneyManager() {
         </TouchableOpacity>
       </View>
 
+      {/* Top-Up Section */}
       <Text style={styles.sectionTitle}>Top-Up Account</Text>
       <View style={styles.card}>
         <TextInput
@@ -220,8 +99,8 @@ export default function AccountAndMoneyManager() {
           placeholder="Enter amount"
           placeholderTextColor="#999"
           keyboardType="numeric"
-          value={topUpAmount}
-          onChangeText={setTopUpAmount}
+          value={logic.topUpAmount}
+          onChangeText={logic.setTopUpAmount}
         />
 
         <View style={styles.quickTopUps}>
@@ -229,20 +108,21 @@ export default function AccountAndMoneyManager() {
             <TouchableOpacity
               key={amt}
               style={styles.quickTopUpBtn}
-              onPress={() => simulateTopUp(amt, "Manual")}
+              onPress={() => logic.simulateTopUp(amt, "Manual")}
             >
               <Text style={styles.quickTopUpText}>${amt}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Mobile Money</Text>
         <View style={styles.mmRow}>
           {mobileMoneyProviders.map((provider) => (
             <TouchableOpacity
               key={provider.name}
               style={[styles.mmBtn, { backgroundColor: provider.color }]}
-              onPress={() => simulateTopUp(Number(topUpAmount), provider.name)}
+              onPress={() =>
+                logic.simulateTopUp(Number(logic.topUpAmount), provider.name)
+              }
             >
               <Text style={styles.mmText}>{provider.name}</Text>
             </TouchableOpacity>
@@ -250,13 +130,14 @@ export default function AccountAndMoneyManager() {
         </View>
 
         <TouchableOpacity
-          style={[styles.topUpButton]}
-          onPress={() => simulateTopUp(Number(topUpAmount))}
+          style={styles.topUpButton}
+          onPress={() => logic.simulateTopUp(Number(logic.topUpAmount))}
         >
           <Text style={styles.topUpButtonText}>Top-Up Now</Text>
         </TouchableOpacity>
       </View>
 
+      {/* Transaction History */}
       <Text style={styles.sectionTitle}>Transaction History</Text>
       {transactions.length > 0 ? (
         <FlatList
@@ -283,15 +164,16 @@ export default function AccountAndMoneyManager() {
         <Text style={styles.noTx}>No transactions yet.</Text>
       )}
 
-      <TouchableOpacity style={styles.logoutButton} onPress={() => setView("login")}>
+      <TouchableOpacity style={styles.logoutButton} onPress={() => logic.setView("login")}>
         <Text style={styles.logoutText}>Logout</Text>
       </TouchableOpacity>
 
-      {label ? <Text style={styles.label}>{label}</Text> : null}
+      {logic.label ? <Text style={styles.label}>{logic.label}</Text> : null}
     </ScrollView>
   );
 }
 
+// --- Styles ---
 const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: 15, backgroundColor: "#121212" },
   centered: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#000" },
