@@ -1,245 +1,99 @@
-// src/logic/creditSavingsLogic.ts
-import { useEffect, useState } from "react";
-import { Alert } from "react-native";
-import { db } from "../../firebase";
-import { collection, doc, addDoc, updateDoc, getDocs, getDoc, setDoc } from "firebase/firestore";
+// src/screens/CreditSavingsServices.tsx
+import React from "react";
+import { View, Text, FlatList, TouchableOpacity, Modal, TextInput, ScrollView, ActivityIndicator, StyleSheet, Platform } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useCreditSavingsLogic } from "../logic/creditSavingsLogic";
 
-export type Service = {
-  id: string;
-  name: string;
-  description: string;
-  balance: number;
-  createdBy?: string;
-};
+export default function CreditSavingsServices() {
+  const logic = useCreditSavingsLogic();
+  const isDark = true; // Or use useColorScheme()
 
-export type Tx = {
-  id: string;
-  user?: string;
-  provider?: string;
-  serviceId?: string;
-  amount: number;
-  type: "credit" | "savings" | "topup" | "loan" | "other";
-  timestamp: number;
-  note?: string;
-  status?: "Pending" | "Completed" | "Failed";
-};
+  if (logic.loading) {
+    return (
+      <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color="#00BFFF" />
+        <Text style={{ color: "#ccc", marginTop: 12 }}>Loading...</Text>
+      </View>
+    );
+  }
 
-const USER_DOC_ID = "elijah";
+  return (
+    <View style={[styles.container, { backgroundColor: isDark ? "#121212" : "#f9f9f9" }]}>
+      <Text style={[styles.header, { color: isDark ? "#fff" : "#000" }]}>Credit & Savings Services</Text>
 
-export const useCreditSavingsLogic = () => {
-  const [loading, setLoading] = useState(true);
-  const [services, setServices] = useState<Service[]>([]);
-  const [profile, setProfile] = useState<any>(null);
-  const [transactions, setTransactions] = useState<Tx[]>([]);
+      {/* Profile Card */}
+      <View style={[styles.profileCard, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
+        <Text style={[styles.serviceName, { color: isDark ? "#fff" : "#000" }]}>{logic.profile?.Name}</Text>
+        <Text style={[styles.serviceDesc, { color: isDark ? "#aaa" : "#555" }]}>Phone: {logic.profile?.phone}</Text>
+        <Text style={[styles.serviceBalance, { color: "#00a650" }]}>
+          Balance: ${Number(logic.profile?.net || 0).toFixed(2)}
+        </Text>
+        <Text style={{ color: logic.profile?.isFrozen ? "#FF5252" : "#4CAF50", marginTop: 6 }}>
+          {logic.profile?.isFrozen ? "Frozen" : "Active"}
+        </Text>
+        <TouchableOpacity style={[styles.payBtn, { marginTop: 10 }]} onPress={logic.toggleFreeze}>
+          <Text style={styles.payBtnText}>{logic.profile?.isFrozen ? "Unfreeze" : "Freeze"}</Text>
+        </TouchableOpacity>
+      </View>
 
-  const [modalVisible, setModalVisible] = useState(false);
-  const [serviceName, setServiceName] = useState("");
-  const [serviceDesc, setServiceDesc] = useState("");
-  const [serviceDeposit, setServiceDeposit] = useState("");
+      {/* Create Service Button */}
+      <TouchableOpacity style={styles.createBtn} onPress={() => logic.setModalVisible(true)}>
+        <Ionicons name="add-circle-outline" size={20} color="#fff" />
+        <Text style={styles.createBtnText}>Create New Service</Text>
+      </TouchableOpacity>
 
-  const [selectedService, setSelectedService] = useState<Service | null>(null);
-  const [paymentAmount, setPaymentAmount] = useState("");
+      {/* Services List */}
+      <FlatList
+        data={logic.services}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ paddingVertical: 10 }}
+        renderItem={({ item }) => (
+          <View style={[styles.serviceCard, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
+            <Text style={[styles.serviceName, { color: isDark ? "#fff" : "#000" }]}>{item.name}</Text>
+            <Text style={[styles.serviceDesc, { color: isDark ? "#aaa" : "#555" }]}>{item.description}</Text>
+            <Text style={[styles.serviceBalance, { color: "#00a650" }]}>Balance: ${item.balance.toFixed(2)}</Text>
+            <TouchableOpacity style={styles.payBtn} onPress={() => logic.setSelectedService(item)}>
+              <Text style={styles.payBtnText}>Pay</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      />
 
-  const userDocRef = doc(db, "acc", USER_DOC_ID);
+      {/* Transaction History */}
+      <Text style={[styles.sectionHeader, { color: isDark ? "#fff" : "#000" }]}>Transaction History</Text>
+      <FlatList
+        data={logic.transactions}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ paddingBottom: 120 }}
+        renderItem={({ item }) => (
+          <View style={[styles.transactionCard, { backgroundColor: isDark ? "#1c1c1e" : "#fff" }]}>
+            <Text style={{ color: isDark ? "#fff" : "#000", fontWeight: "700" }}>
+              {item.type === "credit" ? `Paid $${item.amount}` : `${item.type} $${item.amount}`}
+            </Text>
+            <Text style={{ color: "#888", fontSize: 12 }}>{new Date(item.timestamp).toLocaleString()}</Text>
+            {item.note ? <Text style={{ color: "#aaa", marginTop: 6 }}>{item.note}</Text> : null}
+          </View>
+        )}
+      />
 
-  useEffect(() => {
-    let mounted = true;
+      {/* Modals for Create Service & Payment */}
+      {/* ...reuse logic.modalVisible, logic.selectedService, etc. as in original UI... */}
+    </View>
+  );
+}
 
-    const load = async () => {
-      setLoading(true);
-      try {
-        const snap = await getDoc(userDocRef);
-        if (!snap.exists()) {
-          const defaultData = {
-            Name: "Nabimanya Elijah",
-            phone: 746524088,
-            net: 200000,
-            isFrozen: false,
-            transactions: [],
-            createdAt: new Date().toISOString(),
-          };
-          await setDoc(userDocRef, defaultData);
-          if (!mounted) return;
-          setProfile(defaultData);
-          setTransactions([]);
-        } else {
-          const data = snap.data();
-          if (!("net" in data)) data.net = 0;
-          if (!("transactions" in data)) data.transactions = [];
-          if (!mounted) return;
-          setProfile(data);
-          setTransactions((data.transactions || []) as Tx[]);
-        }
-
-        const serviceSnap = await getDocs(collection(db, "services"));
-        const loadedServices = serviceSnap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as any),
-        })) as Service[];
-        if (!mounted) return;
-        setServices(loadedServices);
-      } catch (err) {
-        console.error("Load error:", err);
-        Alert.alert("Error", "Failed loading data.");
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-
-    load();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const pushTxToProfile = async (tx: Tx) => {
-    try {
-      const newTxs = [tx, ...(profile.transactions || [])];
-      await updateDoc(userDocRef, { transactions: newTxs });
-      setProfile((p: any) => ({ ...p, transactions: newTxs }));
-      setTransactions(newTxs);
-    } catch (err) {
-      console.error("pushTxToProfile error:", err);
-    }
-  };
-
-  const updateProfileNet = async (newNet: number) => {
-    try {
-      await updateDoc(userDocRef, { net: newNet });
-      setProfile((p: any) => ({ ...p, net: newNet }));
-    } catch (err) {
-      console.error("updateProfileNet error:", err);
-      Alert.alert("Error", "Failed to update balance.");
-    }
-  };
-
-  const createService = async () => {
-    if (!serviceName.trim() || !serviceDesc.trim() || !serviceDeposit.trim()) {
-      Alert.alert("Incomplete", "Please fill all fields.");
-      return;
-    }
-    const initial = parseFloat(serviceDeposit);
-    if (isNaN(initial) || initial < 0) {
-      Alert.alert("Invalid deposit", "Enter a valid initial deposit.");
-      return;
-    }
-
-    try {
-      const newService = {
-        name: serviceName.trim(),
-        description: serviceDesc.trim(),
-        balance: initial,
-        createdBy: USER_DOC_ID,
-        createdAt: Date.now(),
-      };
-      const refDoc = await addDoc(collection(db, "services"), newService);
-      setServices((prev) => [...prev, { id: refDoc.id, ...newService }]);
-
-      const tx: Tx = {
-        id: `tx_${Date.now()}`,
-        user: USER_DOC_ID,
-        type: "other",
-        amount: initial,
-        provider: "ServiceCreated",
-        serviceId: refDoc.id,
-        timestamp: Date.now(),
-        note: `Created Service ${serviceName.trim()}`,
-        status: "Completed",
-      };
-      await pushTxToProfile(tx);
-
-      setServiceName("");
-      setServiceDesc("");
-      setServiceDeposit("");
-      setModalVisible(false);
-      Alert.alert("Created", `Service "${newService.name}" created.`);
-    } catch (err) {
-      console.error("createService error:", err);
-      Alert.alert("Error", "Failed to create service.");
-    }
-  };
-
-  const sendPayment = async () => {
-    if (!selectedService || !profile) return;
-    const amt = parseFloat(paymentAmount);
-    if (isNaN(amt) || amt <= 0) {
-      Alert.alert("Invalid amount", "Enter a valid payment amount.");
-      return;
-    }
-    if (profile.isFrozen) {
-      Alert.alert("Account Frozen", "Cannot make payment while account is frozen.");
-      return;
-    }
-    if ((profile.net || 0) < amt) {
-      Alert.alert("Insufficient funds", "Not enough balance to complete payment.");
-      return;
-    }
-
-    try {
-      const serviceRef = doc(db, "services", selectedService.id);
-      const newBalance = selectedService.balance + amt;
-      await updateDoc(serviceRef, { balance: newBalance });
-      setServices((prev) =>
-        prev.map((s) => (s.id === selectedService.id ? { ...s, balance: newBalance } : s))
-      );
-
-      const newNet = (profile.net || 0) - amt;
-      await updateProfileNet(newNet);
-
-      const tx: Tx = {
-        id: `tx_${Date.now()}`,
-        user: USER_DOC_ID,
-        serviceId: selectedService.id,
-        amount: amt,
-        type: "credit",
-        provider: "ServicePayment",
-        timestamp: Date.now(),
-        note: `Paid to Service ${selectedService.name}`,
-        status: "Completed",
-      };
-      await pushTxToProfile(tx);
-
-      Alert.alert("Success", `Paid $${amt.toFixed(2)} to ${selectedService.name}`);
-      setPaymentAmount("");
-      setSelectedService(null);
-    } catch (err) {
-      console.error("sendPayment error:", err);
-      Alert.alert("Error", "Failed to send payment.");
-    }
-  };
-
-  const toggleFreeze = async () => {
-    if (!profile) return;
-    try {
-      const newStatus = !profile.isFrozen;
-      await updateDoc(userDocRef, { isFrozen: newStatus });
-      setProfile((p: any) => ({ ...p, isFrozen: newStatus }));
-      Alert.alert("Success", `Account ${newStatus ? "frozen" : "unfrozen"}`);
-    } catch (err) {
-      console.error("toggleFreeze error:", err);
-      Alert.alert("Error", "Failed to update status.");
-    }
-  };
-
-  return {
-    loading,
-    services,
-    profile,
-    transactions,
-    modalVisible,
-    setModalVisible,
-    serviceName,
-    setServiceName,
-    serviceDesc,
-    setServiceDesc,
-    serviceDeposit,
-    setServiceDeposit,
-    selectedService,
-    setSelectedService,
-    paymentAmount,
-    setPaymentAmount,
-    createService,
-    sendPayment,
-    toggleFreeze,
-  };
-};
+const styles = StyleSheet.create({
+  container: { flex: 1, paddingTop: Platform.OS === "ios" ? 60 : 36, paddingHorizontal: 16 },
+  header: { fontSize: 24, fontWeight: "800", marginBottom: 12, textAlign: "center" },
+  createBtn: { flexDirection: "row", backgroundColor: "#25D366", padding: 12, borderRadius: 12, alignItems: "center", justifyContent: "center", marginBottom: 10 },
+  createBtnText: { color: "#fff", fontWeight: "700", marginLeft: 8 },
+  serviceCard: { padding: 16, borderRadius: 16, marginBottom: 12 },
+  serviceName: { fontSize: 18, fontWeight: "800", marginBottom: 4 },
+  serviceDesc: { fontSize: 14, marginBottom: 8 },
+  serviceBalance: { fontSize: 16, fontWeight: "700", marginBottom: 8 },
+  payBtn: { backgroundColor: "#007aff", padding: 10, borderRadius: 12, alignItems: "center" },
+  payBtnText: { color: "#fff", fontWeight: "700" },
+  sectionHeader: { fontSize: 20, fontWeight: "800", marginVertical: 10 },
+  transactionCard: { padding: 12, borderRadius: 12, marginBottom: 8 },
+  profileCard: { padding: 14, borderRadius: 12, marginBottom: 12 },
+});
