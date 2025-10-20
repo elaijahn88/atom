@@ -13,7 +13,7 @@ import {
   ListRenderItemInfo,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useStoreLogic } from "../logic/storeLogic";
+import { useStoreLogic } from "../logic/store";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 48) / 2;
