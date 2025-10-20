@@ -13,6 +13,7 @@
       "supportsTablet": true
     },
     "android": {
+      "versionCode": 5,
       "package": "com.xlijah.Atom",
       "adaptiveIcon": {
         "backgroundColor": "#000000",
