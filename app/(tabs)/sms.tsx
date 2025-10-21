@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Button, Platform, Alert } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { database, ref, push, onValue } from './firebase'; // import your Realtime DB
+import { database, ref, push, onValue } from '../../firebase'; // import your Realtime DB
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -95,7 +95,7 @@ export default function PushNotifications({ name, email, userId }: { name: strin
       to: expoPushToken,
       sound: 'default',
       title: 'Hello!',
-      body: 'This is a test push notification',
+      body: 'sms from atom services ',
       data: { extraData: 'Some data' },
       android: { channelId: 'default' },
     };
