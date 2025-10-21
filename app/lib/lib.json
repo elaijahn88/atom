@@ -1,1 +1,2 @@
 "notifications":"expo-notifications expo-device"
+"plugins":"expo-notifications"
