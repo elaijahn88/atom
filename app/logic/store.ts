@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Animated } from "react-native";
 import { doc, getDoc, onSnapshot } from "firebase/firestore";
-import { db } from "./firebase";
+import { db } from "../../firebase";
 
 export type Product = {
   id: string;
