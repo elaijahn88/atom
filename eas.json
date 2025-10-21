@@ -20,19 +20,11 @@
       }
     },
     "production": {
-      "distribution": "store",
+      "distribution": "internal",
       "ios": {
         "simulator": false,
         "buildType": "release",
-        "autoIncrement": true,
-        "buildNumber": "1.0.0"
-      }
-    }
-  },
-  "submit": {
-    "production": {
-      "ios": {
-        "ascAppId": "YOUR_APPLE_APP_ID"
+        "autoIncrement": true
       }
     }
   }
