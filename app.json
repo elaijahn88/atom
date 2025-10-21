@@ -16,7 +16,7 @@
       "versionCode": 5,
       "package": "com.xlijah.Atom",
       "permissions": ["NOTIFICATIONS"],
-      "useNextNotificationsApi": true
+      "useNextNotificationsApi": true,
       "adaptiveIcon": {
         "backgroundColor": "#000000",
         "foregroundImage": "./android-icon-foreground.png.png",
