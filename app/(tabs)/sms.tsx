@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Button, Platform, Alert } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import { database, ref, push, onValue } from './firebase'; // import your Realtime DB
 
-// Configure notification behavior when app is foregrounded
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -12,14 +12,13 @@ Notifications.setNotificationHandler({
   }),
 });
 
-export default function PushNotifications() {
+export default function PushNotifications({ name, email, userId }: { name: string; email: string; userId: string }) {
   const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
   const [notification, setNotification] = useState<any>(null);
 
   useEffect(() => {
     registerForPushNotifications();
 
-    // Android: create notification channel
     if (Platform.OS === 'android') {
       Notifications.setNotificationChannelAsync('default', {
         name: 'Default',
@@ -30,7 +29,6 @@ export default function PushNotifications() {
       });
     }
 
-    // Listeners
     const receivedSubscription = Notifications.addNotificationReceivedListener(n => {
       setNotification(n);
       console.log('Notification received:', n);
@@ -46,7 +44,6 @@ export default function PushNotifications() {
     };
   }, []);
 
-  // Register for push notifications and get token
   const registerForPushNotifications = async () => {
     if (!Device.isDevice) {
       Alert.alert('Push notifications require a physical device');
@@ -67,11 +64,27 @@ export default function PushNotifications() {
     }
 
     const tokenData = await Notifications.getExpoPushTokenAsync();
-    setExpoPushToken(tokenData.data);
-    console.log('Expo Push Token:', tokenData.data);
+    const token = tokenData.data;
+    setExpoPushToken(token);
+    console.log('Expo Push Token:', token);
+
+    // Save token in Realtime DB
+    saveTokenToDatabase(token);
   };
 
-  // Send test notification
+  const saveTokenToDatabase = async (token: string) => {
+    if (!userId) return;
+
+    try {
+      // path: pushTokens/{userId}
+      const userRef = ref(database, `pushTokens/${userId}`);
+      await push(userRef, { name, email, token });
+      console.log('✅ Token saved to Realtime DB');
+    } catch (error) {
+      console.error('❌ Failed to save token:', error);
+    }
+  };
+
   const sendTestNotification = async () => {
     if (!expoPushToken) {
       Alert.alert('Push token not available');
@@ -84,28 +97,12 @@ export default function PushNotifications() {
       title: 'Hello!',
       body: 'This is a test push notification',
       data: { extraData: 'Some data' },
-      android: {
-        channelId: 'default',
-        icon: './icon.png', // your 24x24 white PNG icon
-        color: '#008000', // accent color for notification
-      },
-      // iOS: you can optionally include an image attachment
-      ios: {
-        attachments: [
-          {
-            url: 'https://example.com/my-image.png',
-          },
-        ],
-      },
+      android: { channelId: 'default' },
     };
 
     await fetch('https://exp.host/--/api/v2/push/send', {
       method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Accept-encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
+      headers: { Accept: 'application/json', 'Accept-encoding': 'gzip, deflate', 'Content-Type': 'application/json' },
       body: JSON.stringify(message),
     });
 
