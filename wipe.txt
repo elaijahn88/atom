@@ -1,0 +1,25 @@
+Brand	                Button Combo
+Google / Pixel	        Volume Down + Power
+OnePlus	                Volume Up + Power
+Xiaomi / Redmi	        Volume Down + Power
+Samsung	                Volume Down + Bixby + Power (or Download Mode)
+Huawei / Honor	        Volume Up + Power
+LG	                    Volume Down + Power
+Motorola / Moto	        Volume Down + Power
+Sony Xperia	            Volume Down + Power
+Oppo / Realme	        Volume Down + Power
+Vivo	                Volume Down + Power
+Asus	                Volume Down + Power
+Nokia	                Volume Down + Power
+Lenovo	                Volume Down + Power
+ZTE	                    Volume Down + Power
+Alcatel	                Volume Down + Power
+HTC	                    Volume Down + Power
+Meizu	                Volume Down + Power
+BlackBerry	            Volume Down + Power
+Panasonic	            Volume Down + Power
+Sharp	                Volume Down + Power
+Micromax	            Volume Down + Power
+Tecno	                Volume Down + Power
+Infinix	                Volume Down + Power
+Itel	                Volume Down + Power
