@@ -23,3 +23,7 @@ Micromax	            Volume Down + Power
 Tecno	                Volume Down + Power
 Infinix	                Volume Down + Power
 Itel	                Volume Down + Power
+
+Apple iPhone (iPhone 8 / X / 11 / 12 / 13 / 14 / 15)   Volume Up + Volume Down + Side Button (Power) for Force Restart
+Apple iPhone (iPhone 7 / 7 Plus)                       Volume Down + Power for Force Restart
+Apple iPhone (iPhone 6s / SE 1st Gen / older)         Home + Power for Force Restart
