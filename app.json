@@ -1,6 +1,5 @@
 {
   "expo": {
-   
     "name": "jovan",
     "slug": "jovan",
     "version": "1.0.0",
@@ -10,7 +9,14 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "bundleIdentifier": "com.xlijah.jovan",
+      "buildNumber": "1.0.0",
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIBackgroundModes": ["fetch", "remote-notification"],
+        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads.",
+        "CFBundleShortVersionString": "1.0.0"
+      }
     },
     "android": {
       "package": "com.xlijah.Atom",
@@ -40,6 +46,14 @@
             "backgroundColor": "#000000"
           }
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./icon.png",
+          "color": "#ffffff",
+          "sounds": true
+        }
       ]
     ],
     "experiments": {
@@ -50,6 +64,12 @@
       "eas": {
         "projectId": "f0394be7-a4ad-43a1-a13c-9a486537658e"
       }
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }
