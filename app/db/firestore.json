@@ -1,0 +1,25 @@
+Firestore Root
+└── users (collection)
+    └── <userId> (document)
+        ├── acc (map)
+        │   ├── name: "John Doe"
+        │   ├── net: 1000
+        │   ├── nin: "123456789"
+        │   ├── moth: "Jane Doe"
+        │   ├── fath: "John Senior"
+        │   ├── nok: "Mary Doe"
+        │   ├── idNo: "ID98765"
+        │   └── accNo: "ACC12345"
+        ├── music (map)
+        │   ├── likes: 100
+        │   ├── comments: 20
+        │   ├── shares: 10
+        │   └── dislikes: 5
+        ├── money (map)
+        │   ├── pending: 50
+        │   ├── rcv: 500
+        │   ├── sent: 300
+        │   ├── loans: 2
+        │   └── disbursed: 1
+        └── store (map)
+            └── ads: ["ad1", "ad2", "ad3"]
