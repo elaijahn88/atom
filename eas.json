@@ -1,12 +1,38 @@
 {
-"cli": {
+  "cli": {
     "appVersionSource": "remote"
   },
-  
   "build": {
+    "development": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": true,
+        "buildType": "simulator",
+        "autoIncrement": true
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": false,
+        "buildType": "adhoc",
+        "autoIncrement": true
+      }
+    },
     "production": {
-      "android": {
-        "buildType": "apk"
+      "distribution": "store",
+      "ios": {
+        "simulator": false,
+        "buildType": "release",
+        "autoIncrement": true,
+        "buildNumber": "1.0.0"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "YOUR_APPLE_APP_ID"
       }
     }
   }
