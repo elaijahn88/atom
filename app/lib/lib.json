@@ -1,2 +1,3 @@
-"notifications":"expo-notifications expo-device @react-native-firebase/app @react-native-firebase/messaging"
+"notifications_using_expo":"expo-notifications expo-device "
+"using_bare_native":"@react-native-firebase/app @react-native-firebase/messaging"
 "plugins":"expo-notifications  @react-native-firebase/app"
