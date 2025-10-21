@@ -1,7 +1,7 @@
 // src/logic/creditSavingsLogic.ts
 import { useEffect, useState } from "react";
 import { Alert } from "react-native";
-import { db } from "../firebase";
+import { db } from "./firebase";
 import { collection, doc, addDoc, updateDoc, getDocs, getDoc, setDoc } from "firebase/firestore";
 
 export type Service = {
