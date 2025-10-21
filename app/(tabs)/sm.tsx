@@ -120,7 +120,7 @@ export default function PushNotifications() {
       <Button title="Send Test Notification" onPress={sendTestNotification} />
       {notification && (
         <View style={{ marginTop: 20 }}>
-          <Text>Last Notification:</Text>
+          <Text>Notification:</Text>
           <Text>{JSON.stringify(notification, null, 2)}</Text>
         </View>
       )}
