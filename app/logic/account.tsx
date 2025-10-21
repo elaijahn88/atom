@@ -1,4 +1,4 @@
-// src/logic/accountLogic.ts
+// src/logic/accountLogic.tsx
 import { useState } from "react";
 import { db } from "../../firebase";
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
@@ -41,6 +41,7 @@ export const useAccountLogic = () => {
       setLabel("Please enter your name.");
       return;
     }
+
     setLoading(true);
     const docRef = doc(db, "acc", name.trim().toLowerCase());
 
@@ -50,7 +51,9 @@ export const useAccountLogic = () => {
         const data = snap.data();
         if (!("net" in data)) data.net = 0;
         if (!("transactions" in data)) data.transactions = [];
+
         await updateDoc(docRef, { net: data.net, transactions: data.transactions });
+
         setProfile(data as Profile);
         setTransactions(data.transactions);
         setView("account");
@@ -70,6 +73,7 @@ export const useAccountLogic = () => {
           isFrozen: false,
           createdAt: new Date().toISOString(),
         };
+
         await setDoc(docRef, defaultData);
         setProfile(defaultData);
         setTransactions([]);
@@ -111,6 +115,7 @@ export const useAccountLogic = () => {
 
     const newNet = (profile?.net || 0) + amount;
     const updatedTxs = [newTx, ...transactions];
+
     setProfile({ ...profile, net: newNet });
     setTransactions(updatedTxs);
     setTopUpAmount("");
@@ -124,3 +129,25 @@ export const useAccountLogic = () => {
     if (!profile) return;
     const newStatus = !profile.isFrozen;
     setProfile({ ...profile, isFrozen: newStatus });
+    await updateFirestore({ isFrozen: newStatus });
+  };
+
+  // --- RETURN STATE AND ACTIONS ---
+  return {
+    name,
+    setName,
+    view,
+    setView,
+    profile,
+    loading,
+    label,
+    topUpAmount,
+    setTopUpAmount,
+    transactions,
+    quickTopUps,
+    mobileMoneyProviders,
+    handleLogin,
+    simulateTopUp,
+    toggleFreeze,
+  };
+};
