@@ -1,2 +1,2 @@
-"notifications":"expo-notifications expo-device"
+"notifications":"expo-notifications expo-device @react-native-firebase/app @react-native-firebase/messaging"
 "plugins":"expo-notifications"
