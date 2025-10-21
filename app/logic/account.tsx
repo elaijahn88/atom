@@ -1,6 +1,6 @@
 // src/logic/accountLogic.tsx
 import { useState } from "react";
-import { db } from ".././firebase";
+import { db } from "../../firebase";
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 
 export interface Profile {
