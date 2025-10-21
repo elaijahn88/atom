@@ -139,4 +139,4 @@ export function useAuthAndVideo() {
     videoRefs, onViewableItemsChanged, viewConfigRef,
     handleSignUp, handleSignIn, handleLogout
   };
-}
+};
