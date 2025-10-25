@@ -2,7 +2,7 @@
   "expo": {
    
     "name": "jovan",
-    "slug": "jovan-7esrrcfpsipvao6nd3tqd",
+    "slug": "jovan",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./icon.png",
@@ -48,7 +48,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "15e2dddf-1694-43bb-be14-3451ef1a9108"
+        "projectId": "db656853-f866-470e-8fc4-8f4d2c6d4671"
       }
     }
   }
