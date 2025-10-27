@@ -12,7 +12,14 @@ import {
   Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { doc, getDoc, onSnapshot } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  onSnapshot,
+  updateDoc,
+  setDoc,
+  arrayUnion,
+} from "firebase/firestore";
 import { db } from "../../firebase";
 
 const { width } = Dimensions.get("window");
@@ -25,6 +32,8 @@ type Product = {
   image: string;
   description?: string;
   featured?: boolean;
+  seller?: string;
+  available?: boolean;
 };
 
 type CartItem = Product & { quantity: number };
@@ -37,68 +46,6 @@ export default function MyStore() {
   const [search, setSearch] = useState("");
   const toastAnim = useRef(new Animated.Value(-60)).current;
 
-  // ✅ Load all fields dynamically
-  const loadProducts = async () => {
-    try {
-      const docRef = doc(db, "phones", "iphone");
-      const snap = await getDoc(docRef);
-
-      if (snap.exists()) {
-        const data = snap.data();
-        const arr: Product[] = [];
-
-        // Loop through all fields dynamically
-        Object.entries(data).forEach(([key, value], index) => {
-          if (typeof value === "string" && value.startsWith("http")) {
-            arr.push({
-              id: key,
-              name: `iPhone ${key}`,
-              price: (index + 1) * 10,
-              image: value,
-              description: `Apple iPhone ${key} — sleek and powerful.`,
-              featured: (index + 1) % 5 === 0, // mark every 5th as featured
-            });
-          }
-        });
-
-        setProducts(arr);
-        showToast("📱 Products loaded successfully!", "success");
-      } else {
-        showToast("⚠️ No document found for phones/iphone", "error");
-      }
-    } catch (error) {
-      console.error(error);
-      showToast("❌ Error loading products", "error");
-    }
-  };
-
-  // ✅ Realtime listener for document updates
-  useEffect(() => {
-    const docRef = doc(db, "phones", "iphone");
-    const unsubscribe = onSnapshot(docRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        const arr: Product[] = [];
-
-        Object.entries(data).forEach(([key, value], index) => {
-          if (typeof value === "string" && value.startsWith("http")) {
-            arr.push({
-              id: key,
-              name: `iPhone ${key}`,
-              price: (index + 1) * 10,
-              image: value,
-              description: `Apple iPhone ${key} — sleek and powerful.`,
-              featured: (index + 1) % 5 === 0,
-            });
-          }
-        });
-
-        setProducts(arr);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
   // ✅ Toast animation
   const showToast = (message: string, type: "success" | "error" = "success") => {
     setToast({ message, type });
@@ -109,7 +56,187 @@ export default function MyStore() {
     ]).start(() => setToast(null));
   };
 
-  // ✅ Refresh logic
+  // ✅ Load products stored as array
+  const loadProducts = async () => {
+    try {
+      const docRef = doc(db, "phones", "iphone");
+      const snap = await getDoc(docRef);
+
+      if (snap.exists()) {
+        const data = snap.data();
+        const arr = data.products || [];
+
+        const formatted: Product[] = arr.map((p: any, index: number) => ({
+          id: p.id || `item-${index}`,
+          name: `iPhone ${p.id || index + 1}`,
+          price: p.price,
+          image: p.url,
+          description: p.description,
+          featured: index % 5 === 0,
+          seller: p.seller,
+          available: p.available,
+        }));
+
+        setProducts(formatted);
+        showToast("📱 Products loaded successfully!", "success");
+      } else {
+        showToast("⚠️ No document found for phones/iphone", "error");
+      }
+    } catch (error) {
+      console.error(error);
+      showToast("❌ Error loading products", "error");
+    }
+  };
+
+  // ✅ Realtime listener
+  useEffect(() => {
+    const docRef = doc(db, "phones", "iphone");
+    const unsubscribe = onSnapshot(docRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        const arr = data.products || [];
+
+        const formatted: Product[] = arr.map((p: any, index: number) => ({
+          id: p.id || `item-${index}`,
+          name: `iPhone ${p.id || index + 1}`,
+          price: p.price,
+          image: p.url,
+          description: p.description,
+          featured: index % 5 === 0,
+          seller: p.seller,
+          available: p.available,
+        }));
+
+        setProducts(formatted);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // ✅ Seed products (10 demo items)
+  const seedProducts = async () => {
+    const products = [
+      {
+        id: "1",
+        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone15pro-max-titanium",
+        description: "iPhone 15 Pro Max — Titanium build, A17 Pro chip, 48MP camera.",
+        price: 1499,
+        seller: "+256701234567",
+        available: true,
+      },
+      {
+        id: "2",
+        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone15-pro-blue",
+        description: "iPhone 15 Pro — Powerful, efficient, and stylish.",
+        price: 1299,
+        seller: "+256709876543",
+        available: true,
+      },
+      {
+        id: "3",
+        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone15-pink",
+        description: "iPhone 15 — A fresh design with Dynamic Island.",
+        price: 999,
+        seller: "+256777332211",
+        available: true,
+      },
+      {
+        id: "4",
+        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone14-pro",
+        description: "iPhone 14 Pro — Always-on display and ProMotion.",
+        price: 1099,
+        seller: "+256755998877",
+        available: true,
+      },
+      {
+        id: "5",
+        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone14",
+        description: "iPhone 14 — Fast, bright, and beautiful.",
+        price: 899,
+        seller: "+256700889977",
+        available: true,
+      },
+      {
+        id: "6",
+        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone13-pro",
+        description: "iPhone 13 Pro — Smooth performance and long battery life.",
+        price: 799,
+        seller: "+256702223344",
+        available: true,
+      },
+      {
+        id: "7",
+        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone13",
+        description: "iPhone 13 — Compact and powerful with A15 Bionic chip.",
+        price: 699,
+        seller: "+256778889900",
+        available: true,
+      },
+      {
+        id: "8",
+        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone12",
+        description: "iPhone 12 — Reliable performance and 5G ready.",
+        price: 599,
+        seller: "+256701112233",
+        available: true,
+      },
+      {
+        id: "9",
+        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone11",
+        description: "iPhone 11 — Great camera system and value.",
+        price: 499,
+        seller: "+256704567890",
+        available: true,
+      },
+      {
+        id: "10",
+        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone-se-2022",
+        description: "iPhone SE (2022) — Compact, affordable, and fast.",
+        price: 399,
+        seller: "+256703221199",
+        available: true,
+      },
+    ];
+
+    await setDoc(doc(db, "phones", "iphone"), { products });
+    showToast("✅ 10 demo products uploaded!", "success");
+  };
+
+  // ✅ Add product
+  const addProduct = async (newProduct) => {
+    try {
+      const docRef = doc(db, "phones", "iphone");
+      await updateDoc(docRef, {
+        products: arrayUnion(newProduct),
+      });
+      showToast("✅ Product added!", "success");
+    } catch (error) {
+      console.error("Error adding:", error);
+      showToast("❌ Failed to add product", "error");
+    }
+  };
+
+  // ✅ Update product
+  const updateProduct = async (productId, updatedFields) => {
+    try {
+      const docRef = doc(db, "phones", "iphone");
+      const snap = await getDoc(docRef);
+      if (!snap.exists()) return;
+
+      const data = snap.data();
+      const updated = data.products.map((p) =>
+        p.id === productId ? { ...p, ...updatedFields } : p
+      );
+
+      await updateDoc(docRef, { products: updated });
+      showToast("✅ Product updated!", "success");
+    } catch (error) {
+      console.error(error);
+      showToast("❌ Update failed", "error");
+    }
+  };
+
+  // ✅ Refresh
   const onRefresh = async () => {
     setRefreshing(true);
     await loadProducts();
@@ -132,16 +259,15 @@ export default function MyStore() {
 
   const removeFromCart = (id: string) => {
     setCart((prev) => prev.filter((p) => p.id !== id));
-    showToast("Removed from cart ", "error");
+    showToast("Removed from cart", "error");
   };
 
   const cartTotal = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
-
-  // ✅ Search filter
   const filtered = products.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
 
+  // ✅ Render product
   const renderItem = ({ item }: { item: Product }) => (
     <TouchableOpacity style={styles.card}>
       {item.featured && (
@@ -153,6 +279,18 @@ export default function MyStore() {
       <Text style={styles.title}>{item.name}</Text>
       <Text style={styles.description}>{item.description}</Text>
       <Text style={styles.price}>${item.price}</Text>
+      <Text style={{ color: "#ccc", fontSize: 12 }}>
+        Seller: {item.seller}
+      </Text>
+      <Text
+        style={{
+          color: item.available ? "#34c759" : "#ff3b30",
+          fontWeight: "600",
+        }}
+      >
+        {item.available ? "Available" : "Out of Stock"}
+      </Text>
+
       <View style={styles.row}>
         <TouchableOpacity
           onPress={() => addToCart(item)}
@@ -195,7 +333,7 @@ export default function MyStore() {
         </Text>
       </View>
 
-      {/* ✅ Search bar */}
+      {/* ✅ Search + Actions */}
       <View style={{ flexDirection: "row", marginHorizontal: 20, marginBottom: 10 }}>
         <TextInput
           placeholder="Search iPhones..."
@@ -209,6 +347,12 @@ export default function MyStore() {
           style={[styles.btn, { marginLeft: 8, backgroundColor: "#00BFFF" }]}
         >
           <Ionicons name="refresh" size={20} color="#fff" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={seedProducts}
+          style={[styles.btn, { marginLeft: 8, backgroundColor: "#ff7f00" }]}
+        >
+          <Ionicons name="cloud-upload" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
 
