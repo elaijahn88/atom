@@ -19,7 +19,7 @@ import Video from "react-native-video";
 import {
   auth,
   db
-} from "./firebase";
+} from "../../firebase";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
