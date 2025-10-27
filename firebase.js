@@ -4,6 +4,7 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getDatabase, ref, push, onValue } from "firebase/database";
+import { getRemoteConfig } from "firebase/remote-config";
 
 // 🔑 Firebase configuration
 const firebaseConfig = {
@@ -24,4 +25,10 @@ const auth = getAuth(app);
 const storage = getStorage(app);
 const database = getDatabase(app);
 
-export { db, auth, storage, database, ref, push, onValue };
+// 🧠 Initialize Remote Config (no fetch here)
+const remoteConfig = getRemoteConfig(app);
+remoteConfig.settings = {
+  minimumFetchIntervalMillis: 3600000, // fetch every 1 hour
+};
+
+export { db, auth, storage, database, ref, push, onValue, remoteConfig };
