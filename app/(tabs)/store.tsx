@@ -38,12 +38,13 @@ type Product = {
 
 type CartItem = Product & { quantity: number };
 
-export default function MyStore() {
+export default function MyStore({ username }: { username: string }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [search, setSearch] = useState("");
+  const [balance, setBalance] = useState(0); // user account balance
   const toastAnim = useRef(new Animated.Value(-60)).current;
 
   // ✅ Toast animation
@@ -88,7 +89,7 @@ export default function MyStore() {
     }
   };
 
-  // ✅ Realtime listener
+  // ✅ Realtime products listener
   useEffect(() => {
     const docRef = doc(db, "phones", "iphone");
     const unsubscribe = onSnapshot(docRef, (snap) => {
@@ -113,89 +114,37 @@ export default function MyStore() {
     return () => unsubscribe();
   }, []);
 
+  // ✅ Real-time balance listener
+  useEffect(() => {
+    const docRef = doc(db, "acc", username);
+    const unsubscribe = onSnapshot(docRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setBalance(data?.net || 0);
+      } else {
+        setBalance(0);
+      }
+    }, (err) => {
+      console.error("Balance listener error:", err);
+      setBalance(0);
+    });
+
+    return () => unsubscribe();
+  }, [username]);
+
   // ✅ Seed products (10 demo items)
   const seedProducts = async () => {
     const products = [
-      {
-        id: "1",
-        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone15pro-max-titanium",
-        description: "iPhone 15 Pro Max — Titanium build, A17 Pro chip, 48MP camera.",
-        price: 1499,
-        seller: "+256701234567",
-        available: true,
-      },
-      {
-        id: "2",
-        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone15-pro-blue",
-        description: "iPhone 15 Pro — Powerful, efficient, and stylish.",
-        price: 1299,
-        seller: "+256709876543",
-        available: true,
-      },
-      {
-        id: "3",
-        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone15-pink",
-        description: "iPhone 15 — A fresh design with Dynamic Island.",
-        price: 999,
-        seller: "+256777332211",
-        available: true,
-      },
-      {
-        id: "4",
-        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone14-pro",
-        description: "iPhone 14 Pro — Always-on display and ProMotion.",
-        price: 1099,
-        seller: "+256755998877",
-        available: true,
-      },
-      {
-        id: "5",
-        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone14",
-        description: "iPhone 14 — Fast, bright, and beautiful.",
-        price: 899,
-        seller: "+256700889977",
-        available: true,
-      },
-      {
-        id: "6",
-        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone13-pro",
-        description: "iPhone 13 Pro — Smooth performance and long battery life.",
-        price: 799,
-        seller: "+256702223344",
-        available: true,
-      },
-      {
-        id: "7",
-        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone13",
-        description: "iPhone 13 — Compact and powerful with A15 Bionic chip.",
-        price: 699,
-        seller: "+256778889900",
-        available: true,
-      },
-      {
-        id: "8",
-        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone12",
-        description: "iPhone 12 — Reliable performance and 5G ready.",
-        price: 599,
-        seller: "+256701112233",
-        available: true,
-      },
-      {
-        id: "9",
-        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone11",
-        description: "iPhone 11 — Great camera system and value.",
-        price: 499,
-        seller: "+256704567890",
-        available: true,
-      },
-      {
-        id: "10",
-        url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone-se-2022",
-        description: "iPhone SE (2022) — Compact, affordable, and fast.",
-        price: 399,
-        seller: "+256703221199",
-        available: true,
-      },
+      { id: "1", url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone15pro-max-titanium", description: "iPhone 15 Pro Max — Titanium build, A17 Pro chip, 48MP camera.", price: 1499, seller: "+256701234567", available: true },
+      { id: "2", url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone15-pro-blue", description: "iPhone 15 Pro — Powerful, efficient, and stylish.", price: 1299, seller: "+256709876543", available: true },
+      { id: "3", url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone15-pink", description: "iPhone 15 — A fresh design with Dynamic Island.", price: 999, seller: "+256777332211", available: true },
+      { id: "4", url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone14-pro", description: "iPhone 14 Pro — Always-on display and ProMotion.", price: 1099, seller: "+256755998877", available: true },
+      { id: "5", url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone14", description: "iPhone 14 — Fast, bright, and beautiful.", price: 899, seller: "+256700889977", available: true },
+      { id: "6", url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone13-pro", description: "iPhone 13 Pro — Smooth performance and long battery life.", price: 799, seller: "+256702223344", available: true },
+      { id: "7", url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone13", description: "iPhone 13 — Compact and powerful with A15 Bionic chip.", price: 699, seller: "+256778889900", available: true },
+      { id: "8", url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone12", description: "iPhone 12 — Reliable performance and 5G ready.", price: 599, seller: "+256701112233", available: true },
+      { id: "9", url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone11", description: "iPhone 11 — Great camera system and value.", price: 499, seller: "+256704567890", available: true },
+      { id: "10", url: "https://store.storeimages.cdn-apple.com/4668/as-images.apple.com/is/iphone-se-2022", description: "iPhone SE (2022) — Compact, affordable, and fast.", price: 399, seller: "+256703221199", available: true },
     ];
 
     await setDoc(doc(db, "phones", "iphone"), { products });
@@ -245,6 +194,11 @@ export default function MyStore() {
 
   // ✅ Cart logic
   const addToCart = (item: Product) => {
+    if (balance < item.price) {
+      showToast("⚠️ Insufficient balance!", "error");
+      return;
+    }
+
     setCart((prev) => {
       const existing = prev.find((p) => p.id === item.id);
       if (existing) {
@@ -267,7 +221,6 @@ export default function MyStore() {
     p.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  // ✅ Render product
   const renderItem = ({ item }: { item: Product }) => (
     <TouchableOpacity style={styles.card}>
       {item.featured && (
@@ -329,7 +282,7 @@ export default function MyStore() {
       <View style={styles.headerRow}>
         <Text style={styles.header}>Store</Text>
         <Text style={{ color: "#ff7f00", fontWeight: "bold" }}>
-          Cart: ${cartTotal.toFixed(2)}
+          Cart: ${cartTotal.toFixed(2)} | Balance: ${balance.toFixed(2)}
         </Text>
       </View>
 
