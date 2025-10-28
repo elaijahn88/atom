@@ -14,7 +14,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { db } from "../firebase"; // import your firebase.js
+import { db } from "../../firebase"; // import your firebase.js
 import {
   collection,
   addDoc,
