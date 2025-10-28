@@ -5,10 +5,8 @@ import {
   StyleSheet,
   Dimensions,
   TouchableOpacity,
-  Image,
   Animated,
   AppState,
-  Linking,
 } from "react-native";
 import Video from "react-native-video";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,23 +25,38 @@ export default function MainVideoWithAds() {
   const progressAnim = useRef(new Animated.Value(0)).current;
 
   // Fetch video URLs from Firestore
-  useEffect(() => {
-    const fetchVideos = async () => {
-      try {
-        const docRef = doc(db, "ads", "paid");
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          const data = snap.data();
-          const array = Array.isArray(data?.["1"]) ? data["1"] : [];
-          setVideoUrls(array.filter((url) => typeof url === "string"));
-        }
-      } catch (err) {
-        console.error("Error fetching videos:", err);
+  const fetchVideos = async () => {
+    try {
+      const docRef = doc(db, "ads", "paid");
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+
+        // Flatten all arrays inside the document
+        const urls: string[] = [];
+        Object.keys(data).forEach((key) => {
+          if (Array.isArray(data[key])) {
+            data[key].forEach((item) => {
+              if (typeof item === "string") urls.push(item);
+            });
+          }
+        });
+
+        setVideoUrls(urls);
       }
-    };
+    } catch (err) {
+      console.error("Error fetching videos:", err);
+    }
+  };
+
+  // Initial fetch + polling
+  useEffect(() => {
     fetchVideos();
+    const interval = setInterval(fetchVideos, 120000); // every 2 minutes
+    return () => clearInterval(interval);
   }, []);
 
+  // Pause/resume on app state change
   useEffect(() => {
     const subscription = AppState.addEventListener("change", handleAppStateChange);
     return () => subscription.remove();
@@ -59,7 +72,7 @@ export default function MainVideoWithAds() {
     fadeAnim.setValue(0);
     progressAnim.setValue(0);
     Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
-    Animated.timing(progressAnim, { toValue: 1, duration: 30000, useNativeDriver: false }).start(); // placeholder duration
+    Animated.timing(progressAnim, { toValue: 1, duration: 30000, useNativeDriver: false }).start();
     setShowSkip(false);
     const skipTimer = setTimeout(() => setShowSkip(true), 10000);
     return () => clearTimeout(skipTimer);
@@ -69,7 +82,7 @@ export default function MainVideoWithAds() {
     if (currentIndex < videoUrls.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
-      setCurrentIndex(0); // Loop back to first/main video
+      setCurrentIndex(0);
     }
   };
 
@@ -110,10 +123,7 @@ export default function MainVideoWithAds() {
       </View>
 
       {/* Play/Pause */}
-      <TouchableOpacity
-        style={styles.playBtn}
-        onPress={() => setPaused((p) => !p)}
-      >
+      <TouchableOpacity style={styles.playBtn} onPress={() => setPaused((p) => !p)}>
         <Ionicons name={paused ? "play" : "pause"} size={40} color="#fff" />
       </TouchableOpacity>
     </Animated.View>
