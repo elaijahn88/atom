@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
   Platform,
 } from "react-native";
-import { db } from "./firebase"; // your firebase.js
+import { db } from "../../firebase"; // your firebase.js
 import { doc, setDoc, getDoc, collection, addDoc, getDocs, updateDoc } from "firebase/firestore";
 
 // ----------------- App -----------------
