@@ -6,119 +6,123 @@ import {
   TouchableOpacity,
   ScrollView,
   FlatList,
-  StyleSheet,
   ActivityIndicator,
   Alert,
+  StyleSheet,
   Modal,
   Platform,
 } from "react-native";
-import { db } from "../../firebase";
+import { db } from "./firebase"; // replace with your firebase.js
 import {
   doc,
-  getDoc,
   setDoc,
+  getDoc,
   updateDoc,
-  collection,
   addDoc,
+  collection,
   getDocs,
 } from "firebase/firestore";
 
-// ----------------- App -----------------
+// --------------------- APP ---------------------
 export default function App() {
-  const [userId, setUserId] = useState<string | null>(null);
   const [role, setRole] = useState<"admin" | "member" | null>(null);
-  const [screen, setScreen] = useState<"login" | "admin" | "member">("login");
+  const [userDocId, setUserDocId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = async (name: string) => {
-    if (!name.trim()) return Alert.alert("Enter your name");
+  if (!role) return <LoginScreen onLogin={(role, id) => { setRole(role); setUserDocId(id); }} />;
+  if (role === "admin") return <AdminDashboard adminId={userDocId!} onLogout={() => { setRole(null); setUserDocId(null); }} />;
+  if (role === "member") return <MemberDashboard memberId={userDocId!} onLogout={() => { setRole(null); setUserDocId(null); }} />;
+  return null;
+}
+
+// --------------------- LOGIN ---------------------
+function LoginScreen({ onLogin }: { onLogin: (role: "admin" | "member", id: string) => void }) {
+  const [name, setName] = useState("");
+  const [label, setLabel] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [viewAdminSignup, setViewAdminSignup] = useState(false);
+
+  const handleLogin = async () => {
+    if (!name.trim()) return setLabel("Enter name");
     setLoading(true);
-    const userDocRef = doc(db, "acc", name.trim().toLowerCase());
+
     try {
-      const snap = await getDoc(userDocRef);
-      if (!snap.exists()) {
-        Alert.alert("User not found");
-      } else {
-        const data = snap.data();
-        setUserId(name.trim().toLowerCase());
-        setRole(data.role);
-        setScreen(data.role === "admin" ? "admin" : "member");
+      // Check admin collection first
+      const adminRef = doc(db, "admin", name.trim().toLowerCase());
+      const adminSnap = await getDoc(adminRef);
+      if (adminSnap.exists()) {
+        onLogin("admin", name.trim().toLowerCase());
+        return;
       }
+
+      // Check member collection
+      const memberRef = doc(db, "acc", name.trim().toLowerCase());
+      const memberSnap = await getDoc(memberRef);
+      if (memberSnap.exists()) {
+        onLogin("member", name.trim().toLowerCase());
+        return;
+      }
+
+      // If not exist, create member automatically
+      const newMember = {
+        Name: name.trim(),
+        net: 0,
+        transactions: [],
+        loans: [],
+        savings: [],
+        status: "active",
+        createdAt: new Date().toISOString(),
+      };
+      await setDoc(memberRef, newMember);
+      onLogin("member", name.trim().toLowerCase());
     } catch (err) {
       console.error(err);
-      Alert.alert("Login failed");
+      setLabel("Login failed");
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading)
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#00BFFF" />
-      </View>
-    );
+  if (loading) return <ActivityIndicator style={{ flex: 1 }} size="large" color="#00BFFF" />;
 
-  if (screen === "login") return <LoginScreen onLogin={handleLogin} />;
-
-  if (screen === "admin" && userId) return <AdminDashboard USER_ID={userId} onLogout={() => setScreen("login")} />;
-
-  if (screen === "member" && userId) return <MemberDashboard USER_ID={userId} onLogout={() => setScreen("login")} />;
-
-  return null;
-}
-
-// ----------------- Login Screen -----------------
-function LoginScreen({ onLogin }: { onLogin: (name: string) => void }) {
-  const [name, setName] = useState("");
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Board / Member Login</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Enter name"
-        placeholderTextColor="#888"
-        value={name}
-        onChangeText={setName}
-      />
-      <TouchableOpacity style={styles.btn} onPress={() => onLogin(name)}>
+      <Text style={styles.header}>Login</Text>
+      <TextInput style={styles.input} placeholder="Enter your name" value={name} onChangeText={setName} />
+      <TouchableOpacity style={styles.btn} onPress={handleLogin}>
         <Text style={styles.btnText}>Login</Text>
       </TouchableOpacity>
+      <TouchableOpacity style={[styles.btn, { backgroundColor: "#444" }]} onPress={() => setViewAdminSignup(true)}>
+        <Text style={styles.btnText}>CEO: Add Admin</Text>
+      </TouchableOpacity>
+      {label ? <Text style={styles.label}>{label}</Text> : null}
+
+      {viewAdminSignup && <AdminSignup onAdminCreated={() => setViewAdminSignup(false)} />}
     </View>
   );
 }
 
-// ----------------- Admin Dashboard -----------------
-function AdminDashboard({ USER_ID, onLogout }: { USER_ID: string; onLogout: () => void }) {
-  const [members, setMembers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [memberName, setMemberName] = useState("");
-  const [memberRole, setMemberRole] = useState<"member" | "admin">("member");
+// --------------------- CEO VERIFIED ADMIN SIGNUP ---------------------
+function AdminSignup({ onAdminCreated }: { onAdminCreated: () => void }) {
+  const [ceoPassword, setCeoPassword] = useState("");
+  const [verified, setVerified] = useState(false);
+  const [adminName, setAdminName] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const loadMembers = async () => {
-    setLoading(true);
-    try {
-      const snap = await getDocs(collection(db, "acc"));
-      setMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+  const handleVerifyCEO = () => {
+    if (ceoPassword === "elijah2013grok") setVerified(true);
+    else Alert.alert("Unauthorized", "Incorrect CEO password");
   };
 
-  useEffect(() => {
-    loadMembers();
-  }, []);
+  const handleCreateAdmin = async () => {
+    if (!adminName.trim()) return Alert.alert("Enter admin name");
+    setLoading(true);
 
-  const addMember = async () => {
-    if (!memberName.trim()) return Alert.alert("Enter member name");
     try {
-      const docRef = doc(db, "acc", memberName.trim().toLowerCase());
+      const docRef = doc(db, "admin", adminName.trim().toLowerCase());
       await setDoc(docRef, {
-        Name: memberName,
-        role: memberRole,
+        Name: adminName.trim(),
+        role: "admin",
         net: 0,
         transactions: [],
         loans: [],
@@ -126,21 +130,73 @@ function AdminDashboard({ USER_ID, onLogout }: { USER_ID: string; onLogout: () =
         status: "active",
         createdAt: new Date().toISOString(),
       });
-      Alert.alert("Member added");
-      setModalVisible(false);
-      setMemberName("");
-      loadMembers();
+      Alert.alert("Success", "Admin account created!");
+      onAdminCreated();
     } catch (err) {
       console.error(err);
-      Alert.alert("Failed to add member");
+      Alert.alert("Error", "Failed to create admin");
+    } finally {
+      setLoading(false);
     }
   };
 
+  return (
+    <View style={[styles.modalOverlay, { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }]}>
+      <View style={styles.modalContent}>
+        {!verified ? (
+          <>
+            <Text style={styles.header}>CEO Verification</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter CEO password"
+              secureTextEntry
+              value={ceoPassword}
+              onChangeText={setCeoPassword}
+            />
+            <TouchableOpacity style={styles.btn} onPress={handleVerifyCEO}>
+              <Text style={styles.btnText}>Verify</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.header}>Create Admin</Text>
+            <TextInput style={styles.input} placeholder="Admin Name" value={adminName} onChangeText={setAdminName} />
+            <TouchableOpacity style={styles.btn} onPress={handleCreateAdmin} disabled={loading}>
+              <Text style={styles.btnText}>{loading ? "Creating..." : "Create Admin"}</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+    </View>
+  );
+}
+
+// --------------------- ADMIN DASHBOARD ---------------------
+function AdminDashboard({ adminId, onLogout }: { adminId: string; onLogout: () => void }) {
+  const [members, setMembers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedMember, setSelectedMember] = useState<any>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+
+  const loadMembers = async () => {
+    setLoading(true);
+    try {
+      const snap = await getDocs(collection(db, "acc"));
+      const allMembers = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      setMembers(allMembers);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadMembers(); }, []);
+
   const removeMember = async (id: string) => {
     try {
-      const docRef = doc(db, "acc", id);
-      await setDoc(docRef, { status: "inactive" }, { merge: true });
-      Alert.alert("Member marked inactive");
+      const ref = doc(db, "acc", id);
+      await updateDoc(ref, { status: "removed" });
       loadMembers();
     } catch (err) {
       console.error(err);
@@ -152,38 +208,42 @@ function AdminDashboard({ USER_ID, onLogout }: { USER_ID: string; onLogout: () =
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.header}>Admin Dashboard</Text>
-      <TouchableOpacity style={styles.navBtn} onPress={() => setModalVisible(true)}>
-        <Text style={styles.navBtnText}>Add Member</Text>
-      </TouchableOpacity>
-      <FlatList
-        data={members}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.serviceCard}>
-            <Text style={{ fontWeight: "700" }}>{item.Name}</Text>
-            <Text>Role: {item.role}</Text>
-            <Text>Status: {item.status}</Text>
-            <TouchableOpacity style={[styles.payBtn, { backgroundColor: "#FF5722" }]} onPress={() => removeMember(item.id)}>
-              <Text style={{ color: "#fff" }}>Remove</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      />
-      <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
-        <Text style={styles.logoutText}>Logout</Text>
+      <TouchableOpacity style={styles.btn} onPress={onLogout}>
+        <Text style={styles.btnText}>Logout</Text>
       </TouchableOpacity>
 
+      <Text style={styles.sectionTitle}>Members</Text>
+      {members.map((m) => (
+        <View key={m.id} style={styles.serviceCard}>
+          <Text>Name: {m.Name}</Text>
+          <Text>Net: {m.net}</Text>
+          <Text>Status: {m.status}</Text>
+          <TouchableOpacity style={styles.navBtn} onPress={() => { setSelectedMember(m); setModalVisible(true); }}>
+            <Text>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.navBtn, { backgroundColor: "#FF4444" }]} onPress={() => removeMember(m.id)}>
+            <Text>Remove</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
+
+      {/* Modal for editing member */}
       <Modal visible={modalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={{ fontSize: 20, fontWeight: "700", marginBottom: 12 }}>Add Member</Text>
-            <TextInput placeholder="Name" value={memberName} onChangeText={setMemberName} style={styles.input} />
-            <TextInput placeholder="Role (member/admin)" value={memberRole} onChangeText={(t) => setMemberRole(t as any)} style={styles.input} />
-            <TouchableOpacity style={styles.modalBtn} onPress={addMember}>
-              <Text style={{ color: "#fff" }}>Add</Text>
+            <Text style={styles.header}>Edit Member</Text>
+            <TextInput style={styles.input} placeholder="Name" value={selectedMember?.Name} onChangeText={(t) => setSelectedMember({ ...selectedMember, Name: t })} />
+            <TextInput style={styles.input} placeholder="Net" value={String(selectedMember?.net)} keyboardType="numeric" onChangeText={(t) => setSelectedMember({ ...selectedMember, net: Number(t) })} />
+            <TouchableOpacity style={styles.btn} onPress={async () => {
+              if (!selectedMember) return;
+              const ref = doc(db, "acc", selectedMember.id);
+              await updateDoc(ref, { Name: selectedMember.Name, net: selectedMember.net });
+              setModalVisible(false); loadMembers();
+            }}>
+              <Text style={styles.btnText}>Save</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ccc" }]} onPress={() => setModalVisible(false)}>
-              <Text style={{ color: "#333" }}>Cancel</Text>
+            <TouchableOpacity style={[styles.btn, { backgroundColor: "#ccc" }]} onPress={() => setModalVisible(false)}>
+              <Text>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -192,116 +252,48 @@ function AdminDashboard({ USER_ID, onLogout }: { USER_ID: string; onLogout: () =
   );
 }
 
-// ----------------- Member Dashboard -----------------
-function MemberDashboard({ USER_ID, onLogout }: { USER_ID: string; onLogout: () => void }) {
-  const userDocRef = doc(db, "acc", USER_ID);
+// --------------------- MEMBER DASHBOARD ---------------------
+function MemberDashboard({ memberId, onLogout }: { memberId: string; onLogout: () => void }) {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [loanAmount, setLoanAmount] = useState("");
-  const [loanPurpose, setLoanPurpose] = useState("");
-  const [transactions, setTransactions] = useState<any[]>([]);
-
-  const loadProfile = async () => {
-    setLoading(true);
-    try {
-      const snap = await getDoc(userDocRef);
-      if (snap.exists()) {
-        setProfile(snap.data());
-        setTransactions(snap.data().transactions || []);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
-    loadProfile();
-  }, []);
-
-  const submitLoan = async () => {
-    const amt = parseFloat(loanAmount);
-    if (!loanPurpose.trim() || isNaN(amt) || amt <= 0) return Alert.alert("Fill fields correctly");
-
-    const newLoan = {
-      id: `loan_${Date.now()}`,
-      amount: amt,
-      purpose: loanPurpose,
-      status: "Pending",
-      timestamp: Date.now(),
+    const load = async () => {
+      setLoading(true);
+      try {
+        const snap = await getDoc(doc(db, "acc", memberId));
+        if (snap.exists()) setProfile(snap.data());
+      } catch (err) {
+        console.error(err);
+      } finally { setLoading(false); }
     };
-
-    try {
-      const updatedLoans = [newLoan, ...(profile.loans || [])];
-      await updateDoc(userDocRef, { loans: updatedLoans });
-      setProfile((p: any) => ({ ...p, loans: updatedLoans }));
-      setLoanAmount("");
-      setLoanPurpose("");
-      Alert.alert("Loan submitted");
-    } catch (err) {
-      console.error(err);
-      Alert.alert("Failed to submit loan");
-    }
-  };
+    load();
+  }, []);
 
   if (loading) return <ActivityIndicator style={{ flex: 1 }} size="large" color="#00BFFF" />;
 
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.header}>Member Dashboard</Text>
-      <Text style={{ fontWeight: "700", fontSize: 20 }}>Welcome, {profile.Name}</Text>
-      <Text style={{ marginBottom: 12 }}>Balance: Shs {profile.net}</Text>
-
-      {/* Loan Submission */}
-      <Text style={{ fontWeight: "700", marginBottom: 6 }}>Apply Loan</Text>
-      <TextInput placeholder="Amount" value={loanAmount} onChangeText={setLoanAmount} keyboardType="numeric" style={styles.input} />
-      <TextInput placeholder="Purpose" value={loanPurpose} onChangeText={setLoanPurpose} style={styles.input} />
-      <TouchableOpacity style={styles.btn} onPress={submitLoan}>
-        <Text style={styles.btnText}>Submit Loan</Text>
-      </TouchableOpacity>
-
-      {/* Transaction History */}
-      <Text style={{ fontWeight: "700", marginTop: 12, marginBottom: 6 }}>Transactions</Text>
-      {transactions.length > 0 ? (
-        <FlatList
-          data={transactions}
-          keyExtractor={(_, i) => i.toString()}
-          renderItem={({ item }) => (
-            <View style={styles.txCard}>
-              <Text>To: {item.receiver}</Text>
-              <Text>Amount: Shs {item.amount}</Text>
-              <Text>{item.timestamp}</Text>
-            </View>
-          )}
-        />
-      ) : (
-        <Text>No transactions yet</Text>
-      )}
-
-      <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
-        <Text style={styles.logoutText}>Logout</Text>
-      </TouchableOpacity>
+      <Text>Name: {profile?.Name}</Text>
+      <Text>Net: {profile?.net}</Text>
+      <TouchableOpacity style={styles.btn} onPress={onLogout}><Text style={styles.btnText}>Logout</Text></TouchableOpacity>
+      {/* Savings, Loans, Transactions screens can be added similarly */}
     </ScrollView>
   );
 }
 
-// ----------------- Styles -----------------
+// --------------------- STYLES ---------------------
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: "#f0f0f0" },
-  centered: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: { fontSize: 24, fontWeight: "700", marginBottom: 12, textAlign: "center" },
+  container: { flex: 1, padding: 16 },
+  header: { fontSize: 24, fontWeight: "700", marginBottom: 12 },
   input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 12, padding: 12, marginBottom: 12 },
-  btn: { backgroundColor: "#007AFF", padding: 12, borderRadius: 12, alignItems: "center", marginBottom: 12 },
+  btn: { backgroundColor: "#007AFF", padding: 12, borderRadius: 12, alignItems: "center", marginBottom: 8 },
   btnText: { color: "#fff", fontWeight: "700" },
-  navBtn: { backgroundColor: "#25D366", padding: 12, borderRadius: 12, alignItems: "center", marginBottom: 12 },
-  navBtnText: { color: "#fff", fontWeight: "700" },
-  serviceCard: { padding: 12, borderRadius: 12, marginBottom: 8, backgroundColor: "#fff" },
-  payBtn: { backgroundColor: "#007BFF", padding: 8, borderRadius: 12, alignItems: "center", marginTop: 6 },
-  modalOverlay: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)" },
-  modalContent: { width: "90%", backgroundColor: "#fff", padding: 16, borderRadius: 12 },
-  modalBtn: { backgroundColor: "#007BFF", padding: 12, borderRadius: 12, alignItems: "center", marginTop: 6 },
-  logoutButton: { backgroundColor: "#FF5722", padding: 12, borderRadius: 12, alignItems: "center", marginTop: 12 },
-  logoutText: { color: "#fff", fontWeight: "700", textAlign: "center" },
-  txCard: { backgroundColor: "#fff", padding: 12, borderRadius: 12, marginBottom: 8 },
+  label: { color: "#FF4444", marginTop: 6 },
+  sectionTitle: { fontSize: 20, fontWeight: "600", marginTop: 12 },
+  serviceCard: { padding: 12, borderRadius: 12, marginBottom: 8, backgroundColor: "#f5f5f5" },
+  navBtn: { backgroundColor: "#25D366", padding: 8, borderRadius: 8, marginTop: 6, alignItems: "center" },
+  modalOverlay: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)", padding: 20 },
+  modalContent: { width: "100%", backgroundColor: "#fff", padding: 20, borderRadius: 12 },
 });
