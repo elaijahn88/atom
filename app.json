@@ -1,12 +1,12 @@
 {
   "expo": {
    
-    "name": "unique",
-    "slug": "unique",
+    "name": "admin",
+    "slug": "admin",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./icon.png",
-    "scheme": "elijah",
+    "scheme": "admin",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
