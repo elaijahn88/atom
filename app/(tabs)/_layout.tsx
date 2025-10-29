@@ -62,6 +62,7 @@ export default function TabLayout() {
         options={{
           title: 'Music',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
+          contentStyle: { backgroundColor: "green" },
         }}
       />
       <Tabs.Screen
