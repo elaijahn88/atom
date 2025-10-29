@@ -12,7 +12,7 @@ import {
   Modal,
   Platform,
 } from "react-native";
-import { db } from "./firebase"; // replace with your firebase.js
+import { db } from "../../firebase"; // replace with your firebase.js
 import {
   doc,
   setDoc,
