@@ -6,7 +6,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./icon.png",
-    "scheme": "elijah",
+    "scheme": "unique",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
