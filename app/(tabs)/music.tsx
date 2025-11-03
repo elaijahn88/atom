@@ -14,8 +14,8 @@ import {
   Slider,
 } from "react-native";
 import { db } from "../../firebase";
-import { doc, getDoc, setDoc, DocumentData } from "firebase/firestore";
-import { Audio } from 'expo-av';
+import { doc, getDoc, DocumentData } from "firebase/firestore";
+import Video from 'react-native-video';
 
 const { width } = Dimensions.get("window");
 
@@ -35,7 +35,7 @@ export default function MediaLibrary() {
   const [modalVisible, setModalVisible] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
-  const [currentSound, setCurrentSound] = useState<Audio.Sound | null>(null);
+  const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPosition, setCurrentPosition] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -72,7 +72,6 @@ export default function MediaLibrary() {
 
   useEffect(() => {
     loadSongs();
-    return () => { currentSound?.unloadAsync(); };
   }, []);
 
   const handlePurchase = async () => {
@@ -90,32 +89,13 @@ export default function MediaLibrary() {
     }
   };
 
-  const playSong = async (song: Song) => {
-    if (currentSound) {
-      await currentSound.unloadAsync();
-      setIsPlaying(false);
-    }
-    const { sound, status } = await Audio.Sound.createAsync(
-      { uri: song.url },
-      { shouldPlay: true },
-      onPlaybackStatusUpdate
-    );
-    setCurrentSound(sound);
+  const playSong = (song: Song) => {
+    setCurrentSong(song);
     setIsPlaying(true);
-    setDuration(status.durationMillis || 0);
   };
 
-  const onPlaybackStatusUpdate = (status: any) => {
-    if (status.isLoaded) {
-      setCurrentPosition(status.positionMillis);
-      setIsPlaying(status.isPlaying);
-    }
-  };
-
-  const togglePlayPause = async () => {
-    if (!currentSound) return;
-    if (isPlaying) await currentSound.pauseAsync();
-    else await currentSound.playAsync();
+  const togglePlayPause = () => {
+    setIsPlaying((prev) => !prev);
   };
 
   const renderSong = ({ item }: { item: Song }) => (
@@ -143,18 +123,6 @@ export default function MediaLibrary() {
           </TouchableOpacity>
         )}
       </View>
-      {currentSound && <Slider
-        style={{ marginTop: 8 }}
-        minimumValue={0}
-        maximumValue={duration}
-        value={currentPosition}
-        onSlidingComplete={async (val) => { if(currentSound) await currentSound.setPositionAsync(val); }}
-        minimumTrackTintColor="#25D366"
-        maximumTrackTintColor="#fff"
-      />}
-      {currentSound && <TouchableOpacity onPress={togglePlayPause} style={styles.playBtn}>
-        <Text style={styles.playText}>{isPlaying ? '⏸ Pause' : '▶ Play'}</Text>
-      </TouchableOpacity>}
     </View>
   );
 
@@ -175,6 +143,33 @@ export default function MediaLibrary() {
         renderItem={renderSong}
         contentContainerStyle={{ padding: 16 }}
       />
+
+      {currentSong && (
+        <View style={{ padding: 16 }}>
+          <Video
+            source={{ uri: currentSong.url }}
+            audioOnly={true}
+            paused={!isPlaying}
+            onProgress={({ currentTime, seekableDuration }) => {
+              setCurrentPosition(currentTime);
+              setDuration(seekableDuration);
+            }}
+            onEnd={() => setIsPlaying(false)}
+          />
+          <Slider
+            style={{ marginTop: 8 }}
+            minimumValue={0}
+            maximumValue={duration}
+            value={currentPosition}
+            onSlidingComplete={(val) => setCurrentPosition(val)}
+            minimumTrackTintColor="#25D366"
+            maximumTrackTintColor="#fff"
+          />
+          <TouchableOpacity onPress={togglePlayPause} style={styles.playBtn}>
+            <Text style={styles.playText}>{isPlaying ? '⏸ Pause' : '▶ Play'}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <Modal visible={modalVisible} transparent animationType="slide">
         <ScrollView contentContainerStyle={styles.modalOverlay}>
