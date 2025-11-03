@@ -1,4 +1,3 @@
-// App.tsx
 import React, { useEffect, useState, useRef } from "react";
 import {
   View,
@@ -6,25 +5,19 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
-  ScrollView,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
-  FlatList,
   Dimensions,
   StatusBar,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import Video from "react-native-video";
-import {
-  auth,
-  db
-} from "../../firebase";
+import { auth, db } from "../../firebase";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  onAuthStateChanged,
   signOut,
-  onAuthStateChanged
 } from "firebase/auth";
 import {
   doc,
@@ -32,322 +25,252 @@ import {
   getDoc,
   collection,
   addDoc,
-  onSnapshot,
   query,
-  orderBy
+  orderBy,
+  onSnapshot,
+  updateDoc,
+  arrayUnion,
 } from "firebase/firestore";
 
-const { width, height } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
 
-interface IUserData {
-  email: string;
-  name: string;
-  account: number;
-  age: number;
-  createdAt: Date;
-  avatar?: string;
-}
-
-interface IMessage {
-  id: string;
-  text: string;
-  senderId: string;
-  timestamp: any;
-}
-
-export default function App() {
+export default function WhatsAppLikeApp() {
+  const [user, setUser] = useState(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
-  const [account, setAccount] = useState("");
-  const [age, setAge] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
-  const [isLoginMode, setIsLoginMode] = useState(true);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [user, setUser] = useState<IUserData | null>(null);
+  const [isLogin, setIsLogin] = useState(true);
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
+  const [receiverEmail, setReceiverEmail] = useState("");
+  const flatListRef = useRef(null);
 
-  // Video feed
-  const [videos, setVideos] = useState<any[]>([]);
-  const [showVideoFeed, setShowVideoFeed] = useState(false);
-  const videoRefs = useRef<any[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-
-  // Chat
-  const [chatGroups, setChatGroups] = useState<{ id: string; name: string }[]>([]);
-  const [activeChat, setActiveChat] = useState<string | null>(null);
-  const [chatMessages, setChatMessages] = useState<IMessage[]>([]);
-  const [chatText, setChatText] = useState("");
-  const chatListRef = useRef<FlatList>(null);
-
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) setCurrentIndex(viewableItems[0].index);
-  });
-  const viewConfigRef = useRef({ viewAreaCoveragePercentThreshold: 80 });
-
-  // 🔹 Persistent login
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const unsub = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
-        const docRef = doc(db, "users", currentUser.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setUser(docSnap.data() as IUserData);
-          setIsLoggedIn(true);
-        }
-      } else {
-        setIsLoggedIn(false);
-        setUser(null);
-      }
+        const docSnap = await getDoc(doc(db, "users", currentUser.uid));
+        if (docSnap.exists()) setUser(docSnap.data());
+        else setUser({ id: currentUser.uid, email: currentUser.email });
+      } else setUser(null);
     });
-    return () => unsubscribe();
+    return () => unsub();
   }, []);
 
-  // 🔄 Fetch video ads
+  // Real-time listener for current chat (based on user & receiver)
   useEffect(() => {
-    const unsubscribe = onSnapshot(doc(db, "videos", "ads"), (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        if (data?.soso) setVideos([{ id: "ads", uri: data.soso }]);
-      }
+    if (!user || !receiverEmail) return;
+    const chatId = [user.email, receiverEmail].sort().join("_");
+    const q = query(collection(db, "chats", chatId, "messages"), orderBy("timestamp", "asc"));
+    const unsub = onSnapshot(q, (snap) => {
+      const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setMessages(arr);
+      flatListRef.current?.scrollToEnd({ animated: true });
     });
-    return () => unsubscribe();
-  }, []);
+    return () => unsub();
+  }, [user, receiverEmail]);
 
-  // 🔹 Video auto-play
-  useEffect(() => {
-    if (videos.length > 0) setCurrentIndex(0);
-  }, [videos]);
-
-  // 🔹 Show welcome video for 10s
-  useEffect(() => {
-    if (isLoggedIn && user) {
-      const timer = setTimeout(() => setShowVideoFeed(true), 10000);
-      return () => clearTimeout(timer);
+  const handleSignIn = async () => {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (err) {
+      alert(err.message);
     }
-  }, [isLoggedIn, user]);
-
-  // 🔹 Fetch chat groups the user belongs to
-  useEffect(() => {
-    if (!user) return;
-    const q = query(collection(db, "chats"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const groups = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(chat => chat.members?.includes(auth.currentUser?.uid));
-      setChatGroups(groups as any);
-      if (!activeChat && groups.length > 0) setActiveChat(groups[0].id);
-    });
-    return () => unsubscribe();
-  }, [user]);
-
-  // 🔹 Listen to messages in active chat
-  useEffect(() => {
-    if (!activeChat) return;
-    const messagesRef = collection(db, "chats", activeChat, "messages");
-    const q = query(messagesRef, orderBy("timestamp", "asc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as IMessage));
-      setChatMessages(msgs);
-      chatListRef.current?.scrollToEnd({ animated: true });
-    });
-    return () => unsubscribe();
-  }, [activeChat]);
-
-  // 🔹 Auth helpers
-  const validateEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  const setMsg = (msg: string) => { setMessage(msg); setTimeout(() => setMessage(""), 5000); return false; };
-  const validateForm = (): boolean => {
-    if (!email.trim()) return setMsg("Email required");
-    if (!validateEmail(email)) return setMsg("Invalid email");
-    if (!password.trim()) return setMsg("Password required");
-    if (!isLoginMode) {
-      if (!name.trim()) return setMsg("Full name required");
-      if (password !== confirmPassword) return setMsg("Passwords do not match");
-      if (isNaN(Number(age)) || Number(age) <= 0) return setMsg("Enter valid age");
-    }
-    return true;
   };
 
   const handleSignUp = async () => {
-    if (!validateForm()) return;
-    setLoading(true); setMessage("");
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const userObj = userCredential.user;
-      const userData: IUserData = {
-        email: userObj.email || email,
-        name,
-        account: Number(account) || 0,
-        age: Number(age) || 0,
-        createdAt: new Date(),
-        avatar: `https://i.pravatar.cc/150?u=${email}`,
-      };
-      await setDoc(doc(db, "users", userObj.uid), userData);
-      setUser(userData); setIsLoggedIn(true); setMessage("✅ Account created!");
-    } catch (err: any) { setMsg("Error: " + err.message); } finally { setLoading(false); }
-  };
-
-  const handleSignIn = async () => {
-    if (!validateForm()) return;
-    setLoading(true); setMessage("");
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const userObj = userCredential.user;
-      const docRef = doc(db, "users", userObj.uid);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) { setUser(docSnap.data() as IUserData); }
-      setIsLoggedIn(true);
-    } catch (err: any) { setMsg("Error: " + err.message); } finally { setLoading(false); }
-  };
-
-  const handleLogout = async () => { await signOut(auth); setIsLoggedIn(false); setUser(null); setShowVideoFeed(false); };
-
-  const sendChatMessage = async () => {
-    if (!chatText.trim() || !activeChat) return;
-    await addDoc(collection(db, "chats", activeChat, "messages"), {
-      text: chatText,
-      senderId: auth.currentUser?.uid,
-      timestamp: new Date(),
-    });
-    setChatText("");
-  };
-
-  // 🔹 Logged-in screens
-  if (isLoggedIn && user) {
-    // Welcome video
-    if (!showVideoFeed) {
-      return (
-        <View style={styles.darkContainer}>
-          <StatusBar hidden />
-          <Video source={{ uri: "https://xlijah.com/soso.mp4" }} style={styles.fullscreenVideo} resizeMode="cover" repeat paused={false} muted={false} />
-        </View>
-      );
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const u = { id: cred.user.uid, email, name, avatar: `https://i.pravatar.cc/150?u=${email}` };
+      await setDoc(doc(db, "users", cred.user.uid), u);
+      setUser(u);
+    } catch (err) {
+      alert(err.message);
     }
+  };
 
-    // Video feed + Chat
+  const handleSend = async () => {
+    if (!text.trim() || !receiverEmail) return;
+    const chatId = [user.email, receiverEmail].sort().join("_");
+    const message = {
+      text,
+      senderId: user.id,
+      senderEmail: user.email,
+      receiverEmail,
+      timestamp: new Date(),
+    };
+
+    try {
+      await addDoc(collection(db, "chats", chatId, "messages"), message);
+      // Add message reference to both sender and receiver message boxes
+      const senderRef = doc(db, "users", user.id);
+      const receiverRef = doc(db, "users", receiverEmail);
+      await Promise.all([
+        updateDoc(senderRef, { inbox: arrayUnion({ ...message }) }),
+        updateDoc(receiverRef, { inbox: arrayUnion({ ...message }) }),
+      ]);
+    } catch (err) {
+      console.error("Send message error:", err);
+    }
+    setText("");
+  };
+
+  if (!user) {
     return (
-      <View style={styles.darkContainer}>
-        <StatusBar hidden />
-        {videos.length === 0 ? (
-          <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-            <ActivityIndicator size="large" color="#00BFFF" />
-            <Text style={{ color: "#ccc", marginTop: 10 }}>Loading video...</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={videos}
-            keyExtractor={item => item.id}
-            renderItem={({ item, index }) => (
-              <View style={{ width, height, backgroundColor: "black" }}>
-                <Video ref={ref => (videoRefs.current[index] = ref)} source={{ uri: item.uri }} style={styles.video} resizeMode="cover" repeat paused={currentIndex !== index} ignoreSilentSwitch="obey" />
-              </View>
-            )}
-            pagingEnabled
-            decelerationRate="fast"
-            snapToAlignment="center"
-            showsVerticalScrollIndicator={false}
-            onViewableItemsChanged={onViewableItemsChanged.current}
-            viewabilityConfig={viewConfigRef.current}
-          />
+      <KeyboardAvoidingView style={styles.authContainer} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <Text style={styles.logo}>WhatsApp Clone</Text>
+        {!isLogin && (
+          <TextInput placeholder="Full Name" style={styles.input} value={name} onChangeText={setName} />
         )}
-
-        {/* Chat Overlay */}
-        <View style={styles.chatContainer}>
-          {/* Group Switch */}
-          <FlatList horizontal data={chatGroups} keyExtractor={item => item.id} renderItem={({ item }) => (
-            <TouchableOpacity onPress={() => setActiveChat(item.id)} style={[styles.groupBtn, activeChat === item.id && { backgroundColor: "#00BFFF" }]}>
-              <Text style={{ color: "#fff" }}>{item.name}</Text>
-            </TouchableOpacity>
-          )} />
-
-          {/* Messages */}
-          <FlatList ref={chatListRef} style={{ flex: 1, marginTop: 8 }} data={chatMessages} keyExtractor={item => item.id} renderItem={({ item }) => (
-            <View style={[styles.messageContainer, item.senderId === auth.currentUser?.uid && styles.myMessage]}>
-              <Text style={styles.messageText}>{item.text}</Text>
-            </View>
-          )} />
-
-          {/* Input */}
-          <View style={styles.inputRow}>
-            <TextInput style={styles.input} value={chatText} onChangeText={setChatText} placeholder="Type a message..." placeholderTextColor="#888" />
-            <TouchableOpacity style={styles.sendBtn} onPress={sendChatMessage}>
-              <Ionicons name="send" size={20} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
+        <TextInput placeholder="Email" style={styles.input} value={email} onChangeText={setEmail} />
+        <TextInput placeholder="Password" secureTextEntry style={styles.input} value={password} onChangeText={setPassword} />
+        <TouchableOpacity style={styles.btn} onPress={isLogin ? handleSignIn : handleSignUp}>
+          <Text style={styles.btnText}>{isLogin ? "Login" : "Sign Up"}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setIsLogin(!isLogin)}>
+          <Text style={styles.toggle}>{isLogin ? "No account? Sign up" : "Have an account? Login"}</Text>
+        </TouchableOpacity>
+      </KeyboardAvoidingView>
     );
   }
 
-  // 🔐 Login/Signup screen
   return (
-    <KeyboardAvoidingView style={styles.darkContainer} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 20 }}>
-        <View style={{ alignItems: "center", marginBottom: 30 }}>
-          <Ionicons name="lock-closed-outline" size={52} color="#00BFFF" />
-          <Text style={{ fontSize: 26, fontWeight: "700", color: "#fff", marginTop: 10 }}>{isLoginMode ? "Welcome Back" : "Join the Community"}</Text>
-          <Text style={{ color: "#999", fontSize: 15, marginTop: 4 }}>{isLoginMode ? "Sign in to continue" : "Create your account below"}</Text>
-        </View>
+    <View style={styles.container}>
+      <StatusBar backgroundColor="#075E54" barStyle="light-content" />
+      <View style={styles.header}>
+        <Text style={styles.headerText}>Chat</Text>
+        <TouchableOpacity onPress={() => signOut(auth)}>
+          <Ionicons name="log-out-outline" color="#fff" size={24} />
+        </TouchableOpacity>
+      </View>
 
-        <View style={{ backgroundColor: "#1a1a1a", padding: 24, borderRadius: 20 }}>
-          <DarkField label="Email" value={email} placeholder="you@example.com" onChangeText={setEmail} />
-          <DarkPasswordField label="Password" value={password} onChangeText={setPassword} show={showPassword} toggle={() => setShowPassword(!showPassword)} />
-          {!isLoginMode && <DarkPasswordField label="Confirm Password" value={confirmPassword} onChangeText={setConfirmPassword} show={showConfirmPassword} toggle={() => setShowConfirmPassword(!showConfirmPassword)} />}
-          {!isLoginMode && <>
-            <DarkField label="Full Name" value={name} onChangeText={setName} />
-            <DarkField label="Account" value={account} onChangeText={setAccount} keyboardType="numeric" />
-            <DarkField label="Age" value={age} onChangeText={setAge} keyboardType="numeric" />
-          </>}
-          <TouchableOpacity style={[{ backgroundColor: "#00BFFF", paddingVertical: 14, borderRadius: 12, alignItems: "center", marginTop: 10 }, loading && { opacity: 0.6 }]} onPress={isLoginMode ? handleSignIn : handleSignUp} disabled={loading}>
-            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 16 }}>{isLoginMode ? "Sign In" : "Sign Up"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setIsLoginMode(!isLoginMode)}>
-            <Text style={{ color: "#00BFFF", textAlign: "center", marginTop: 16 }}>{isLoginMode ? "Don’t have an account? Sign Up" : "Already have one? Sign In"}</Text>
-          </TouchableOpacity>
-          {message ? <Text style={{ textAlign: "center", marginTop: 12, fontSize: 14, color: message.includes("✅") ? "#4CAF50" : "#FF5252" }}>{message}</Text> : null}
-        </View>
+      <View style={styles.receiverBar}>
+        <TextInput
+          placeholder="Enter receiver email"
+          placeholderTextColor="#ccc"
+          style={styles.receiverInput}
+          value={receiverEmail}
+          onChangeText={setReceiverEmail}
+        />
+      </View>
 
-        {loading && <ActivityIndicator size="large" color="#00BFFF" />}
-      </ScrollView>
-    </KeyboardAvoidingView>
+      <FlatList
+        ref={flatListRef}
+        data={messages}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View
+            style={[
+              styles.messageBubble,
+              item.senderEmail === user.email ? styles.myBubble : styles.theirBubble,
+            ]}
+          >
+            <Text style={styles.messageText}>{item.text}</Text>
+          </View>
+        )}
+        contentContainerStyle={{ padding: 10 }}
+      />
+
+      <View style={styles.inputBar}>
+        <TextInput
+          style={styles.textBox}
+          placeholder="Type a message"
+          placeholderTextColor="#ccc"
+          value={text}
+          onChangeText={setText}
+        />
+        <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
+          <Ionicons name="send" size={20} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
-// 🔹 Reusable Input Fields
-const DarkField = ({ label, value, onChangeText, keyboardType = "default", placeholder }: any) => (
-  <View style={{ marginBottom: 14 }}>
-    <Text style={{ color: "#ccc", fontSize: 14, marginBottom: 4 }}>{label}</Text>
-    <TextInput style={{ backgroundColor: "#111", color: "#fff", borderRadius: 10, paddingVertical: 12, paddingHorizontal: 14, fontSize: 16 }} placeholder={placeholder} placeholderTextColor="#666" value={value} onChangeText={onChangeText} keyboardType={keyboardType} />
-  </View>
-);
-
-const DarkPasswordField = ({ label, value, onChangeText, show, toggle }: any) => (
-  <View style={{ marginBottom: 14 }}>
-    <Text style={{ color: "#ccc", fontSize: 14, marginBottom: 4 }}>{label}</Text>
-    <View style={{ flexDirection: "row", alignItems: "center" }}>
-      <TextInput style={{ flex: 1, backgroundColor: "#111", color: "#fff", borderRadius: 10, paddingVertical: 12, paddingHorizontal: 14, fontSize: 16 }} placeholder="••••••" placeholderTextColor="#666" value={value} onChangeText={onChangeText} secureTextEntry={!show} />
-      <TouchableOpacity onPress={toggle} style={{ padding: 4 }}>
-        <Ionicons name={show ? "eye-off-outline" : "eye-outline"} size={20} color="#999" />
-      </TouchableOpacity>
-    </View>
-  </View>
-);
-
 const styles = StyleSheet.create({
-  darkContainer: { flex: 1, backgroundColor: "#0a0a0a" },
-  fullscreenVideo: { position: "absolute", top: 0, left: 0, width: "100%", height: "100%" },
-  video: { width: "100%", height: "100%" },
-  chatContainer: { position: "absolute", bottom: 0, left: 0, right: 0, height: 300, backgroundColor: "#111", borderTopLeftRadius: 12, borderTopRightRadius: 12, padding: 8 },
-  chatHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 12, borderBottomWidth: 1, borderColor: "#333" },
-  inputRow: { flexDirection: "row", padding: 8, borderTopWidth: 1, borderColor: "#333", backgroundColor: "#111" },
-  input: { flex: 1, backgroundColor: "#222", borderRadius: 20, paddingHorizontal: 14, color: "#fff", fontSize: 16 },
-  sendBtn: { marginLeft: 8, backgroundColor: "#00BFFF", borderRadius: 20, padding: 12, alignItems: "center", justifyContent: "center" },
-  messageContainer: { maxWidth: "70%", padding: 10, borderRadius: 12, marginVertical: 4, backgroundColor: "#333" },
-  myMessage: { backgroundColor: "#00BFFF", alignSelf: "flex-end" },
-  messageText: { color: "#fff", fontSize: 16 },
-  groupBtn: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: "#222", borderRadius: 20, marginRight: 8 },
+  container: { flex: 1, backgroundColor: "#ECE5DD" },
+  header: {
+    height: 60,
+    backgroundColor: "#075E54",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 15,
+  },
+  headerText: { color: "#fff", fontSize: 20, fontWeight: "bold" },
+  receiverBar: {
+    backgroundColor: "#fff",
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 8,
+  },
+  receiverInput: {
+    flex: 1,
+    backgroundColor: "#f1f1f1",
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    fontSize: 16,
+    color: "#000",
+  },
+  authContainer: {
+    flex: 1,
+    backgroundColor: "#128C7E",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  logo: { color: "#fff", fontSize: 26, fontWeight: "bold", marginBottom: 20 },
+  input: {
+    backgroundColor: "#fff",
+    width: "100%",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 10,
+    fontSize: 16,
+  },
+  btn: {
+    backgroundColor: "#25D366",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 8,
+    marginTop: 5,
+  },
+  btnText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  toggle: { color: "#fff", marginTop: 15 },
+  inputBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    padding: 8,
+  },
+  textBox: {
+    flex: 1,
+    backgroundColor: "#f1f1f1",
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    fontSize: 16,
+    color: "#000",
+  },
+  sendBtn: {
+    marginLeft: 8,
+    backgroundColor: "#25D366",
+    borderRadius: 20,
+    padding: 10,
+  },
+  messageBubble: {
+    maxWidth: "75%",
+    padding: 10,
+    borderRadius: 8,
+    marginVertical: 4,
+  },
+  myBubble: {
+    backgroundColor: "#DCF8C6",
+    alignSelf: "flex-end",
+  },
+  theirBubble: {
+    backgroundColor: "#fff",
+    alignSelf: "flex-start",
+  },
+  messageText: { fontSize: 16, color: "#000" },
 });
