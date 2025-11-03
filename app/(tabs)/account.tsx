@@ -8,7 +8,6 @@ import {
   FlatList,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { db } from "../../firebase";
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
@@ -25,14 +24,12 @@ export default function AccountAndMoneyManager() {
   const [transferAmount, setTransferAmount] = useState("");
 
   const quickTopUps = [5000, 10000, 20000, 50000, 100000];
-
   const mobileMoneyProviders = [
     { name: "T-Money", color: "#FFD700" },
     { name: "X-Money", color: "#FF4500" },
     { name: "E-Money", color: "#4CAF50" },
   ];
 
-  // --- LOGIN / REGISTER FUNCTION ---
   const handleLoginOrRegister = async () => {
     if (!name.trim()) {
       setLabel("Enter your name.");
@@ -71,7 +68,7 @@ export default function AccountAndMoneyManager() {
         setTransactions([]);
         setLabel(`Account created for ${defaultData.Name}`);
       }
-      setView("account"); // hide login/register card
+      setView("account");
     } catch (err) {
       console.error(err);
       setLabel("Login/Register failed.");
@@ -80,15 +77,18 @@ export default function AccountAndMoneyManager() {
     }
   };
 
-  // --- FIRESTORE UPDATER ---
   const updateFirestore = async (updates: any) => {
     if (!profile?.Name) return;
     const docRef = doc(db, "acc", profile.Name.toLowerCase());
     await updateDoc(docRef, updates);
   };
 
-  // --- TOP UP ---
   const simulateTopUp = async (amount: number, method?: string) => {
+    // Prevent self top-up
+    if (method === profile?.Name) {
+      setLabel("You cannot top-up yourself.");
+      return;
+    }
     if (!amount || isNaN(amount)) {
       setLabel("Enter valid amount.");
       return;
@@ -109,7 +109,6 @@ export default function AccountAndMoneyManager() {
     await updateFirestore({ net: newNet, transactions: updatedTxs });
   };
 
-  // --- SEND MONEY ---
   const sendMoney = async () => {
     const amount = Number(transferAmount);
     if (!recipientName.trim()) {
@@ -133,7 +132,6 @@ export default function AccountAndMoneyManager() {
     }
     const recipientData = snap.data();
 
-    // Update sender
     const newSenderTx = {
       receiver: recipientName.trim(),
       amount,
@@ -147,7 +145,6 @@ export default function AccountAndMoneyManager() {
     setTransactions(updatedSenderTxs);
     await updateFirestore({ net: newSenderNet, transactions: updatedSenderTxs });
 
-    // Update recipient
     const newRecipientTx = {
       receiver: profile.Name,
       amount,
@@ -164,7 +161,6 @@ export default function AccountAndMoneyManager() {
     setTransferAmount("");
   };
 
-  // --- UI ---
   if (loading)
     return (
       <View style={styles.centered}>
@@ -228,13 +224,6 @@ export default function AccountAndMoneyManager() {
           </TouchableOpacity>
         ))}
       </View>
-
-      <TouchableOpacity
-        style={styles.topUpButton}
-        onPress={() => simulateTopUp(Number(topUpAmount))}
-      >
-        <Text style={styles.topUpButtonText}>Top-Up Now</Text>
-      </TouchableOpacity>
 
       <Text style={styles.sectionTitle}>Send Money</Text>
       <TextInput
@@ -321,8 +310,9 @@ const styles = StyleSheet.create({
   topUpButton: { backgroundColor: "#FF5722", padding: 14, borderRadius: 20, alignItems: "center", marginBottom: 10 },
   topUpButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   txCard: { backgroundColor: "#1a1a1a", borderRadius: 10, padding: 10, marginBottom: 10 },
-  txText: { color: "#fff", fontSize: 14 },
-  noTx: { color: "#aaa", textAlign: "center", marginVertical: 10 },
-  logoutButton: { backgroundColor: "#333", padding: 10, borderRadius: 10, marginTop: 10 },
-  logoutText: { color: "#fff", textAlign: "center", fontWeight: "600" },
+    txText: { color: "#fff", fontSize: 14, marginBottom: 2 },
+  noTx: { color: "#888", fontStyle: "italic", textAlign: "center", marginVertical: 10 },
+  logoutButton: { backgroundColor: "#555", padding: 12, borderRadius: 20, alignItems: "center", marginTop: 20 },
+  logoutText: { color: "#fff", fontWeight: "700", fontSize: 16 },
 });
+
