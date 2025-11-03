@@ -22,6 +22,7 @@ export default function AccountAndMoneyManager() {
   const [label, setLabel] = useState("");
   const [recipientName, setRecipientName] = useState("");
   const [transferAmount, setTransferAmount] = useState("");
+  const [showTransactions, setShowTransactions] = useState(false);
 
   const quickTopUps = [5000, 10000, 20000, 50000, 100000];
   const mobileMoneyProviders = [
@@ -84,7 +85,6 @@ export default function AccountAndMoneyManager() {
   };
 
   const simulateTopUp = async (amount: number, method?: string) => {
-    // Prevent self top-up
     if (method === profile?.Name) {
       setLabel("You cannot top-up yourself.");
       return;
@@ -245,30 +245,38 @@ export default function AccountAndMoneyManager() {
         <Text style={styles.topUpButtonText}>Send Money</Text>
       </TouchableOpacity>
 
-      <Text style={styles.sectionTitle}>Transaction History</Text>
-      {transactions.length > 0 ? (
-        <FlatList
-          data={transactions}
-          keyExtractor={(_, i) => i.toString()}
-          renderItem={({ item }) => (
-            <View style={styles.txCard}>
-              <Text style={styles.txText}>To: {item.receiver}</Text>
-              <Text style={styles.txText}>Amount: Shs {item.amount}</Text>
-              <Text style={styles.txText}>{item.timestamp}</Text>
-              <Text style={styles.txText}>Proof: {item.proof}</Text>
-              <Text
-                style={[
-                  styles.txText,
-                  { color: item.status === "Completed" ? "#4CAF50" : "#FFD700" },
-                ]}
-              >
-                Status: {item.status}
-              </Text>
-            </View>
-          )}
-        />
-      ) : (
-        <Text style={styles.noTx}>No transactions yet.</Text>
+      <TouchableOpacity
+        style={[styles.topUpButton, { backgroundColor: '#007bff' }]}
+        onPress={() => setShowTransactions(!showTransactions)}
+      >
+        <Text style={styles.topUpButtonText}>{showTransactions ? 'Hide Transactions' : 'Show Transactions'}</Text>
+      </TouchableOpacity>
+
+      {showTransactions && (
+        transactions.length > 0 ? (
+          <FlatList
+            data={transactions}
+            keyExtractor={(_, i) => i.toString()}
+            renderItem={({ item }) => (
+              <View style={styles.txCard}>
+                <Text style={styles.txText}>To: {item.receiver}</Text>
+                <Text style={styles.txText}>Amount: Shs {item.amount}</Text>
+                <Text style={styles.txText}>{item.timestamp}</Text>
+                <Text style={styles.txText}>Proof: {item.proof}</Text>
+                <Text
+                  style={[
+                    styles.txText,
+                    { color: item.status === "Completed" ? "#4CAF50" : "#FFD700" },
+                  ]}
+                >
+                  Status: {item.status}
+                </Text>
+              </View>
+            )}
+          />
+        ) : (
+          <Text style={styles.noTx}>No transactions yet.</Text>
+        )
       )}
 
       <TouchableOpacity
@@ -310,9 +318,8 @@ const styles = StyleSheet.create({
   topUpButton: { backgroundColor: "#FF5722", padding: 14, borderRadius: 20, alignItems: "center", marginBottom: 10 },
   topUpButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   txCard: { backgroundColor: "#1a1a1a", borderRadius: 10, padding: 10, marginBottom: 10 },
-    txText: { color: "#fff", fontSize: 14, marginBottom: 2 },
+  txText: { color: "#fff", fontSize: 14, marginBottom: 2 },
   noTx: { color: "#888", fontStyle: "italic", textAlign: "center", marginVertical: 10 },
   logoutButton: { backgroundColor: "#555", padding: 12, borderRadius: 20, alignItems: "center", marginTop: 20 },
   logoutText: { color: "#fff", fontWeight: "700", fontSize: 16 },
 });
-
