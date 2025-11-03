@@ -26,9 +26,9 @@ export default function AccountAndMoneyManager() {
 
   const quickTopUps = [5000, 10000, 20000, 50000, 100000];
   const mobileMoneyProviders = [
-    { name: "T-Money", color: "#FFD700" },
-    { name: "X-Money", color: "#FF4500" },
-    { name: "E-Money", color: "#4CAF50" },
+    { name: "Tx", color: "#FFD700" },
+    { name: "Xn", color: "#FF4500" },
+    { name: "rx", color: "#4CAF50" },
   ];
 
   const handleLoginOrRegister = async () => {
