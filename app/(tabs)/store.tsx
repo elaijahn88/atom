@@ -7,36 +7,54 @@ import {
   TouchableOpacity,
   StyleSheet,
   Animated,
+  Dimensions,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { db } from "../../firebase";
-import { doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
+import { auth, db } from "../../firebase";
+import { onAuthStateChanged } from "firebase/auth";
+import { doc, onSnapshot, updateDoc, arrayUnion } from "firebase/firestore";
 
-const MyStore = ({ username }) => {
+const numColumns = 2;
+const screenWidth = Dimensions.get("window").width;
+const cardWidth = screenWidth / numColumns - 20;
+
+const MyStore = () => {
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
-  const [balance, setBalance] = useState(0);
+  const [userInfo, setUserInfo] = useState<any>(null);
+  const [userEmail, setUserEmail] = useState("");
   const toastAnim = useRef(new Animated.Value(0)).current;
 
-  const showToast = (msg) => {
+  const showToast = (msg: string) => {
     Animated.sequence([
       Animated.timing(toastAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
       Animated.delay(1200),
       Animated.timing(toastAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
     ]).start();
+    console.log(msg);
   };
 
+  // 🔹 Get logged-in user email
   useEffect(() => {
-    if (!username) return;
-    const accRef = doc(db, "acc", username);
-    const unsub = onSnapshot(accRef, (snap) => {
-      if (!snap.exists()) return setBalance(0);
-      const data = snap.data() || {};
-      setBalance(Number(data.net) || 0);
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      if (user?.email) setUserEmail(user.email);
+    });
+    return () => unsubAuth();
+  }, []);
+
+  // 🔹 Fetch user info from acc collection
+  useEffect(() => {
+    if (!userEmail) return;
+    const userRef = doc(db, "acc", userEmail);
+    const unsub = onSnapshot(userRef, (snap) => {
+      if (!snap.exists()) return setUserInfo(null);
+      setUserInfo(snap.data());
     });
     return () => unsub();
-  }, [username]);
+  }, [userEmail]);
 
+  // 🔹 Fetch products automatically
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "phones", "iphone"), (snap) => {
       const data = snap.data() || {};
@@ -46,30 +64,7 @@ const MyStore = ({ username }) => {
     return () => unsub();
   }, []);
 
-  const seedData = async () => {
-    try {
-      const seedProducts = [
-        { id: 12, name: "iPhone 12", price: 3500000, image: "https://xlijah.com/pics/phones/iphone/12.jpg" },
-        { id: 13, name: "iPhone 13", price: 4200000, image: "https://xlijah.com/pics/phones/iphone/13.jpg" },
-        { id: 14, name: "iPhone 14", price: 4900000, image: "https://xlijah.com/pics/phones/iphone/14.jpg" },
-        { id: 15, name: "iPhone 15", price: 5600000, image: "https://xlijah.com/pics/phones/iphone/15.jpg" },
-        { id: 16, name: "iPhone 16", price: 6300000, image: "https://xlijah.com/pics/phones/iphone/16.jpg" },
-        { id: 17, name: "iPhone 17", price: 7000000, image: "https://xlijah.com/pics/phones/iphone/17.jpg" },
-        { id: 18, name: "Benz Car", price: 25000000, image: "https://xlijah.com/pics/benz.jpg" },
-        { id: 19, name: "Gold Bar", price: 15000000, image: "https://xlijah.com/pics/gold.jpg" },
-        { id: 20, name: "iPhone 14 Pro", price: 5400000, image: "https://xlijah.com/pics/phones/iphone/14.jpg" },
-        { id: 21, name: "iPhone 14 Max", price: 5900000, image: "https://xlijah.com/pics/phones/iphone/14.jpg" },
-        { id: 22, name: "iPhone 14 Ultra", price: 6400000, image: "https://xlijah.com/pics/phones/iphone/14.jpg" },
-      ];
-      await setDoc(doc(db, "phones", "iphone"), { products: seedProducts });
-      showToast("Products with UGX prices seeded successfully");
-    } catch (e) {
-      console.error(e);
-      showToast("Failed to seed data");
-    }
-  };
-
-  const addToCart = (item) => {
+  const addToCart = (item: any) => {
     setCart((prev = []) => {
       const safePrev = Array.isArray(prev) ? prev : [];
       if (safePrev.find((p) => p.id === item.id)) return safePrev;
@@ -78,7 +73,40 @@ const MyStore = ({ username }) => {
     showToast(`${item.name} added to cart`);
   };
 
-  const renderItem = ({ item }) => (
+  const getCartTotal = () => {
+    return cart.reduce((sum, item) => sum + Number(item.price || 0), 0);
+  };
+
+  const handlePayment = async () => {
+    if (!userInfo) return;
+    const total = getCartTotal();
+    if (total > (userInfo.net || 0)) {
+      Alert.alert("Insufficient Funds", "Your balance is too low to complete this purchase.");
+      return;
+    }
+
+    try {
+      const userRef = doc(db, "acc", userEmail);
+
+      // Update net balance
+      await updateDoc(userRef, { net: userInfo.net - total });
+
+      // Add each purchased item to purchases array
+      const purchaseRecords = cart.map((item) => ({
+        ...item,
+        timestamp: new Date(),
+      }));
+      await updateDoc(userRef, { purchases: arrayUnion(...purchaseRecords) });
+
+      setCart([]);
+      showToast(`Payment successful! UGX ${total.toLocaleString()} deducted.`);
+    } catch (err) {
+      console.error(err);
+      showToast("Payment failed. Try again.");
+    }
+  };
+
+  const renderItem = ({ item }: { item: any }) => (
     <View style={styles.card}>
       <Image
         source={item.image ? { uri: item.image.trim() } : { uri: "https://xlijah.com/pics/phones/iphone/12.jpg" }}
@@ -95,18 +123,30 @@ const MyStore = ({ username }) => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>My Store</Text>
-      <Text style={styles.balance}>Balance: {balance.toLocaleString()} UGX</Text>
-      <TouchableOpacity style={styles.seedButton} onPress={seedData}>
-        <Text style={{ color: "#fff" }}>Seed Products</Text>
-      </TouchableOpacity>
+      {userInfo && (
+        <View style={{ marginBottom: 10 }}>
+          <Text style={styles.header}>Welcome, {userInfo.Name}</Text>
+          <Text style={styles.balance}>Balance: {Number(userInfo.net).toLocaleString()} UGX</Text>
+          <Text>Phone: {userInfo.phone}</Text>
+        </View>
+      )}
 
       <FlatList
         data={products}
         renderItem={renderItem}
         keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={{ paddingBottom: 100 }}
+        numColumns={numColumns}
+        contentContainerStyle={{ paddingBottom: 120 }}
       />
+
+      {cart.length > 0 && (
+        <View style={styles.cartBar}>
+          <Text style={styles.cartText}>Cart Total: {getCartTotal().toLocaleString()} UGX</Text>
+          <TouchableOpacity style={styles.payButton} onPress={handlePayment}>
+            <Text style={{ color: "#fff", fontWeight: "bold" }}>Pay Now</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <Animated.View
         style={{
@@ -128,29 +168,23 @@ const MyStore = ({ username }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f5f5", padding: 10 },
-  header: { fontSize: 24, fontWeight: "bold", marginBottom: 10 },
-  balance: { fontSize: 16, marginBottom: 10 },
-  seedButton: {
-    backgroundColor: "#007AFF",
-    padding: 10,
-    borderRadius: 10,
-    alignItems: "center",
-    marginBottom: 10,
-  },
+  header: { fontSize: 24, fontWeight: "bold", marginBottom: 5 },
+  balance: { fontSize: 16, marginBottom: 5 },
   card: {
     backgroundColor: "#fff",
     borderRadius: 10,
-    marginBottom: 15,
+    margin: 5,
     padding: 10,
+    width: cardWidth,
     shadowColor: "#000",
     shadowOpacity: 0.1,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 4,
     elevation: 2,
   },
-  image: { width: "100%", height: 150, borderRadius: 10 },
-  title: { fontSize: 18, fontWeight: "bold", marginVertical: 5 },
-  price: { fontSize: 16, color: "#555", marginBottom: 5 },
+  image: { width: "100%", height: 120, borderRadius: 10 },
+  title: { fontSize: 16, fontWeight: "bold", marginVertical: 5 },
+  price: { fontSize: 14, color: "#555", marginBottom: 5 },
   addButton: {
     backgroundColor: "#28a745",
     flexDirection: "row",
@@ -160,6 +194,25 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   addText: { color: "#fff", marginLeft: 5 },
+
+  cartBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#007AFF",
+    padding: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  cartText: { color: "#fff", fontWeight: "bold" },
+  payButton: {
+    backgroundColor: "#28a745",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
 });
 
 export default MyStore;
