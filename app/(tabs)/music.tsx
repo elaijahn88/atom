@@ -15,7 +15,6 @@ import {
 import { db } from "../../firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import Video from "react-native-video";
-import Slider from "@react-native-community/slider";
 import { getAuth } from "firebase/auth";
 
 const { width } = Dimensions.get("window");
@@ -262,16 +261,6 @@ export default function MediaLibrary() {
             <Text style={{ color: "#fff" }}>{formatTime(currentPosition)}</Text>
             <Text style={{ color: "#fff" }}>{formatTime(duration)}</Text>
           </View>
-          <Slider
-            style={{ marginTop: 8 }}
-            minimumValue={0}
-            maximumValue={duration}
-            value={currentPosition}
-            onValueChange={(val) => setCurrentPosition(val)}
-            onSlidingComplete={(val) => videoRef.current?.seek(val)}
-            minimumTrackTintColor="#25D366"
-            maximumTrackTintColor="#fff"
-          />
           <TouchableOpacity onPress={togglePlayPause} style={styles.playBtn}>
             <Text style={styles.playText}>{isPlaying ? "⏸ Pause" : "▶ Play"}</Text>
           </TouchableOpacity>
