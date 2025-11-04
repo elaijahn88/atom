@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,21 +8,34 @@ import {
   FlatList,
   StyleSheet,
   ActivityIndicator,
+  Modal,
 } from "react-native";
+import { getAuth } from "firebase/auth";
 import { db } from "../../firebase";
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 
 export default function AccountAndMoneyManager() {
-  const [name, setName] = useState("");
-  const [view, setView] = useState("login"); // "login" | "account"
   const [profile, setProfile] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [topUpAmount, setTopUpAmount] = useState("");
   const [transactions, setTransactions] = useState<any[]>([]);
   const [label, setLabel] = useState("");
   const [recipientName, setRecipientName] = useState("");
   const [transferAmount, setTransferAmount] = useState("");
   const [showTransactions, setShowTransactions] = useState(false);
+  const [editProfileModal, setEditProfileModal] = useState(false);
+
+  const [editData, setEditData] = useState({
+    Name: "",
+    age: "",
+    dob: "",
+    father: "",
+    mother: "",
+    idno: "",
+    nin: "",
+    nok: "",
+    phone: "",
+  });
 
   const quickTopUps = [5000, 10000, 20000, 50000, 100000];
   const mobileMoneyProviders = [
@@ -31,64 +44,68 @@ export default function AccountAndMoneyManager() {
     { name: "rx", color: "#4CAF50" },
   ];
 
-  const handleLoginOrRegister = async () => {
-    if (!name.trim()) {
-      setLabel("Enter your name.");
-      return;
-    }
-    setLoading(true);
-    const userDocRef = doc(db, "acc", name.trim().toLowerCase());
+  const auth = getAuth();
+  const currentUser = auth.currentUser;
 
-    try {
-      const snap = await getDoc(userDocRef);
-      if (snap.exists()) {
-        const data = snap.data();
-        if (!("net" in data)) data.net = 0;
-        if (!("transactions" in data)) data.transactions = [];
-        await updateDoc(userDocRef, { net: data.net, transactions: data.transactions });
-        setProfile(data);
-        setTransactions(data.transactions);
-        setLabel(`Welcome back, ${data.Name}!`);
-      } else {
-        const defaultData = {
-          Name: name.trim(),
-          age: 26,
-          bod: "",
-          father: "",
-          mother: "",
-          idno: 0,
-          nin: "",
-          nok: "",
-          phone: 0,
-          net: 0,
-          transactions: [],
-          createdAt: new Date().toISOString(),
-        };
-        await setDoc(userDocRef, defaultData);
-        setProfile(defaultData);
-        setTransactions([]);
-        setLabel(`Account created for ${defaultData.Name}`);
+  // ---------------- Fetch current user profile ----------------
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      if (!currentUser) {
+        setLabel("No logged-in user found. Please log in.");
+        setLoading(false);
+        return;
       }
-      setView("account");
-    } catch (err) {
-      console.error(err);
-      setLabel("Login/Register failed.");
-    } finally {
-      setLoading(false);
-    }
-  };
 
+      const userDocRef = doc(db, "acc", currentUser.uid);
+      try {
+        const snap = await getDoc(userDocRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          if (!("net" in data)) data.net = 0;
+          if (!("transactions" in data)) data.transactions = [];
+          setProfile(data);
+          setTransactions(data.transactions);
+          setLabel(`Welcome back, ${data.Name || currentUser.displayName || "User"}!`);
+        } else {
+          const defaultData = {
+            Name: currentUser.displayName || "User",
+            age: "",
+            dob: "",
+            father: "",
+            mother: "",
+            idno: "",
+            nin: "",
+            nok: "",
+            phone: currentUser.phoneNumber || "",
+            net: 0,
+            transactions: [],
+            createdAt: new Date().toISOString(),
+          };
+          await setDoc(userDocRef, defaultData);
+          setProfile(defaultData);
+          setTransactions([]);
+          setLabel(`Account created for ${defaultData.Name}`);
+        }
+      } catch (err) {
+        console.error(err);
+        setLabel("Failed to load user profile.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserProfile();
+  }, [currentUser]);
+
+  // ---------------- Firestore Update ----------------
   const updateFirestore = async (updates: any) => {
-    if (!profile?.Name) return;
-    const docRef = doc(db, "acc", profile.Name.toLowerCase());
+    if (!currentUser) return;
+    const docRef = doc(db, "acc", currentUser.uid);
     await updateDoc(docRef, updates);
   };
 
+  // ---------------- Top-Up Function ----------------
   const simulateTopUp = async (amount: number, method?: string) => {
-    if (method === profile?.Name) {
-      setLabel("You cannot top-up yourself.");
-      return;
-    }
     if (!amount || isNaN(amount)) {
       setLabel("Enter valid amount.");
       return;
@@ -109,6 +126,7 @@ export default function AccountAndMoneyManager() {
     await updateFirestore({ net: newNet, transactions: updatedTxs });
   };
 
+  // ---------------- Send Money ----------------
   const sendMoney = async () => {
     const amount = Number(transferAmount);
     if (!recipientName.trim()) {
@@ -161,6 +179,30 @@ export default function AccountAndMoneyManager() {
     setTransferAmount("");
   };
 
+  // ---------------- Open Edit Profile ----------------
+  const openEditProfile = () => {
+    setEditData({
+      Name: profile.Name || "",
+      age: profile.age || "",
+      dob: profile.dob || "",
+      father: profile.father || "",
+      mother: profile.mother || "",
+      idno: profile.idno || "",
+      nin: profile.nin || "",
+      nok: profile.nok || "",
+      phone: profile.phone || "",
+    });
+    setEditProfileModal(true);
+  };
+
+  // ---------------- Save Edited Profile ----------------
+  const saveProfile = async () => {
+    await updateFirestore(editData);
+    setProfile({ ...profile, ...editData });
+    setEditProfileModal(false);
+    setLabel("Profile updated successfully!");
+  };
+
   if (loading)
     return (
       <View style={styles.centered}>
@@ -168,28 +210,15 @@ export default function AccountAndMoneyManager() {
       </View>
     );
 
-  if (view === "login")
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Account Login / Register</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter your name"
-          placeholderTextColor="#888"
-          value={name}
-          onChangeText={setName}
-        />
-        <TouchableOpacity style={styles.button} onPress={handleLoginOrRegister}>
-          <Text style={styles.buttonText}>Continue</Text>
-        </TouchableOpacity>
-        {label ? <Text style={styles.label}>{label}</Text> : null}
-      </View>
-    );
-
+  // ---------------- UI ----------------
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>{profile?.Name}</Text>
       <Text style={styles.balanceText}>Net: Shs {profile?.net?.toFixed(2)}</Text>
+
+      <TouchableOpacity style={styles.editProfileBtn} onPress={openEditProfile}>
+        <Text style={styles.editProfileText}>Edit Profile</Text>
+      </TouchableOpacity>
 
       <Text style={styles.sectionTitle}>Top-Up Account</Text>
       <TextInput
@@ -202,11 +231,7 @@ export default function AccountAndMoneyManager() {
       />
       <View style={styles.quickTopUps}>
         {quickTopUps.map((amt) => (
-          <TouchableOpacity
-            key={amt}
-            style={styles.quickTopUpBtn}
-            onPress={() => simulateTopUp(amt, "Manual")}
-          >
+          <TouchableOpacity key={amt} style={styles.quickTopUpBtn} onPress={() => simulateTopUp(amt, "Manual")}>
             <Text style={styles.quickTopUpText}>Shs {amt}</Text>
           </TouchableOpacity>
         ))}
@@ -264,10 +289,7 @@ export default function AccountAndMoneyManager() {
                 <Text style={styles.txText}>{item.timestamp}</Text>
                 <Text style={styles.txText}>Proof: {item.proof}</Text>
                 <Text
-                  style={[
-                    styles.txText,
-                    { color: item.status === "Completed" ? "#4CAF50" : "#FFD700" },
-                  ]}
+                  style={[styles.txText, { color: item.status === "Completed" ? "#4CAF50" : "#FFD700" }]}
                 >
                   Status: {item.status}
                 </Text>
@@ -279,14 +301,31 @@ export default function AccountAndMoneyManager() {
         )
       )}
 
-      <TouchableOpacity
-        style={styles.logoutButton}
-        onPress={() => setView("login")}
-      >
-        <Text style={styles.logoutText}>Logout</Text>
-      </TouchableOpacity>
+      <Text style={styles.label}>{label}</Text>
 
-      {label ? <Text style={styles.label}>{label}</Text> : null}
+      {/* ---------------- Edit Profile Modal ---------------- */}
+      <Modal visible={editProfileModal} transparent animationType="slide">
+        <ScrollView contentContainerStyle={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={{ fontSize: 20, fontWeight: "700", marginBottom: 12 }}>Edit Profile</Text>
+            {Object.keys(editData).map((key) => (
+              <TextInput
+                key={key}
+                style={styles.input}
+                placeholder={key}
+                value={editData[key as keyof typeof editData]?.toString() || ""}
+                onChangeText={(text) => setEditData({ ...editData, [key]: text })}
+              />
+            ))}
+            <TouchableOpacity style={styles.saveBtn} onPress={saveProfile}>
+              <Text style={{ color: "#fff", fontWeight: "700" }}>Save</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.saveBtn, { backgroundColor: "#ccc" }]} onPress={() => setEditProfileModal(false)}>
+              <Text style={{ color: "#333" }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </Modal>
     </ScrollView>
   );
 }
@@ -306,9 +345,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     fontSize: 16,
   },
-  button: { backgroundColor: "#007bff", padding: 14, borderRadius: 20, alignItems: "center" },
-  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-  label: { color: "#ccc", textAlign: "center", marginTop: 10 },
   quickTopUps: { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
   quickTopUpBtn: { backgroundColor: "#333", padding: 10, borderRadius: 10 },
   quickTopUpText: { color: "#fff", fontWeight: "600" },
@@ -320,6 +356,10 @@ const styles = StyleSheet.create({
   txCard: { backgroundColor: "#1a1a1a", borderRadius: 10, padding: 10, marginBottom: 10 },
   txText: { color: "#fff", fontSize: 14, marginBottom: 2 },
   noTx: { color: "#888", fontStyle: "italic", textAlign: "center", marginVertical: 10 },
-  logoutButton: { backgroundColor: "#555", padding: 12, borderRadius: 20, alignItems: "center", marginTop: 20 },
-  logoutText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  label: { color: "#ccc", textAlign: "center", marginTop: 10 },
+  editProfileBtn: { backgroundColor: "#007bff", padding: 12, borderRadius: 20, alignItems: "center", marginBottom: 10 },
+  editProfileText: { color: "#fff", fontWeight: "700" },
+  modalOverlay: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20, backgroundColor: "rgba(0,0,0,0.5)" },
+  modalContent: { width: "100%", borderRadius: 12, padding: 18, backgroundColor: "#fff" },
+  saveBtn: { backgroundColor: "#25D366", padding: 12, borderRadius: 12, alignItems: "center", marginTop: 6 },
 });
