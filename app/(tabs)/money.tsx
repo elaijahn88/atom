@@ -5,15 +5,16 @@ import {
   TextInput,
   TouchableOpacity,
   FlatList,
+  StyleSheet,
   ScrollView,
   Modal,
-  ActivityIndicator,
   Alert,
-  StyleSheet,
+  ActivityIndicator,
   Platform,
 } from "react-native";
-import { db } from "../../firebase";
-import { doc, setDoc, getDoc, collection, addDoc, updateDoc, getDocs } from "firebase/firestore";
+import { db, auth } from "../../firebase"; // your firebase.js
+import { getAuth } from "firebase/auth";
+import { doc, setDoc, getDoc, collection, addDoc, getDocs, updateDoc } from "firebase/firestore";
 
 // ----------------- App -----------------
 export default function App() {
@@ -24,7 +25,14 @@ export default function App() {
   useEffect(() => {
     const checkUser = async () => {
       try {
-        const USER_DOC_ID = "currentUser"; 
+        const currentUser = getAuth().currentUser;
+        if (!currentUser) {
+          setScreen("registration");
+          setLoading(false);
+          return;
+        }
+
+        const USER_DOC_ID = currentUser.uid;
         const userDocRef = doc(db, "acc", USER_DOC_ID);
         const snap = await getDoc(userDocRef);
 
@@ -71,9 +79,6 @@ export default function App() {
 
 // ----------------- Registration -----------------
 function Registration({ onRegistered }: { onRegistered: (id: string) => void }) {
-  const [loading, setLoading] = useState(false);
-
-  // Personal info fields
   const [name, setName] = useState("");
   const [surname, setSurname] = useState("");
   const [middleName, setMiddleName] = useState("");
@@ -87,40 +92,43 @@ function Registration({ onRegistered }: { onRegistered: (id: string) => void }) 
   const [mobile, setMobile] = useState("");
   const [profession, setProfession] = useState("");
   const [email, setEmail] = useState("");
-  const [idType, setIdType] = useState("");
-  const [idValue, setIdValue] = useState("");
+  const [identification, setIdentification] = useState("");
   const [taxId, setTaxId] = useState("");
-  const [representsCompany, setRepresentsCompany] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
-    if (!name || !surname || !dob || !phone) {
-      Alert.alert("Incomplete", "Please fill at least Name, Surname, DOB, Phone");
+    if (!name.trim() || !surname.trim() || !phone.trim()) {
+      Alert.alert("Incomplete", "Please fill required fields.");
+      return;
+    }
+
+    const currentUser = getAuth().currentUser;
+    if (!currentUser) {
+      Alert.alert("Error", "No logged-in user found.");
       return;
     }
 
     setLoading(true);
     try {
-      const USER_DOC_ID = "currentUser";
+      const USER_DOC_ID = currentUser.uid;
       const userDocRef = doc(db, "acc", USER_DOC_ID);
 
       await setDoc(userDocRef, {
-        Name: name,
-        Surname: surname,
-        MiddleName: middleName,
+        Name: name.trim(),
+        Surname: surname.trim(),
+        MiddleName: middleName.trim(),
         DOB: dob,
-        father,
-        mother,
+        Father: father,
+        Mother: mother,
         Address: address,
-        Zip: zip,
+        ZipCode: zip,
         City: city,
-        phone,
+        Phone: phone,
         Mobile: mobile,
         Profession: profession,
         Email: email,
-        IdType: idType,
-        IdValue: idValue,
+        Identification: identification,
         TaxId: taxId,
-        RepresentsCompany: representsCompany,
         net: 0,
         isFrozen: false,
         transactions: [],
@@ -139,12 +147,12 @@ function Registration({ onRegistered }: { onRegistered: (id: string) => void }) 
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.header}>Register / Personal Info</Text>
+    <ScrollView contentContainerStyle={styles.container}>
+      <Text style={styles.header}>Register</Text>
       <TextInput placeholder="Name" value={name} onChangeText={setName} style={styles.input} />
       <TextInput placeholder="Surname" value={surname} onChangeText={setSurname} style={styles.input} />
       <TextInput placeholder="Middle Name" value={middleName} onChangeText={setMiddleName} style={styles.input} />
-      <TextInput placeholder="Date of Birth (YYYY-MM-DD)" value={dob} onChangeText={setDob} style={styles.input} />
+      <TextInput placeholder="Date of Birth" value={dob} onChangeText={setDob} style={styles.input} />
       <TextInput placeholder="Father's Name" value={father} onChangeText={setFather} style={styles.input} />
       <TextInput placeholder="Mother's Name" value={mother} onChangeText={setMother} style={styles.input} />
       <TextInput placeholder="Address" value={address} onChangeText={setAddress} style={styles.input} />
@@ -153,11 +161,9 @@ function Registration({ onRegistered }: { onRegistered: (id: string) => void }) 
       <TextInput placeholder="Phone" value={phone} onChangeText={setPhone} style={styles.input} />
       <TextInput placeholder="Mobile" value={mobile} onChangeText={setMobile} style={styles.input} />
       <TextInput placeholder="Profession" value={profession} onChangeText={setProfession} style={styles.input} />
-      <TextInput placeholder="E-mail" value={email} onChangeText={setEmail} style={styles.input} />
-      <TextInput placeholder="Identification Type" value={idType} onChangeText={setIdType} style={styles.input} />
-      <TextInput placeholder="ID Value" value={idValue} onChangeText={setIdValue} style={styles.input} />
+      <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={styles.input} />
+      <TextInput placeholder="Identification" value={identification} onChangeText={setIdentification} style={styles.input} />
       <TextInput placeholder="Tax ID" value={taxId} onChangeText={setTaxId} style={styles.input} />
-      <TextInput placeholder="Represents Company" value={representsCompany} onChangeText={setRepresentsCompany} style={styles.input} />
 
       <TouchableOpacity style={styles.btn} onPress={handleRegister} disabled={loading}>
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Register</Text>}
@@ -205,7 +211,9 @@ function CreditSavingsServices({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: s
       }
     };
     load();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const pushTxToProfile = async (tx: Tx) => {
@@ -228,20 +236,13 @@ function CreditSavingsServices({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: s
     }
   };
 
-  const createService = async () => {
-    if (!serviceName.trim() || !serviceDesc.trim()) { Alert.alert("Incomplete", "Fill all fields."); return; }
-    const newService = { name: serviceName.trim(), description: serviceDesc.trim(), balance: 0 };
-    try {
-      const refDoc = await addDoc(collection(db, "services"), newService);
-      setServices((prev) => [...prev, { id: refDoc.id, ...newService }]);
-      setServiceName(""); setServiceDesc(""); setModalVisible(false); Alert.alert("Created", `Service "${newService.name}" created.`)
-    } catch (err) { console.error(err); Alert.alert("Error", "Failed to create service."); }
-  };
-
   const sendPayment = async () => {
     if (!selectedService) return;
     const amt = parseFloat(paymentAmount);
-    if (isNaN(amt) || amt <= 0 || profile.net < amt) { Alert.alert("Error", "Invalid or insufficient funds."); return; }
+    if (isNaN(amt) || amt <= 0 || profile.net < amt) {
+      Alert.alert("Error", "Invalid or insufficient funds.");
+      return;
+    }
 
     try {
       const serviceRef = doc(db, "services", selectedService.id);
@@ -257,7 +258,10 @@ function CreditSavingsServices({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: s
 
       setSelectedService(null);
       setPaymentAmount("");
-    } catch (err) { console.error(err); Alert.alert("Error", "Failed to send payment."); }
+    } catch (err) {
+      console.error(err);
+      Alert.alert("Error", "Failed to send payment.");
+    }
   };
 
   if (loading) return <ActivityIndicator style={{ flex: 1 }} size="large" color="#00BFFF" />;
@@ -298,7 +302,9 @@ function CreditSavingsServices({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: s
             <Text style={{ fontSize: 20, fontWeight: "700", marginBottom: 12 }}>Create Service</Text>
             <TextInput placeholder="Name" value={serviceName} onChangeText={setServiceName} style={styles.input} />
             <TextInput placeholder="Description" value={serviceDesc} onChangeText={setServiceDesc} style={styles.input} />
-            <TouchableOpacity style={styles.modalBtn} onPress={createService}><Text style={{ color: "#fff" }}>Create</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.modalBtn} onPress={sendPayment}>
+              <Text style={{ color: "#fff" }}>Create</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ccc" }]} onPress={() => setModalVisible(false)}>
               <Text style={{ color: "#333" }}>Cancel</Text>
             </TouchableOpacity>
@@ -311,7 +317,9 @@ function CreditSavingsServices({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: s
           <View style={styles.modalContent}>
             <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 8 }}>Pay {selectedService?.name}</Text>
             <TextInput placeholder="Amount" value={paymentAmount} onChangeText={setPaymentAmount} keyboardType="numeric" style={styles.input} />
-            <TouchableOpacity style={styles.modalBtn} onPress={sendPayment}><Text style={{ color: "#fff" }}>Send Payment</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.modalBtn} onPress={sendPayment}>
+              <Text style={{ color: "#fff" }}>Send Payment</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ccc" }]} onPress={() => setSelectedService(null)}>
               <Text style={{ color: "#333" }}>Cancel</Text>
             </TouchableOpacity>
@@ -323,6 +331,8 @@ function CreditSavingsServices({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: s
 }
 
 // ----------------- Loan Screen -----------------
+type Loan = { id: string; amount: number; purpose: string; status: "Pending" | "Approved" | "Rejected" };
+
 function LoanScreen({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: string; onSwitchScreen: (s: string) => void }) {
   const userDocRef = doc(db, "acc", USER_DOC_ID);
   const [profile, setProfile] = useState<any>(null);
@@ -331,14 +341,6 @@ function LoanScreen({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: string; onSw
   const [modalVisible, setModalVisible] = useState(false);
   const [loanAmount, setLoanAmount] = useState("");
   const [loanPurpose, setLoanPurpose] = useState("");
-
-  // Personal Info Fields
-  const [name, setName] = useState(""); const [surname, setSurname] = useState(""); const [middleName, setMiddleName] = useState("");
-  const [dob, setDob] = useState(""); const [father, setFather] = useState(""); const [mother, setMother] = useState("");
-  const [address, setAddress] = useState(""); const [zip, setZip] = useState(""); const [city, setCity] = useState("");
-  const [phone, setPhone] = useState(""); const [mobile, setMobile] = useState(""); const [profession, setProfession] = useState("");
-  const [email, setEmail] = useState(""); const [idType, setIdType] = useState(""); const [idValue, setIdValue] = useState("");
-  const [taxId, setTaxId] = useState(""); const [representsCompany, setRepresentsCompany] = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -349,41 +351,39 @@ function LoanScreen({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: string; onSw
         const data = snap.data();
         setProfile(data);
         setLoans(data.loans || []);
-
-        // Prefill personal info
-        setName(data.Name || ""); setSurname(data.Surname || ""); setMiddleName(data.MiddleName || "");
-        setDob(data.DOB || ""); setFather(data.father || ""); setMother(data.mother || "");
-        setAddress(data.Address || ""); setZip(data.Zip || ""); setCity(data.City || "");
-        setPhone(data.phone || ""); setMobile(data.Mobile || ""); setProfession(data.Profession || "");
-        setEmail(data.Email || ""); setIdType(data.IdType || ""); setIdValue(data.IdValue || "");
-        setTaxId(data.TaxId || ""); setRepresentsCompany(data.RepresentsCompany || "");
       } catch (err) {
         console.error(err);
-      } finally { setLoading(false); }
+      } finally {
+        setLoading(false);
+      }
     };
     load();
   }, []);
 
   const applyLoan = async () => {
     const amt = parseFloat(loanAmount);
-    if (isNaN(amt) || amt <= 0 || !loanPurpose.trim()) { Alert.alert("Error", "Fill all fields correctly."); return; }
+    if (isNaN(amt) || amt <= 0 || !loanPurpose.trim()) {
+      Alert.alert("Error", "Fill all fields correctly.");
+      return;
+    }
 
     const newLoan: Loan = { id: `loan_${Date.now()}`, amount: amt, purpose: loanPurpose, status: "Pending" };
+
     try {
+      // Add loan to user's loans
       const updatedLoans = [newLoan, ...(profile.loans || [])];
       await updateDoc(userDocRef, { loans: updatedLoans });
-      setLoans(updatedLoans); setProfile({ ...profile, loans: updatedLoans });
+      setLoans(updatedLoans);
+      setProfile((p: any) => ({ ...p, loans: updatedLoans }));
 
-      // Update personal info as well
-      await updateDoc(userDocRef, {
-        Name: name, Surname: surname, MiddleName: middleName, DOB: dob, father, mother,
-        Address: address, Zip: zip, City: city, phone, Mobile: mobile, Profession: profession,
-        Email: email, IdType: idType, IdValue: idValue, TaxId: taxId, RepresentsCompany: representsCompany,
-      });
-
-      setModalVisible(false); setLoanAmount(""); setLoanPurpose("");
-      Alert.alert("Success", "Loan application submitted!");
-    } catch (err) { console.error(err); Alert.alert("Error", "Failed to submit loan."); }
+      setModalVisible(false);
+      setLoanAmount("");
+      setLoanPurpose("");
+      Alert.alert("Success", "Loan application submitted.");
+    } catch (err) {
+      console.error(err);
+      Alert.alert("Error", "Failed to submit loan.");
+    }
   };
 
   if (loading) return <ActivityIndicator style={{ flex: 1 }} size="large" color="#00BFFF" />;
@@ -413,33 +413,11 @@ function LoanScreen({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: string; onSw
       <Modal visible={modalVisible} transparent animationType="slide">
         <ScrollView contentContainerStyle={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={{ fontSize: 20, fontWeight: "700", marginBottom: 12 }}>Apply Loan & Update Info</Text>
-
-            {/* Personal Info Inputs */}
-            <TextInput placeholder="Name" value={name} onChangeText={setName} style={styles.input} />
-            <TextInput placeholder="Surname" value={surname} onChangeText={setSurname} style={styles.input} />
-            <TextInput placeholder="Middle Name" value={middleName} onChangeText={setMiddleName} style={styles.input} />
-            <TextInput placeholder="Date of Birth" value={dob} onChangeText={setDob} style={styles.input} />
-            <TextInput placeholder="Father's Name" value={father} onChangeText={setFather} style={styles.input} />
-            <TextInput placeholder="Mother's Name" value={mother} onChangeText={setMother} style={styles.input} />
-            <TextInput placeholder="Address" value={address} onChangeText={setAddress} style={styles.input} />
-            <TextInput placeholder="Zip Code" value={zip} onChangeText={setZip} style={styles.input} />
-            <TextInput placeholder="City" value={city} onChangeText={setCity} style={styles.input} />
-            <TextInput placeholder="Phone" value={phone} onChangeText={setPhone} style={styles.input} />
-            <TextInput placeholder="Mobile" value={mobile} onChangeText={setMobile} style={styles.input} />
-            <TextInput placeholder="Profession" value={profession} onChangeText={setProfession} style={styles.input} />
-            <TextInput placeholder="E-mail" value={email} onChangeText={setEmail} style={styles.input} />
-            <TextInput placeholder="Identification Type" value={idType} onChangeText={setIdType} style={styles.input} />
-            <TextInput placeholder="ID Value" value={idValue} onChangeText={setIdValue} style={styles.input} />
-            <TextInput placeholder="Tax ID" value={taxId} onChangeText={setTaxId} style={styles.input} />
-            <TextInput placeholder="Represents Company" value={representsCompany} onChangeText={setRepresentsCompany} style={styles.input} />
-
-            {/* Loan Inputs */}
-            <TextInput placeholder="Loan Amount" value={loanAmount} onChangeText={setLoanAmount} keyboardType="numeric" style={styles.input} />
-            <TextInput placeholder="Loan Purpose" value={loanPurpose} onChangeText={setLoanPurpose} style={styles.input} />
-
+            <Text style={{ fontSize: 20, fontWeight: "700", marginBottom: 12 }}>Apply Loan</Text>
+            <TextInput placeholder="Amount" value={loanAmount} onChangeText={setLoanAmount} keyboardType="numeric" style={styles.input} />
+            <TextInput placeholder="Purpose" value={loanPurpose} onChangeText={setLoanPurpose} style={styles.input} />
             <TouchableOpacity style={styles.modalBtn} onPress={applyLoan}>
-              <Text style={{ color: "#fff" }}>Submit Loan</Text>
+              <Text style={{ color: "#fff" }}>Submit</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#ccc" }]} onPress={() => setModalVisible(false)}>
               <Text style={{ color: "#333" }}>Cancel</Text>
@@ -456,7 +434,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 16 },
   header: { fontSize: 24, fontWeight: "800", marginBottom: 12, textAlign: "center" },
   input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 12, padding: 12, marginBottom: 12 },
-  btn: { backgroundColor: "#25D366", padding: 12, borderRadius: 12, alignItems: "center", marginBottom: 12 },
+  btn: { backgroundColor: "#25D366", padding: 12, borderRadius: 12, alignItems: "center" },
   btnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   navBtn: { backgroundColor: "#007AFF", padding: 10, borderRadius: 12, alignItems: "center", marginBottom: 8 },
   navBtnText: { color: "#fff", fontWeight: "700" },
