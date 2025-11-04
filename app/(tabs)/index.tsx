@@ -175,7 +175,7 @@ export default function ChatWaveWithInbox() {
   if (!user) {
     return (
       <KeyboardAvoidingView style={styles.authContainer} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <Text style={styles.logo}>ChatWave</Text>
+        <Text style={styles.logo}>oxygen</Text>
 
         {!isLogin && (
           <View style={styles.field}>
