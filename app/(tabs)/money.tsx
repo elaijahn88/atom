@@ -11,8 +11,9 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  KeyboardAvoidingView,
 } from "react-native";
-import { db, auth } from "../../firebase"; // your firebase.js
+import { db, auth } from "../../firebase";
 import { getAuth } from "firebase/auth";
 import { doc, setDoc, getDoc, collection, addDoc, getDocs, updateDoc } from "firebase/firestore";
 
@@ -54,9 +55,9 @@ export default function App() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+      <View style={[styles.container, { justifyContent: "center", alignItems: "center", backgroundColor: "#1B2430" }]}>
         <ActivityIndicator size="large" color="#00BFFF" />
-        <Text style={{ color: "#ccc", marginTop: 12 }}>Loading...</Text>
+        <Text style={{ color: "#fff", marginTop: 12 }}>Loading...</Text>
       </View>
     );
   }
@@ -147,28 +148,45 @@ function Registration({ onRegistered }: { onRegistered: (id: string) => void }) 
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.header}>Register</Text>
-      <TextInput placeholder="Name" value={name} onChangeText={setName} style={styles.input} />
-      <TextInput placeholder="Surname" value={surname} onChangeText={setSurname} style={styles.input} />
-      <TextInput placeholder="Middle Name" value={middleName} onChangeText={setMiddleName} style={styles.input} />
-      <TextInput placeholder="Date of Birth" value={dob} onChangeText={setDob} style={styles.input} />
-      <TextInput placeholder="Father's Name" value={father} onChangeText={setFather} style={styles.input} />
-      <TextInput placeholder="Mother's Name" value={mother} onChangeText={setMother} style={styles.input} />
-      <TextInput placeholder="Address" value={address} onChangeText={setAddress} style={styles.input} />
-      <TextInput placeholder="Zip Code" value={zip} onChangeText={setZip} style={styles.input} />
-      <TextInput placeholder="City" value={city} onChangeText={setCity} style={styles.input} />
-      <TextInput placeholder="Phone" value={phone} onChangeText={setPhone} style={styles.input} />
-      <TextInput placeholder="Mobile" value={mobile} onChangeText={setMobile} style={styles.input} />
-      <TextInput placeholder="Profession" value={profession} onChangeText={setProfession} style={styles.input} />
-      <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={styles.input} />
-      <TextInput placeholder="Identification" value={identification} onChangeText={setIdentification} style={styles.input} />
-      <TextInput placeholder="Tax ID" value={taxId} onChangeText={setTaxId} style={styles.input} />
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: "#1B2430" }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <ScrollView contentContainerStyle={{ padding: 20 }}>
+        <Text style={{ fontSize: 28, fontWeight: "bold", marginBottom: 20, textAlign: "center", color: "#fff" }}>
+          Registration
+        </Text>
 
-      <TouchableOpacity style={styles.btn} onPress={handleRegister} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Register</Text>}
-      </TouchableOpacity>
-    </ScrollView>
+        {/** Input fields with white text **/}
+        {[
+          { placeholder: "Name", value: name, setter: setName },
+          { placeholder: "Surname", value: surname, setter: setSurname },
+          { placeholder: "Middle Name", value: middleName, setter: setMiddleName },
+          { placeholder: "Date of Birth", value: dob, setter: setDob },
+          { placeholder: "Father's Name", value: father, setter: setFather },
+          { placeholder: "Mother's Name", value: mother, setter: setMother },
+          { placeholder: "Address", value: address, setter: setAddress },
+          { placeholder: "Zip Code", value: zip, setter: setZip },
+          { placeholder: "City", value: city, setter: setCity },
+          { placeholder: "Phone", value: phone, setter: setPhone },
+          { placeholder: "Mobile", value: mobile, setter: setMobile },
+          { placeholder: "Profession", value: profession, setter: setProfession },
+          { placeholder: "Email", value: email, setter: setEmail },
+          { placeholder: "Identification", value: identification, setter: setIdentification },
+          { placeholder: "Tax ID", value: taxId, setter: setTaxId },
+        ].map((item, idx) => (
+          <TextInput
+            key={idx}
+            placeholder={item.placeholder}
+            placeholderTextColor="#ccc"
+            value={item.value}
+            onChangeText={item.setter}
+            style={styles.input}
+          />
+        ))}
+
+        <TouchableOpacity style={styles.btn} onPress={handleRegister} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Register</Text>}
+        </TouchableOpacity>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -264,12 +282,12 @@ function CreditSavingsServices({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: s
     }
   };
 
-  if (loading) return <ActivityIndicator style={{ flex: 1 }} size="large" color="#00BFFF" />;
+  if (loading) return <ActivityIndicator style={{ flex: 1, backgroundColor: "#1B2430" }} size="large" color="#00BFFF" />;
 
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "ios" ? 60 : 36 }]}>
+    <View style={[styles.container, { paddingTop: Platform.OS === "ios" ? 60 : 36, backgroundColor: "#1B2430" }]}>
       <Text style={styles.header}>Welcome {profile?.Name}</Text>
-      <Text style={{ marginBottom: 12 }}>Balance: {profile?.net}</Text>
+      <Text style={{ marginBottom: 12, color: "#fff" }}>Balance: {profile?.net}</Text>
 
       <View style={{ flexDirection: "row", justifyContent: "space-around", marginBottom: 12 }}>
         <TouchableOpacity style={styles.navBtn} onPress={() => setModalVisible(true)}>
@@ -284,10 +302,10 @@ function CreditSavingsServices({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: s
         data={services}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <View style={styles.serviceCard}>
-            <Text style={{ fontWeight: "700" }}>{item.name}</Text>
-            <Text>{item.description}</Text>
-            <Text>Balance: {item.balance}</Text>
+          <View style={[styles.serviceCard, { backgroundColor: "#2C3E50" }]}>
+            <Text style={{ fontWeight: "700", color: "#fff" }}>{item.name}</Text>
+            <Text style={{ color: "#fff" }}>{item.description}</Text>
+            <Text style={{ color: "#fff" }}>Balance: {item.balance}</Text>
             <TouchableOpacity style={styles.payBtn} onPress={() => setSelectedService(item)}>
               <Text style={{ color: "#fff" }}>Pay</Text>
             </TouchableOpacity>
@@ -295,13 +313,13 @@ function CreditSavingsServices({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: s
         )}
       />
 
-      {/* Service Modals */}
+      {/* Service Modal */}
       <Modal visible={modalVisible} transparent animationType="slide">
         <ScrollView contentContainerStyle={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={{ fontSize: 20, fontWeight: "700", marginBottom: 12 }}>Create Service</Text>
-            <TextInput placeholder="Name" value={serviceName} onChangeText={setServiceName} style={styles.input} />
-            <TextInput placeholder="Description" value={serviceDesc} onChangeText={setServiceDesc} style={styles.input} />
+          <View style={[styles.modalContent, { backgroundColor: "#1B2430" }]}>
+            <Text style={{ fontSize: 20, fontWeight: "700", marginBottom: 12, color: "#fff" }}>Create Service</Text>
+            <TextInput placeholder="Name" placeholderTextColor="#ccc" value={serviceName} onChangeText={setServiceName} style={styles.input} />
+            <TextInput placeholder="Description" placeholderTextColor="#ccc" value={serviceDesc} onChangeText={setServiceDesc} style={styles.input} />
             <TouchableOpacity style={styles.modalBtn} onPress={sendPayment}>
               <Text style={{ color: "#fff" }}>Create</Text>
             </TouchableOpacity>
@@ -312,11 +330,12 @@ function CreditSavingsServices({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: s
         </ScrollView>
       </Modal>
 
+      {/* Payment Modal */}
       <Modal visible={!!selectedService} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 8 }}>Pay {selectedService?.name}</Text>
-            <TextInput placeholder="Amount" value={paymentAmount} onChangeText={setPaymentAmount} keyboardType="numeric" style={styles.input} />
+          <View style={[styles.modalContent, { backgroundColor: "#1B2430" }]}>
+            <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 8, color: "#fff" }}>Pay {selectedService?.name}</Text>
+            <TextInput placeholder="Amount" placeholderTextColor="#ccc" value={paymentAmount} onChangeText={setPaymentAmount} keyboardType="numeric" style={styles.input} />
             <TouchableOpacity style={styles.modalBtn} onPress={sendPayment}>
               <Text style={{ color: "#fff" }}>Send Payment</Text>
             </TouchableOpacity>
@@ -370,7 +389,6 @@ function LoanScreen({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: string; onSw
     const newLoan: Loan = { id: `loan_${Date.now()}`, amount: amt, purpose: loanPurpose, status: "Pending" };
 
     try {
-      // Add loan to user's loans
       const updatedLoans = [newLoan, ...(profile.loans || [])];
       await updateDoc(userDocRef, { loans: updatedLoans });
       setLoans(updatedLoans);
@@ -386,11 +404,11 @@ function LoanScreen({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: string; onSw
     }
   };
 
-  if (loading) return <ActivityIndicator style={{ flex: 1 }} size="large" color="#00BFFF" />;
+  if (loading) return <ActivityIndicator style={{ flex: 1, backgroundColor: "#1B2430" }} size="large" color="#00BFFF" />;
 
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "ios" ? 60 : 36 }]}>
-      <Text style={styles.header}>Loan Applications</Text>
+    <View style={[styles.container, { paddingTop: Platform.OS === "ios" ? 60 : 36, backgroundColor: "#1B2430" }]}>
+      <Text style={[styles.header, { color: "#fff" }]}>Loan Applications</Text>
       <TouchableOpacity style={styles.navBtn} onPress={() => setModalVisible(true)}>
         <Text style={styles.navBtnText}>Apply Loan</Text>
       </TouchableOpacity>
@@ -402,20 +420,20 @@ function LoanScreen({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: string; onSw
         data={loans}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <View style={styles.serviceCard}>
-            <Text style={{ fontWeight: "700" }}>UGX {item.amount}</Text>
-            <Text>Purpose: {item.purpose}</Text>
-            <Text>Status: {item.status}</Text>
+          <View style={[styles.serviceCard, { backgroundColor: "#2C3E50" }]}>
+            <Text style={{ fontWeight: "700", color: "#fff" }}>UGX {item.amount}</Text>
+            <Text style={{ color: "#fff" }}>Purpose: {item.purpose}</Text>
+            <Text style={{ color: "#fff" }}>Status: {item.status}</Text>
           </View>
         )}
       />
 
       <Modal visible={modalVisible} transparent animationType="slide">
         <ScrollView contentContainerStyle={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={{ fontSize: 20, fontWeight: "700", marginBottom: 12 }}>Apply Loan</Text>
-            <TextInput placeholder="Amount" value={loanAmount} onChangeText={setLoanAmount} keyboardType="numeric" style={styles.input} />
-            <TextInput placeholder="Purpose" value={loanPurpose} onChangeText={setLoanPurpose} style={styles.input} />
+          <View style={[styles.modalContent, { backgroundColor: "#1B2430" }]}>
+            <Text style={{ fontSize: 20, fontWeight: "700", marginBottom: 12, color: "#fff" }}>Apply Loan</Text>
+            <TextInput placeholder="Amount" placeholderTextColor="#ccc" value={loanAmount} onChangeText={setLoanAmount} keyboardType="numeric" style={styles.input} />
+            <TextInput placeholder="Purpose" placeholderTextColor="#ccc" value={loanPurpose} onChangeText={setLoanPurpose} style={styles.input} />
             <TouchableOpacity style={styles.modalBtn} onPress={applyLoan}>
               <Text style={{ color: "#fff" }}>Submit</Text>
             </TouchableOpacity>
@@ -433,14 +451,22 @@ function LoanScreen({ USER_DOC_ID, onSwitchScreen }: { USER_DOC_ID: string; onSw
 const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 16 },
   header: { fontSize: 24, fontWeight: "800", marginBottom: 12, textAlign: "center" },
-  input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 12, padding: 12, marginBottom: 12 },
-  btn: { backgroundColor: "#25D366", padding: 12, borderRadius: 12, alignItems: "center" },
+  input: {
+    borderWidth: 1,
+    borderColor: "#555",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    color: "#fff", // white text
+    backgroundColor: "#2C3E50", // dark background
+  },
+  btn: { backgroundColor: "#25D366", padding: 12, borderRadius: 12, alignItems: "center", marginTop: 12 },
   btnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   navBtn: { backgroundColor: "#007AFF", padding: 10, borderRadius: 12, alignItems: "center", marginBottom: 8 },
   navBtnText: { color: "#fff", fontWeight: "700" },
-  serviceCard: { padding: 12, borderRadius: 12, marginBottom: 8, backgroundColor: "#f9f9f9" },
+  serviceCard: { padding: 12, borderRadius: 12, marginBottom: 8 },
   payBtn: { backgroundColor: "#25D366", padding: 8, borderRadius: 12, alignItems: "center", marginTop: 6 },
   modalOverlay: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20, backgroundColor: "rgba(0,0,0,0.5)" },
-  modalContent: { width: "100%", borderRadius: 12, padding: 18, backgroundColor: "#fff" },
+  modalContent: { width: "100%", borderRadius: 12, padding: 18 },
   modalBtn: { backgroundColor: "#25D366", padding: 12, borderRadius: 12, alignItems: "center", marginTop: 6 },
 });
