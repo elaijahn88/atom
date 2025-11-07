@@ -32,20 +32,24 @@ import {
   arrayUnion,
 } from "firebase/firestore";
 
-export default function ChatWaveWithInbox() {
+export default function ChatWaveApp() {
   const [user, setUser] = useState<any>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [isLogin, setIsLogin] = useState(true);
+
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState("");
+
   const [receiverEmail, setReceiverEmail] = useState("");
   const [receiverProfile, setReceiverProfile] = useState<any>(null);
+  const [receiverStatus, setReceiverStatus] = useState<string>("");
   const [inbox, setInbox] = useState<any[]>([]);
+
   const flatListRef = useRef<FlatList>(null);
 
-  // 🔹 Listen to current auth state
+  // 🔹 Auth state listener
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
@@ -57,19 +61,34 @@ export default function ChatWaveWithInbox() {
     return () => unsub();
   }, []);
 
-  // 🔹 Listen to inbox in real-time
+  // 🔹 Track own online status
+  useEffect(() => {
+    if (!user?.email) return;
+    const userRef = doc(db, "users", user.email);
+
+    const setOnline = async (online: boolean) => {
+      await updateDoc(userRef, { status: online ? "online" : new Date() });
+    };
+
+    setOnline(true); // set online when mounted
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+      if (!currentUser) await setOnline(false);
+    });
+
+    return () => setOnline(false); // set offline on unmount
+  }, [user]);
+
+  // 🔹 Inbox listener
   useEffect(() => {
     if (!user?.email) return;
     const userRef = doc(db, "users", user.email);
     const unsub = onSnapshot(userRef, (snap) => {
-      if (snap.exists()) {
-        setInbox(snap.data().inbox || []);
-      }
+      if (snap.exists()) setInbox(snap.data().inbox || []);
     });
     return () => unsub();
   }, [user]);
 
-  // 🔹 Listen to messages with current receiver
+  // 🔹 Messages listener
   useEffect(() => {
     if (!user?.email || !receiverEmail) return;
     const chatRef = collection(db, "users", user.email, "chats", receiverEmail, "messages");
@@ -80,7 +99,7 @@ export default function ChatWaveWithInbox() {
       flatListRef.current?.scrollToEnd({ animated: true });
     });
 
-    // Mark unread messages as read
+    // Mark messages as read
     const markRead = async () => {
       const userRef = doc(db, "users", user.email);
       const snap = await getDoc(userRef);
@@ -104,6 +123,20 @@ export default function ChatWaveWithInbox() {
       else setReceiverProfile(null);
     };
     fetchReceiver();
+  }, [receiverEmail]);
+
+  // 🔹 Receiver status listener
+  useEffect(() => {
+    if (!receiverEmail) return setReceiverStatus("");
+    const statusRef = doc(db, "users", receiverEmail);
+    const unsub = onSnapshot(statusRef, (snap) => {
+      if (!snap.exists()) return setReceiverStatus("");
+      const data = snap.data();
+      if (data.status === "online") setReceiverStatus("Online");
+      else if (data.status?.toDate) setReceiverStatus(`Last seen ${data.status.toDate().toLocaleString()}`);
+      else setReceiverStatus("Offline");
+    });
+    return () => unsub();
   }, [receiverEmail]);
 
   // 🔹 Sign In
@@ -141,19 +174,18 @@ export default function ChatWaveWithInbox() {
     };
 
     try {
-      // Add message to sender and receiver collections
       const senderRef = collection(db, "users", user.email, "chats", receiverEmail, "messages");
       const receiverRef = collection(db, "users", receiverEmail, "chats", user.email, "messages");
 
       await Promise.all([addDoc(senderRef, message), addDoc(receiverRef, message)]);
 
-      // Update inbox for sender
+      // Update sender inbox
       const senderDoc = doc(db, "users", user.email);
       await updateDoc(senderDoc, {
         inbox: arrayUnion({ peer: receiverEmail, text, timestamp, unreadCount: 0 }),
       });
 
-      // Update inbox for receiver
+      // Update receiver inbox
       const receiverDoc = doc(db, "users", receiverEmail);
       const snap = await getDoc(receiverDoc);
       let updatedInbox = [];
@@ -172,10 +204,11 @@ export default function ChatWaveWithInbox() {
     setText("");
   };
 
+  // 🔹 Auth screen
   if (!user) {
     return (
       <KeyboardAvoidingView style={styles.authContainer} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <Text style={styles.logo}>oxygen</Text>
+        <Text style={styles.logo}>ChatWave</Text>
 
         {!isLogin && (
           <View style={styles.field}>
@@ -205,10 +238,12 @@ export default function ChatWaveWithInbox() {
     );
   }
 
+  // 🔹 Main chat screen
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="#1B2430" barStyle="light-content" />
-      {/* Inbox List */}
+
+      {/* Inbox */}
       <FlatList
         style={{ maxHeight: 200 }}
         data={inbox}
@@ -229,11 +264,14 @@ export default function ChatWaveWithInbox() {
         )}
       />
 
-      {/* Chat Messages */}
+      {/* Chat */}
       {receiverEmail ? (
         <>
           <View style={styles.header}>
-            <Text style={styles.headerText}>{receiverProfile?.name || receiverEmail}</Text>
+            <View>
+              <Text style={styles.headerText}>{receiverProfile?.name || receiverEmail}</Text>
+              <Text style={styles.statusText}>{receiverStatus}</Text>
+            </View>
             <TouchableOpacity onPress={() => signOut(auth)}>
               <Ionicons name="log-out-outline" color="#fff" size={24} />
             </TouchableOpacity>
@@ -288,6 +326,7 @@ const styles = StyleSheet.create({
 
   header: { height: 60, backgroundColor: "#1B2430", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 15 },
   headerText: { color: "#fff", fontSize: 20, fontWeight: "bold" },
+  statusText: { color: "#ccc", fontSize: 12 },
 
   inboxItem: { flexDirection: "row", alignItems: "center", padding: 10, borderBottomWidth: 1, borderColor: "#ddd" },
   nameText: { fontSize: 16, fontWeight: "600" },
