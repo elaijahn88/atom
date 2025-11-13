@@ -27,13 +27,13 @@ import { Ionicons } from "@expo/vector-icons";
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [activeScreen, setActiveScreen] = useState("sms"); // Start at SMS
+  const [activeScreen, setActiveScreen] = useState("sms"); // default start
   const [inbox, setInbox] = useState([]);
-
   const [receiverEmail, setReceiverEmail] = useState("");
   const [receiverProfile, setReceiverProfile] = useState(null);
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
+  const [activeGroup, setActiveGroup] = useState(null);
   const flatListRef = useRef(null);
 
   // 🔁 Auth listener
@@ -71,37 +71,32 @@ export default function App() {
 
   // 🔹 Messages listener
   useEffect(() => {
-    if (!receiverEmail || !user?.email) return;
+    if (!user?.email) return;
 
-    const chatRef = collection(db, "acc", "elijah", user.email, "chats", receiverEmail, "messages");
+    let chatRef;
+    if (activeGroup) {
+      chatRef = collection(db, "acc", "elijah", "groups", activeGroup.id, "messages");
+    } else if (receiverEmail) {
+      chatRef = collection(db, "acc", "elijah", user.email, "chats", receiverEmail, "messages");
+    }
+
+    if (!chatRef) return;
+
     const q = query(chatRef, orderBy("timestamp", "asc"));
-
     const unsub = onSnapshot(q, (snap) => {
       const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setMessages(arr);
       flatListRef.current?.scrollToEnd({ animated: true });
     });
 
-    // Mark messages as read in inbox
-    const markRead = async () => {
-      const userRef = doc(db, "acc", "elijah", user.email);
-      const snap = await getDoc(userRef);
-      if (!snap.exists()) return;
-      const updatedInbox = (snap.data().inbox || []).map((i) =>
-        i.peer === receiverEmail ? { ...i, unreadCount: 0 } : i
-      );
-      await updateDoc(userRef, { inbox: updatedInbox });
-    };
-    markRead();
-
     return () => unsub();
-  }, [receiverEmail, user]);
+  }, [receiverEmail, activeGroup, user]);
 
   // 🔹 Send message
   const handleSend = async () => {
-    if (!text.trim() || !receiverEmail || !user?.email) return;
-
+    if (!text.trim() || !user?.email) return;
     const timestamp = new Date();
+
     const message = {
       text,
       senderEmail: user.email,
@@ -110,27 +105,38 @@ export default function App() {
       timestamp,
     };
 
-    const senderRef = collection(db, "acc", "elijah", user.email, "chats", receiverEmail, "messages");
-    const receiverRef = collection(db, "acc", "elijah", receiverEmail, "chats", user.email, "messages");
+    try {
+      if (activeGroup) {
+        // Group message
+        const groupRef = collection(db, "acc", "elijah", "groups", activeGroup.id, "messages");
+        await addDoc(groupRef, message);
+      } else if (receiverEmail) {
+        // Private chat
+        const senderRef = collection(db, "acc", "elijah", user.email, "chats", receiverEmail, "messages");
+        const receiverRef = collection(db, "acc", "elijah", receiverEmail, "chats", user.email, "messages");
 
-    await Promise.all([addDoc(senderRef, message), addDoc(receiverRef, message)]);
+        await Promise.all([addDoc(senderRef, message), addDoc(receiverRef, message)]);
 
-    // Update inbox for sender
-    const senderDoc = doc(db, "acc", "elijah", user.email);
-    await updateDoc(senderDoc, {
-      inbox: arrayUnion({ peer: receiverEmail, text, timestamp, unreadCount: 0 }),
-    });
+        // Update inbox for sender
+        const senderDoc = doc(db, "acc", "elijah", user.email);
+        await updateDoc(senderDoc, {
+          inbox: arrayUnion({ peer: receiverEmail, text, timestamp, unreadCount: 0 }),
+        });
 
-    // Update inbox for receiver
-    const receiverDoc = doc(db, "acc", "elijah", receiverEmail);
-    const snap = await getDoc(receiverDoc);
-    if (snap.exists()) {
-      const data = snap.data();
-      const updatedInbox = (data.inbox || []).filter((i) => i.peer !== user.email);
-      const existing = data.inbox?.find((i) => i.peer === user.email);
-      const newUnread = existing ? (existing.unreadCount || 0) + 1 : 1;
-      updatedInbox.push({ peer: user.email, text, timestamp, unreadCount: newUnread });
-      await updateDoc(receiverDoc, { inbox: updatedInbox });
+        // Update inbox for receiver
+        const receiverDoc = doc(db, "acc", "elijah", receiverEmail);
+        const snap = await getDoc(receiverDoc);
+        if (snap.exists()) {
+          const data = snap.data();
+          const updatedInbox = (data.inbox || []).filter((i) => i.peer !== user.email);
+          const existing = data.inbox?.find((i) => i.peer === user.email);
+          const newUnread = existing ? (existing.unreadCount || 0) + 1 : 1;
+          updatedInbox.push({ peer: user.email, text, timestamp, unreadCount: newUnread });
+          await updateDoc(receiverDoc, { inbox: updatedInbox });
+        }
+      }
+    } catch (err) {
+      console.error("Send message error:", err);
     }
 
     setText("");
@@ -154,13 +160,13 @@ export default function App() {
     </View>
   );
 
-  // 🔐 Auth Screen
+  // 🔐 Auth screen
   if (activeScreen === "auth") {
     return (
       <View style={styles.container}>
         <Text style={styles.title}>🔐 Login / Signup</Text>
         <TouchableOpacity style={styles.primaryBtn} onPress={() => setActiveScreen("sms")}>
-          <Text style={styles.btnText}>Back to SMS</Text>
+          <Text style={styles.btnText}>Back</Text>
         </TouchableOpacity>
       </View>
     );
@@ -183,13 +189,12 @@ export default function App() {
                 style={styles.inboxItem}
                 onPress={() => {
                   setReceiverEmail(item.peer);
+                  setActiveGroup(null);
                   setActiveScreen("chat");
                 }}
               >
                 <Text style={styles.peerText}>{item.peer}</Text>
-                <Text style={styles.lastMessage} numberOfLines={1}>
-                  {item.text}
-                </Text>
+                <Text style={styles.lastMessage}>{item.text}</Text>
                 {item.unreadCount > 0 && (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>{item.unreadCount}</Text>
@@ -200,10 +205,7 @@ export default function App() {
           />
         )}
         {user && (
-          <TouchableOpacity
-            style={[styles.primaryBtn, { backgroundColor: "red", marginTop: 10 }]}
-            onPress={() => signOut(auth)}
-          >
+          <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: "red", marginTop: 10 }]} onPress={() => signOut(auth)}>
             <Text style={styles.btnText}>Logout</Text>
           </TouchableOpacity>
         )}
@@ -212,16 +214,19 @@ export default function App() {
     );
   }
 
-  // 💬 Chat Screen
+  // 💬 Chat screen (private or group)
   if (activeScreen === "chat") {
     return (
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={styles.chatHeader}>
-          <Text style={styles.title}>{receiverProfile?.name || receiverEmail}</Text>
-          <TouchableOpacity onPress={() => setActiveScreen("sms")}>
+          <Text style={styles.title}>{activeGroup ? activeGroup.name : receiverProfile?.name || receiverEmail}</Text>
+          <TouchableOpacity
+            onPress={() => {
+              setActiveGroup(null);
+              setReceiverEmail("");
+              setActiveScreen(activeGroup ? "groups" : "sms");
+            }}
+          >
             <Ionicons name="arrow-back-outline" size={28} color="#000" />
           </TouchableOpacity>
         </View>
@@ -245,28 +250,22 @@ export default function App() {
         />
 
         <View style={styles.inputBar}>
-          <TextInput
-            style={styles.textBox}
-            placeholder="Type a message..."
-            value={text}
-            onChangeText={setText}
-          />
+          <TextInput style={styles.textBox} placeholder="Type a message..." value={text} onChangeText={setText} />
           <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
             <Ionicons name="send" size={22} color="#fff" />
           </TouchableOpacity>
         </View>
-
         <NavBar />
       </KeyboardAvoidingView>
     );
   }
 
-  // 🌍 Groups Screen
+  // 👥 Groups screen
   if (activeScreen === "groups") {
     const sampleGroups = [
-      { id: "1", name: "React Devs", lastMessage: "Meeting at 5 PM" },
-      { id: "2", name: "Football Fans", lastMessage: "Match highlights uploaded" },
-      { id: "3", name: "Music Lovers", lastMessage: "Check new playlist" },
+      { id: "g1", name: "React Devs", lastMessage: "Meeting at 5 PM", unreadCount: 2 },
+      { id: "g2", name: "Football Fans", lastMessage: "Match highlights uploaded", unreadCount: 0 },
+      { id: "g3", name: "Music Lovers", lastMessage: "Check new playlist", unreadCount: 1 },
     ];
 
     return (
@@ -277,9 +276,21 @@ export default function App() {
           keyExtractor={(item) => item.id}
           style={{ width: "100%" }}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.inboxItem}>
+            <TouchableOpacity
+              style={styles.inboxItem}
+              onPress={() => {
+                setActiveGroup(item);
+                setReceiverEmail("");
+                setActiveScreen("chat");
+              }}
+            >
               <Text style={styles.peerText}>{item.name}</Text>
               <Text style={styles.lastMessage}>{item.lastMessage}</Text>
+              {item.unreadCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{item.unreadCount}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           )}
         />
@@ -288,7 +299,7 @@ export default function App() {
     );
   }
 
-  // 👤 Profile Screen
+  // 👤 Profile screen
   if (activeScreen === "profile") {
     return (
       <View style={styles.container}>
