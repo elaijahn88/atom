@@ -47,21 +47,28 @@ export default function ChatWaveApp() {
   const [receiverStatus, setReceiverStatus] = useState<string>("");
   const [inbox, setInbox] = useState<any[]>([]);
 
+  const [activeScreen, setActiveScreen] = useState<"auth" | "threads" | "chat">("auth");
+
   const flatListRef = useRef<FlatList>(null);
 
-  // 🔹 Auth state listener
+  // 🔹 Auth listener
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         const docSnap = await getDoc(doc(db, "users", currentUser.email!));
         if (docSnap.exists()) setUser(docSnap.data());
         else setUser({ id: currentUser.uid, email: currentUser.email });
-      } else setUser(null);
+
+        setActiveScreen("threads");
+      } else {
+        setUser(null);
+        setActiveScreen("auth");
+      }
     });
     return () => unsub();
   }, []);
 
-  // 🔹 Track own online status
+  // 🔹 Online status
   useEffect(() => {
     if (!user?.email) return;
     const userRef = doc(db, "users", user.email);
@@ -70,12 +77,8 @@ export default function ChatWaveApp() {
       await updateDoc(userRef, { status: online ? "online" : new Date() });
     };
 
-    setOnline(true); // set online when mounted
-    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
-      if (!currentUser) await setOnline(false);
-    });
-
-    return () => setOnline(false); // set offline on unmount
+    setOnline(true);
+    return () => setOnline(false);
   }, [user]);
 
   // 🔹 Inbox listener
@@ -125,7 +128,7 @@ export default function ChatWaveApp() {
     fetchReceiver();
   }, [receiverEmail]);
 
-  // 🔹 Receiver status listener
+  // 🔹 Receiver status
   useEffect(() => {
     if (!receiverEmail) return setReceiverStatus("");
     const statusRef = doc(db, "users", receiverEmail);
@@ -143,6 +146,7 @@ export default function ChatWaveApp() {
   const handleSignIn = async () => {
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      setActiveScreen("threads");
     } catch (err: any) {
       alert(err.message);
     }
@@ -155,6 +159,7 @@ export default function ChatWaveApp() {
       const u = { id: cred.user.uid, email, name, avatar: `https://i.pravatar.cc/150?u=${email}`, inbox: [] };
       await setDoc(doc(db, "users", email), u);
       setUser(u);
+      setActiveScreen("threads");
     } catch (err: any) {
       alert(err.message);
     }
@@ -204,8 +209,8 @@ export default function ChatWaveApp() {
     setText("");
   };
 
-  // 🔹 Auth screen
-  if (!user) {
+  // 🔹 AUTH SCREEN
+  if (activeScreen === "auth" || !user) {
     return (
       <KeyboardAvoidingView style={styles.authContainer} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <Text style={styles.logo}>ChatWave</Text>
@@ -213,18 +218,36 @@ export default function ChatWaveApp() {
         {!isLogin && (
           <View style={styles.field}>
             <Text style={styles.label}>Full Name</Text>
-            <TextInput style={styles.input} placeholder="Enter your name" placeholderTextColor="#aaa" value={name} onChangeText={setName} />
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your name"
+              placeholderTextColor="#aaa"
+              value={name}
+              onChangeText={setName}
+            />
           </View>
         )}
 
         <View style={styles.field}>
           <Text style={styles.label}>Email</Text>
-          <TextInput style={styles.input} placeholder="you@example.com" placeholderTextColor="#aaa" value={email} onChangeText={setEmail} />
+          <TextInput
+            style={styles.input}
+            placeholder="you@example.com"
+            placeholderTextColor="#aaa"
+            value={email}
+            onChangeText={setEmail}
+          />
         </View>
 
         <View style={styles.field}>
           <Text style={styles.label}>Password</Text>
-          <TextInput style={styles.input} placeholder="••••••••" secureTextEntry value={password} onChangeText={setPassword} />
+          <TextInput
+            style={styles.input}
+            placeholder="••••••••"
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+          />
         </View>
 
         <TouchableOpacity style={styles.btn} onPress={isLogin ? handleSignIn : handleSignUp}>
@@ -238,103 +261,136 @@ export default function ChatWaveApp() {
     );
   }
 
-  // 🔹 Main chat screen
-  return (
-    <View style={styles.container}>
-      <StatusBar backgroundColor="#1B2430" barStyle="light-content" />
+  // 🔹 THREADS SCREEN
+  if (activeScreen === "threads") {
+    return (
+      <View style={styles.container}>
+        <StatusBar backgroundColor="#1B2430" barStyle="light-content" />
+        <Text style={styles.headerTitle}>Your Threads</Text>
 
-      {/* Inbox */}
-      <FlatList
-        style={{ maxHeight: 200 }}
-        data={inbox}
-        keyExtractor={(item, idx) => idx.toString()}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.inboxItem} onPress={() => setReceiverEmail(item.peer)}>
-            <Ionicons name="person-circle-outline" size={40} color="#007AFF" />
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={styles.nameText}>{item.peer}</Text>
-              <Text numberOfLines={1} style={styles.lastMessage}>{item.text}</Text>
-            </View>
-            {item.unreadCount > 0 && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{item.unreadCount}</Text>
+        <FlatList
+          style={{ marginTop: 20 }}
+          data={inbox}
+          keyExtractor={(item) => item.peer}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.inboxItem}
+              onPress={() => {
+                setReceiverEmail(item.peer);
+                setActiveScreen("chat");
+              }}
+            >
+              <Ionicons name="person-circle-outline" size={50} color="#007AFF" />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.nameText}>{item.peer}</Text>
+                <Text style={styles.lastMessage} numberOfLines={1}>
+                  {item.text}
+                </Text>
               </View>
-            )}
-          </TouchableOpacity>
-        )}
-      />
-
-      {/* Chat */}
-      {receiverEmail ? (
-        <>
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.headerText}>{receiverProfile?.name || receiverEmail}</Text>
-              <Text style={styles.statusText}>{receiverStatus}</Text>
-            </View>
-            <TouchableOpacity onPress={() => signOut(auth)}>
-              <Ionicons name="log-out-outline" color="#fff" size={24} />
-            </TouchableOpacity>
-          </View>
-
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <View style={[styles.messageRow, item.senderEmail === user.email ? { flexDirection: "row-reverse" } : {}]}>
-                <Image source={{ uri: item.senderAvatar }} style={styles.avatar} />
-                <View style={[styles.messageBubble, item.senderEmail === user.email ? styles.myBubble : styles.theirBubble]}>
-                  <Text style={styles.senderName}>{item.senderName}</Text>
-                  <Text style={styles.messageText}>{item.text}</Text>
+              {item.unreadCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{item.unreadCount}</Text>
                 </View>
-              </View>
-            )}
-            contentContainerStyle={{ padding: 10 }}
-          />
-
-          <View style={styles.inputBar}>
-            <TextInput
-              style={styles.textBox}
-              placeholder="Type a message..."
-              placeholderTextColor="#ccc"
-              value={text}
-              onChangeText={setText}
-            />
-            <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
-              <Ionicons name="send" size={20} color="#fff" />
+              )}
             </TouchableOpacity>
+          )}
+        />
+
+        <TouchableOpacity
+          style={[styles.btn, { marginTop: 20 }]}
+          onPress={async () => {
+            await signOut(auth);
+            setActiveScreen("auth");
+          }}
+        >
+          <Text style={styles.btnText}>Logout</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // 🔹 CHAT SCREEN
+  if (activeScreen === "chat") {
+    return (
+      <View style={styles.container}>
+        <StatusBar backgroundColor="#1B2430" barStyle="light-content" />
+
+        {/* Header */}
+        <View style={styles.chatHeader}>
+          <View>
+            <Text style={styles.headerText}>{receiverProfile?.name || receiverEmail}</Text>
+            <Text style={styles.statusText}>{receiverStatus}</Text>
           </View>
-        </>
-      ) : (
-        <Text style={{ textAlign: "center", marginTop: 20 }}>Select a chat to start messaging</Text>
-      )}
-    </View>
-  );
+          <TouchableOpacity
+            onPress={() => {
+              setReceiverEmail("");
+              setActiveScreen("threads");
+            }}
+          >
+            <Ionicons name="arrow-back-outline" color="#fff" size={28} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Messages */}
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <View style={[styles.messageRow, item.senderEmail === user.email ? { flexDirection: "row-reverse" } : {}]}>
+              <Image source={{ uri: item.senderAvatar }} style={styles.avatar} />
+              <View style={[styles.messageBubble, item.senderEmail === user.email ? styles.myBubble : styles.theirBubble]}>
+                <Text style={styles.senderName}>{item.senderName}</Text>
+                <Text style={styles.messageText}>{item.text}</Text>
+              </View>
+            </View>
+          )}
+          contentContainerStyle={{ padding: 10 }}
+        />
+
+        {/* Input */}
+        <View style={styles.inputBar}>
+          <TextInput
+            style={styles.textBox}
+            placeholder="Type a message..."
+            placeholderTextColor="#ccc"
+            value={text}
+            onChangeText={setText}
+          />
+          <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
+            <Ionicons name="send" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  return null;
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#E9EEF6" },
   authContainer: { flex: 1, backgroundColor: "#1B2430", justifyContent: "center", alignItems: "center", padding: 20 },
-  logo: { color: "#25D366", fontSize: 32, fontWeight: "bold", marginBottom: 25 },
-  field: { width: "100%", marginBottom: 10 },
+  logo: { color: "#25D366", fontSize: 36, fontWeight: "bold", marginBottom: 25 },
+  field: { width: "100%", marginBottom: 12 },
   label: { color: "#fff", marginBottom: 4, fontSize: 14 },
-  input: { backgroundColor: "#fff", width: "100%", borderRadius: 8, padding: 12, fontSize: 16, color: "#000" },
-  btn: { backgroundColor: "#25D366", paddingVertical: 12, paddingHorizontal: 40, borderRadius: 8, marginTop: 10 },
-  btnText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  input: { backgroundColor: "#fff", width: "100%", borderRadius: 10, padding: 14, fontSize: 16, color: "#000" },
+  btn: { backgroundColor: "#25D366", paddingVertical: 14, paddingHorizontal: 50, borderRadius: 10, marginTop: 12 },
+  btnText: { color: "#fff", fontWeight: "bold", fontSize: 16, textAlign: "center" },
   toggle: { color: "#ccc", marginTop: 15, fontSize: 14 },
 
-  header: { height: 60, backgroundColor: "#1B2430", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 15 },
+  headerTitle: { fontSize: 24, fontWeight: "bold", textAlign: "center", marginVertical: 20 },
+  chatHeader: { height: 70, backgroundColor: "#1B2430", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 15 },
   headerText: { color: "#fff", fontSize: 20, fontWeight: "bold" },
-  statusText: { color: "#ccc", fontSize: 12 },
+  statusText: { color: "#ccc", fontSize: 13 },
 
-  inboxItem: { flexDirection: "row", alignItems: "center", padding: 10, borderBottomWidth: 1, borderColor: "#ddd" },
+  inboxItem: { flexDirection: "row", alignItems: "center", padding: 12, borderBottomWidth: 1, borderColor: "#ddd" },
   nameText: { fontSize: 16, fontWeight: "600" },
   lastMessage: { fontSize: 14, color: "#555" },
   badge: { backgroundColor: "#FF3B30", borderRadius: 12, minWidth: 24, height: 24, justifyContent: "center", alignItems: "center" },
-  badgeText: { color: "#fff", fontSize: 12, fontWeight: "600", textAlign: "center" },
+  badgeText: { color: "#fff", fontSize: 12, fontWeight: "600" },
 
-  messageRow: { flexDirection: "row", alignItems: "flex-end", marginVertical: 4 },
+  messageRow: { flexDirection: "row", alignItems: "flex-end", marginVertical: 5 },
   avatar: { width: 36, height: 36, borderRadius: 18, marginHorizontal: 6 },
   messageBubble: { maxWidth: "75%", padding: 10, borderRadius: 10 },
   myBubble: { backgroundColor: "#B9FBC0", alignSelf: "flex-end" },
@@ -343,6 +399,6 @@ const styles = StyleSheet.create({
   messageText: { fontSize: 16, color: "#000" },
 
   inputBar: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", padding: 8, borderTopWidth: 1, borderColor: "#ddd" },
-  textBox: { flex: 1, backgroundColor: "#f1f1f1", borderRadius: 20, paddingHorizontal: 15, paddingVertical: 8, fontSize: 16, color: "#000" },
-  sendBtn: { marginLeft: 8, backgroundColor: "#25D366", borderRadius: 20, padding: 10 },
+  textBox: { flex: 1, backgroundColor: "#f1f1f1", borderRadius: 25, paddingHorizontal: 15, paddingVertical: 8, fontSize: 16, color: "#000" },
+  sendBtn: { marginLeft: 8, backgroundColor: "#25D366", borderRadius: 25, padding: 12 },
 });
