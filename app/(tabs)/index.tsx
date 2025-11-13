@@ -62,7 +62,7 @@ export default function ChatWaveApp() {
         setActiveScreen("threads");
       } else {
         setUser(null);
-        setActiveScreen("auth");
+        setActiveScreen("threads");
       }
     });
     return () => unsub();
