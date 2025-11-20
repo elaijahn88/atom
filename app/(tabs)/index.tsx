@@ -1,64 +1,82 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
-  StyleSheet,
-  FlatList,
   TextInput,
+  FlatList,
+  Image,
   KeyboardAvoidingView,
   Platform,
-  Image,
+  StyleSheet,
 } from "react-native";
-import { auth, db } from "../../firebase";
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import {
-  doc,
-  getDoc,
-  collection,
-  query,
-  orderBy,
-  onSnapshot,
-  addDoc,
-  updateDoc,
-  arrayUnion,
-} from "firebase/firestore";
 import { Ionicons } from "@expo/vector-icons";
+import { doc, collection, query, orderBy, onSnapshot, addDoc, updateDoc, arrayUnion, getDoc } from "firebase/firestore";
+import { db } from "../../firebase";
 
-export default function App() {
-  const [user, setUser] = useState(null);
-  const [activeScreen, setActiveScreen] = useState("sms"); // default start
-  const [inbox, setInbox] = useState([]);
-  const [receiverEmail, setReceiverEmail] = useState("");
-  const [receiverProfile, setReceiverProfile] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [text, setText] = useState("");
-  const [activeGroup, setActiveGroup] = useState(null);
-  const flatListRef = useRef(null);
+/////////////////////////////
+// TypingIndicator Component
+/////////////////////////////
 
-  // 🔁 Auth listener
+const TypingIndicator = () => {
+  const [activeDot, setActiveDot] = useState(0);
+
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        const ref = doc(db, "acc", "elijah", currentUser.email);
-        const snap = await getDoc(ref);
-        if (snap.exists()) {
-          const data = snap.data();
-          setUser(data);
-          setInbox(data.inbox || []);
-        } else {
-          setUser({ email: currentUser.email });
-          setInbox([]);
-        }
-      } else {
-        setUser(null);
-        setInbox([]);
-      }
-    });
-    return () => unsub();
+    const interval = setInterval(() => {
+      setActiveDot((prev) => (prev + 1) % 3);
+    }, 300);
+    return () => clearInterval(interval);
   }, []);
 
-  // 🔹 Fetch receiver profile
+  return (
+    <View style={styles.typingContainer}>
+      {[0, 1, 2].map((i) => (
+        <View
+          key={i}
+          style={[
+            styles.typingDot,
+            { opacity: activeDot === i ? 1 : 0.3, transform: [{ scale: activeDot === i ? 1.2 : 1 }] },
+          ]}
+        />
+      ))}
+    </View>
+  );
+};
+
+/////////////////////////////
+// SendInput Component
+/////////////////////////////
+
+const SendInput = ({ text, setText, onSend }) => (
+  <View style={styles.inputBar}>
+    <TextInput
+      style={styles.textBox}
+      placeholder="Type a message..."
+      value={text}
+      onChangeText={setText}
+      multiline
+    />
+    <TouchableOpacity style={styles.sendBtn} onPress={onSend}>
+      <Ionicons name="send" size={22} color="#fff" />
+    </TouchableOpacity>
+  </View>
+);
+
+/////////////////////////////
+// ChatScreen Component
+/////////////////////////////
+
+export default function ChatScreen({ user, receiverEmail, activeGroup, setActiveScreen, setActiveGroup }) {
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
+  const [typingUsers, setTypingUsers] = useState([]);
+  const [receiverProfile, setReceiverProfile] = useState(null);
+  const flatListRef = useRef(null);
+
+  /////////////////////////////
+  // Fetch receiver profile
+  /////////////////////////////
+
   useEffect(() => {
     if (!receiverEmail) return;
     const fetchProfile = async () => {
@@ -69,7 +87,10 @@ export default function App() {
     fetchProfile();
   }, [receiverEmail]);
 
-  // 🔹 Messages listener
+  /////////////////////////////
+  // Messages listener
+  /////////////////////////////
+
   useEffect(() => {
     if (!user?.email) return;
 
@@ -79,7 +100,6 @@ export default function App() {
     } else if (receiverEmail) {
       chatRef = collection(db, "acc", "elijah", user.email, "chats", receiverEmail, "messages");
     }
-
     if (!chatRef) return;
 
     const q = query(chatRef, orderBy("timestamp", "asc"));
@@ -87,12 +107,69 @@ export default function App() {
       const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setMessages(arr);
       flatListRef.current?.scrollToEnd({ animated: true });
+
+      // Reset unread if private chat
+      if (!activeGroup && receiverEmail) {
+        const receiverDoc = doc(db, "acc", "elijah", user.email);
+        getDoc(receiverDoc).then((snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            const updatedInbox = (data.inbox || []).map((i) =>
+              i.peer === receiverEmail ? { ...i, unreadCount: 0 } : i
+            );
+            updateDoc(receiverDoc, { inbox: updatedInbox });
+          }
+        });
+      }
     });
 
     return () => unsub();
   }, [receiverEmail, activeGroup, user]);
 
-  // 🔹 Send message
+  /////////////////////////////
+  // Typing listener
+  /////////////////////////////
+
+  useEffect(() => {
+    if (!user?.email) return;
+
+    let typingCol;
+    if (activeGroup) {
+      typingCol = collection(db, "acc", "elijah", "groups", activeGroup.id, "typing");
+    } else if (receiverEmail) {
+      typingCol = collection(db, "acc", "elijah", receiverEmail, "chats", user.email, "typing");
+    }
+    if (!typingCol) return;
+
+    const unsub = onSnapshot(typingCol, (snap) => {
+      const usersTyping = snap.docs
+        .filter((d) => d.id !== user.email && d.data().isTyping)
+        .map((d) => d.id);
+      setTypingUsers(usersTyping);
+    });
+
+    return () => unsub();
+  }, [receiverEmail, activeGroup, user]);
+
+  /////////////////////////////
+  // Handle typing
+  /////////////////////////////
+
+  const handleTyping = (val) => {
+    setText(val);
+    if (!user?.email) return;
+
+    const typingRef = activeGroup
+      ? doc(db, "acc", "elijah", "groups", activeGroup.id, "typing", user.email)
+      : doc(db, "acc", "elijah", receiverEmail, "chats", user.email, "typing");
+
+    updateDoc(typingRef, { isTyping: !!val.trim(), lastUpdate: new Date() }).catch(console.error);
+  };
+
+  /////////////////////////////
+  // Handle send
+  /////////////////////////////
+
   const handleSend = async () => {
     if (!text.trim() || !user?.email) return;
     const timestamp = new Date();
@@ -107,11 +184,9 @@ export default function App() {
 
     try {
       if (activeGroup) {
-        // Group message
         const groupRef = collection(db, "acc", "elijah", "groups", activeGroup.id, "messages");
         await addDoc(groupRef, message);
       } else if (receiverEmail) {
-        // Private chat
         const senderRef = collection(db, "acc", "elijah", user.email, "chats", receiverEmail, "messages");
         const receiverRef = collection(db, "acc", "elijah", receiverEmail, "chats", user.email, "messages");
 
@@ -140,204 +215,73 @@ export default function App() {
     }
 
     setText("");
+    handleTyping(""); // reset typing
   };
 
-  // 🔹 Navigation bar
-  const NavBar = () => (
-    <View style={styles.navBar}>
-      <TouchableOpacity onPress={() => setActiveScreen("sms")} style={styles.navBtn}>
-        <Ionicons name="chatbubbles-outline" size={24} color={activeScreen === "sms" ? "#4e8ef7" : "#999"} />
-        <Text style={styles.navText}>SMS</Text>
-      </TouchableOpacity>
-      <TouchableOpacity onPress={() => setActiveScreen("groups")} style={styles.navBtn}>
-        <Ionicons name="people-outline" size={24} color={activeScreen === "groups" ? "#4e8ef7" : "#999"} />
-        <Text style={styles.navText}>Groups</Text>
-      </TouchableOpacity>
-      <TouchableOpacity onPress={() => setActiveScreen("profile")} style={styles.navBtn}>
-        <Ionicons name="person-outline" size={24} color={activeScreen === "profile" ? "#4e8ef7" : "#999"} />
-        <Text style={styles.navText}>Profile</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  /////////////////////////////
+  // Render
+  /////////////////////////////
 
-  // 🔐 Auth screen
-  if (activeScreen === "auth") {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>🔐 Login / Signup</Text>
-        <TouchableOpacity style={styles.primaryBtn} onPress={() => setActiveScreen("sms")}>
-          <Text style={styles.btnText}>Back</Text>
+  return (
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      {/* Header */}
+      <View style={styles.chatHeader}>
+        <Text style={styles.title}>{activeGroup ? activeGroup.name : receiverProfile?.name || receiverEmail}</Text>
+        <TouchableOpacity
+          onPress={() => {
+            setActiveGroup(null);
+            setActiveScreen(activeGroup ? "groups" : "sms");
+          }}
+        >
+          <Ionicons name="arrow-back-outline" size={28} color="#000" />
         </TouchableOpacity>
       </View>
-    );
-  }
 
-  // 💬 SMS screen
-  if (activeScreen === "sms") {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>💬 SMS</Text>
-        {inbox.length === 0 ? (
-          <Text style={styles.text}>No conversations yet.</Text>
-        ) : (
-          <FlatList
-            data={inbox}
-            keyExtractor={(item) => item.peer}
-            style={{ width: "100%" }}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.inboxItem}
-                onPress={() => {
-                  setReceiverEmail(item.peer);
-                  setActiveGroup(null);
-                  setActiveScreen("chat");
-                }}
-              >
-                <Text style={styles.peerText}>{item.peer}</Text>
-                <Text style={styles.lastMessage}>{item.text}</Text>
-                {item.unreadCount > 0 && (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>{item.unreadCount}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            )}
-          />
-        )}
-        {user && (
-          <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: "red", marginTop: 10 }]} onPress={() => signOut(auth)}>
-            <Text style={styles.btnText}>Logout</Text>
-          </TouchableOpacity>
-        )}
-        <NavBar />
-      </View>
-    );
-  }
-
-  // 💬 Chat screen (private or group)
-  if (activeScreen === "chat") {
-    return (
-      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <View style={styles.chatHeader}>
-          <Text style={styles.title}>{activeGroup ? activeGroup.name : receiverProfile?.name || receiverEmail}</Text>
-          <TouchableOpacity
-            onPress={() => {
-              setActiveGroup(null);
-              setReceiverEmail("");
-              setActiveScreen(activeGroup ? "groups" : "sms");
-            }}
-          >
-            <Ionicons name="arrow-back-outline" size={28} color="#000" />
-          </TouchableOpacity>
-        </View>
-
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => item.id}
-          style={{ width: "100%" }}
-          renderItem={({ item }) => (
-            <View style={[styles.messageRow, item.senderEmail === user.email ? { flexDirection: "row-reverse" } : {}]}>
-              <Image source={{ uri: item.senderAvatar }} style={styles.avatar} />
-              <View style={[styles.messageBubble, item.senderEmail === user.email ? styles.myBubble : styles.theirBubble]}>
-                <Text style={styles.senderName}>{item.senderName}</Text>
-                <Text style={styles.messageText}>{item.text}</Text>
-                <Text style={styles.timestamp}>{new Date(item.timestamp.seconds ? item.timestamp.seconds * 1000 : item.timestamp).toLocaleTimeString()}</Text>
-              </View>
+      {/* Messages */}
+      <FlatList
+        ref={flatListRef}
+        data={messages}
+        keyExtractor={(item) => item.id}
+        style={{ width: "100%" }}
+        renderItem={({ item }) => (
+          <View style={[styles.messageRow, item.senderEmail === user.email ? { flexDirection: "row-reverse" } : {}]}>
+            <Image source={{ uri: item.senderAvatar }} style={styles.avatar} />
+            <View style={[styles.messageBubble, item.senderEmail === user.email ? styles.myBubble : styles.theirBubble]}>
+              <Text style={styles.senderName}>{item.senderName}</Text>
+              <Text style={styles.messageText}>{item.text}</Text>
+              <Text style={styles.timestamp}>
+                {new Date(item.timestamp.seconds ? item.timestamp.seconds * 1000 : item.timestamp).toLocaleTimeString()}
+              </Text>
             </View>
-          )}
-          contentContainerStyle={{ padding: 10 }}
-        />
-
-        <View style={styles.inputBar}>
-          <TextInput style={styles.textBox} placeholder="Type a message..." value={text} onChangeText={setText} />
-          <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
-            <Ionicons name="send" size={22} color="#fff" />
-          </TouchableOpacity>
-        </View>
-        <NavBar />
-      </KeyboardAvoidingView>
-    );
-  }
-
-  // 👥 Groups screen
-  if (activeScreen === "groups") {
-    const sampleGroups = [
-      { id: "g1", name: "React Devs", lastMessage: "Meeting at 5 PM", unreadCount: 2 },
-      { id: "g2", name: "Football Fans", lastMessage: "Match highlights uploaded", unreadCount: 0 },
-      { id: "g3", name: "Music Lovers", lastMessage: "Check new playlist", unreadCount: 1 },
-    ];
-
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>👥 Groups</Text>
-        <FlatList
-          data={sampleGroups}
-          keyExtractor={(item) => item.id}
-          style={{ width: "100%" }}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.inboxItem}
-              onPress={() => {
-                setActiveGroup(item);
-                setReceiverEmail("");
-                setActiveScreen("chat");
-              }}
-            >
-              <Text style={styles.peerText}>{item.name}</Text>
-              <Text style={styles.lastMessage}>{item.lastMessage}</Text>
-              {item.unreadCount > 0 && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{item.unreadCount}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          )}
-        />
-        <NavBar />
-      </View>
-    );
-  }
-
-  // 👤 Profile screen
-  if (activeScreen === "profile") {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>👤 Profile</Text>
-        {user ? (
-          <>
-            <Text style={styles.text}>Name: {user.name || "N/A"}</Text>
-            <Text style={styles.text}>Email: {user.email}</Text>
-            <Text style={styles.text}>
-              Joined: {user.createdAt ? new Date(user.createdAt.seconds * 1000).toLocaleDateString() : "N/A"}
-            </Text>
-          </>
-        ) : (
-          <Text style={styles.text}>You are not logged in</Text>
+          </View>
         )}
-        <NavBar />
-      </View>
-    );
-  }
+        contentContainerStyle={{ padding: 10 }}
+      />
 
-  return null;
+      {/* Typing indicator */}
+      {typingUsers.length > 0 && (
+        <View style={{ flexDirection: "row", alignItems: "center", marginLeft: 15, marginBottom: 5 }}>
+          <TypingIndicator />
+          <Text style={{ marginLeft: 8, color: "#666", fontStyle: "italic" }}>
+            {typingUsers.join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...
+          </Text>
+        </View>
+      )}
+
+      {/* Send input */}
+      <SendInput text={text} setText={handleTyping} onSend={handleSend} />
+    </KeyboardAvoidingView>
+  );
 }
 
-// 🎨 Styles
+/////////////////////////////
+// Styles
+/////////////////////////////
+
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 80, width: "100%" },
   title: { fontSize: 22, fontWeight: "bold", marginBottom: 15 },
-  text: { fontSize: 16, color: "#444", marginBottom: 5, paddingHorizontal: 15 },
-  primaryBtn: { backgroundColor: "#4e8ef7", paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8, marginTop: 10 },
-  btnText: { color: "#fff", fontWeight: "600" },
-  navBar: { position: "absolute", bottom: 0, flexDirection: "row", width: "100%", justifyContent: "space-around", paddingVertical: 10, borderTopWidth: 1, borderColor: "#ddd", backgroundColor: "#f8f8f8" },
-  navBtn: { alignItems: "center" },
-  navText: { fontSize: 12, color: "#666", marginTop: 3 },
-  inboxItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 12, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#ddd", backgroundColor: "#fff" },
-  peerText: { fontWeight: "600", fontSize: 16 },
-  lastMessage: { fontSize: 14, color: "#555", flex: 1, marginLeft: 10 },
-  badge: { backgroundColor: "#FF3B30", borderRadius: 12, minWidth: 24, height: 24, justifyContent: "center", alignItems: "center", paddingHorizontal: 5, marginLeft: 10 },
-  badgeText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  chatHeader: { width: "100%", flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 15, paddingVertical: 10, borderBottomWidth: 1, borderColor: "#ddd" },
   messageRow: { flexDirection: "row", alignItems: "flex-end", marginVertical: 5, paddingHorizontal: 10 },
   avatar: { width: 36, height: 36, borderRadius: 18, marginHorizontal: 6 },
   messageBubble: { maxWidth: "70%", padding: 10, borderRadius: 10 },
@@ -346,8 +290,9 @@ const styles = StyleSheet.create({
   senderName: { fontSize: 12, fontWeight: "600", marginBottom: 2, color: "#333" },
   messageText: { fontSize: 16, color: "#000" },
   timestamp: { fontSize: 10, color: "#888", alignSelf: "flex-end", marginTop: 2 },
-  chatHeader: { width: "100%", flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 15, paddingVertical: 10, borderBottomWidth: 1, borderColor: "#ddd" },
   inputBar: { flexDirection: "row", alignItems: "center", padding: 8, width: "100%", borderTopWidth: 1, borderColor: "#ddd" },
   textBox: { flex: 1, backgroundColor: "#f1f1f1", borderRadius: 25, paddingHorizontal: 15, paddingVertical: 8, fontSize: 16 },
   sendBtn: { marginLeft: 8, backgroundColor: "#25D366", borderRadius: 25, padding: 12 },
+  typingContainer: { flexDirection: "row", marginLeft: 15, marginBottom: 5, height: 10, alignItems: "center" },
+  typingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#666", marginHorizontal: 2 },
 });
