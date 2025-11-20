@@ -119,20 +119,6 @@ export default function ChatScreen({ user, receiverEmail, activeGroup, setActive
       const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setMessages(arr);
       flatListRef.current?.scrollToEnd({ animated: true });
-
-      // Reset unread if private chat
-      if (!activeGroup && receiverEmail) {
-        const receiverDoc = doc(db, "acc", "elijah", user.email);
-        getDoc(receiverDoc).then((snap) => {
-          if (snap.exists()) {
-            const data = snap.data();
-            const updatedInbox = (data.inbox || []).map((i) =>
-              i.peer === receiverEmail ? { ...i, unreadCount: 0 } : i
-            );
-            updateDoc(receiverDoc, { inbox: updatedInbox });
-          }
-        });
-      }
     });
 
     return () => unsub();
@@ -195,7 +181,6 @@ export default function ChatScreen({ user, receiverEmail, activeGroup, setActive
       timestamp,
     };
 
-    // Optimistic update
     setMessages((prev) =>
       [...prev, { id: `temp-${Math.random().toString()}`, ...message }]
         .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
@@ -211,31 +196,13 @@ export default function ChatScreen({ user, receiverEmail, activeGroup, setActive
         const receiverRef = collection(db, "acc", "elijah", receiverEmail, "chats", user.email, "messages");
 
         await Promise.all([addDoc(senderRef, message), addDoc(receiverRef, message)]);
-
-        // Update inbox for sender
-        const senderDoc = doc(db, "acc", "elijah", user.email);
-        await updateDoc(senderDoc, {
-          inbox: arrayUnion({ peer: receiverEmail, text, timestamp, unreadCount: 0 }),
-        });
-
-        // Update inbox for receiver
-        const receiverDoc = doc(db, "acc", "elijah", receiverEmail);
-        const snap = await getDoc(receiverDoc);
-        if (snap.exists()) {
-          const data = snap.data();
-          const updatedInbox = (data.inbox || []).filter((i) => i.peer !== user.email);
-          const existing = data.inbox?.find((i) => i.peer === user.email);
-          const newUnread = existing ? (existing.unreadCount || 0) + 1 : 1;
-          updatedInbox.push({ peer: user.email, text, timestamp, unreadCount: newUnread });
-          await updateDoc(receiverDoc, { inbox: updatedInbox });
-        }
       }
     } catch (err) {
       console.error("Send message error:", err);
     }
 
     setText("");
-    handleTyping(""); // reset typing
+    handleTyping(""); 
   };
 
   /////////////////////////////
@@ -268,6 +235,7 @@ export default function ChatScreen({ user, receiverEmail, activeGroup, setActive
             <View style={[styles.messageRow, isMe ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }]}>
               {!isMe && <Image source={{ uri: item.senderAvatar }} style={styles.avatar} />}
               <View style={[styles.messageBubble, isMe ? styles.myBubble : styles.theirBubble]}>
+                {!isMe && <Text style={styles.senderName}>{item.senderName}</Text>}
                 <Text style={styles.messageText}>{item.text}</Text>
                 <Text style={styles.timestamp}>
                   {new Date(item.timestamp.seconds ? item.timestamp.seconds * 1000 : item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
@@ -307,10 +275,11 @@ const styles = StyleSheet.create({
   messageRow: { flexDirection: "row", alignItems: "flex-end", marginVertical: 4, paddingHorizontal: 10 },
   avatar: { width: 36, height: 36, borderRadius: 18 },
   messageBubble: { maxWidth: "75%", padding: 10, borderRadius: 15, marginHorizontal: 4 },
-  myBubble: { backgroundColor: "#DCF8C6", borderTopRightRadius: 0 },
-  theirBubble: { backgroundColor: "#fff", borderTopLeftRadius: 0 },
-  messageText: { fontSize: 16, color: "#000" },
-  timestamp: { fontSize: 10, color: "#666", alignSelf: "flex-end", marginTop: 4 },
+  myBubble: { backgroundColor: "#34B76B", borderTopRightRadius: 0, borderTopLeftRadius: 15, borderBottomLeftRadius: 15, borderBottomRightRadius: 15 },
+  theirBubble: { backgroundColor: "#fff", borderTopLeftRadius: 0, borderTopRightRadius: 15, borderBottomLeftRadius: 15, borderBottomRightRadius: 15 },
+  messageText: { fontSize: 16, color: "#fff" }, // white text on green bubble
+  senderName: { fontSize: 12, color: "#ddd", marginBottom: 2 }, // lighter text for received messages
+  timestamp: { fontSize: 10, color: "#e0f2e9", alignSelf: "flex-end", marginTop: 4 },
   inputBar: { flexDirection: "row", alignItems: "center", padding: 8, width: "100%", borderTopWidth: 1, borderColor: "#ddd", backgroundColor: "#fff" },
   textBox: { flex: 1, backgroundColor: "#f2f2f2", borderRadius: 20, paddingHorizontal: 15, paddingVertical: 8, fontSize: 16 },
   sendBtn: { marginLeft: 8, backgroundColor: "#128C7E", borderRadius: 20, padding: 12 },
