@@ -47,20 +47,32 @@ const TypingIndicator = () => {
 // SendInput Component
 /////////////////////////////
 
-const SendInput = ({ text, setText, onSend }) => (
-  <View style={styles.inputBar}>
-    <TextInput
-      style={styles.textBox}
-      placeholder="Type a message..."
-      value={text}
-      onChangeText={setText}
-      multiline
-    />
-    <TouchableOpacity style={styles.sendBtn} onPress={onSend}>
-      <Ionicons name="send" size={22} color="#fff" />
-    </TouchableOpacity>
-  </View>
-);
+const SendInput = ({ text, setText, onSend }) => {
+  const handlePress = () => {
+    if (text.trim()) onSend();
+  };
+
+  return (
+    <View style={styles.inputBar}>
+      <TextInput
+        style={styles.textBox}
+        placeholder="Type a message..."
+        value={text}
+        onChangeText={setText}
+        multiline
+        returnKeyType="send"
+        onSubmitEditing={handlePress}
+      />
+      <TouchableOpacity
+        style={[styles.sendBtn, { opacity: text.trim() ? 1 : 0.5 }]}
+        onPress={handlePress}
+        disabled={!text.trim()}
+      >
+        <Ionicons name="send" size={22} color="#fff" />
+      </TouchableOpacity>
+    </View>
+  );
+};
 
 /////////////////////////////
 // ChatScreen Component
@@ -172,6 +184,7 @@ export default function ChatScreen({ user, receiverEmail, activeGroup, setActive
 
   const handleSend = async () => {
     if (!text.trim() || !user?.email) return;
+
     const timestamp = new Date();
 
     const message = {
@@ -181,6 +194,13 @@ export default function ChatScreen({ user, receiverEmail, activeGroup, setActive
       senderAvatar: user.avatar || `https://i.pravatar.cc/150?u=${user.email}`,
       timestamp,
     };
+
+    // Optimistic update
+    setMessages((prev) =>
+      [...prev, { id: `temp-${Math.random().toString()}`, ...message }]
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    );
+    flatListRef.current?.scrollToEnd({ animated: true });
 
     try {
       if (activeGroup) {
@@ -240,21 +260,23 @@ export default function ChatScreen({ user, receiverEmail, activeGroup, setActive
       {/* Messages */}
       <FlatList
         ref={flatListRef}
-        data={messages}
+        data={[...messages].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))}
         keyExtractor={(item) => item.id}
-        style={{ width: "100%" }}
-        renderItem={({ item }) => (
-          <View style={[styles.messageRow, item.senderEmail === user.email ? { flexDirection: "row-reverse" } : {}]}>
-            <Image source={{ uri: item.senderAvatar }} style={styles.avatar} />
-            <View style={[styles.messageBubble, item.senderEmail === user.email ? styles.myBubble : styles.theirBubble]}>
-              <Text style={styles.senderName}>{item.senderName}</Text>
-              <Text style={styles.messageText}>{item.text}</Text>
-              <Text style={styles.timestamp}>
-                {new Date(item.timestamp.seconds ? item.timestamp.seconds * 1000 : item.timestamp).toLocaleTimeString()}
-              </Text>
+        renderItem={({ item }) => {
+          const isMe = item.senderEmail === user.email;
+          return (
+            <View style={[styles.messageRow, isMe ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }]}>
+              {!isMe && <Image source={{ uri: item.senderAvatar }} style={styles.avatar} />}
+              <View style={[styles.messageBubble, isMe ? styles.myBubble : styles.theirBubble]}>
+                <Text style={styles.messageText}>{item.text}</Text>
+                <Text style={styles.timestamp}>
+                  {new Date(item.timestamp.seconds ? item.timestamp.seconds * 1000 : item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                </Text>
+              </View>
+              {isMe && <Image source={{ uri: item.senderAvatar }} style={styles.avatar} />}
             </View>
-          </View>
-        )}
+          );
+        }}
         contentContainerStyle={{ padding: 10 }}
       />
 
@@ -279,20 +301,19 @@ export default function ChatScreen({ user, receiverEmail, activeGroup, setActive
 /////////////////////////////
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 80, width: "100%" },
-  title: { fontSize: 22, fontWeight: "bold", marginBottom: 15 },
-  chatHeader: { width: "100%", flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 15, paddingVertical: 10, borderBottomWidth: 1, borderColor: "#ddd" },
-  messageRow: { flexDirection: "row", alignItems: "flex-end", marginVertical: 5, paddingHorizontal: 10 },
-  avatar: { width: 36, height: 36, borderRadius: 18, marginHorizontal: 6 },
-  messageBubble: { maxWidth: "70%", padding: 10, borderRadius: 10 },
-  myBubble: { backgroundColor: "#B9FBC0", alignSelf: "flex-end" },
-  theirBubble: { backgroundColor: "#fff", alignSelf: "flex-start" },
-  senderName: { fontSize: 12, fontWeight: "600", marginBottom: 2, color: "#333" },
+  container: { flex: 1, width: "100%", backgroundColor: "#E5DDD5" },
+  title: { fontSize: 22, fontWeight: "bold" },
+  chatHeader: { width: "100%", flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 15, paddingVertical: 10, borderBottomWidth: 1, borderColor: "#ddd", backgroundColor: "#fff" },
+  messageRow: { flexDirection: "row", alignItems: "flex-end", marginVertical: 4, paddingHorizontal: 10 },
+  avatar: { width: 36, height: 36, borderRadius: 18 },
+  messageBubble: { maxWidth: "75%", padding: 10, borderRadius: 15, marginHorizontal: 4 },
+  myBubble: { backgroundColor: "#DCF8C6", borderTopRightRadius: 0 },
+  theirBubble: { backgroundColor: "#fff", borderTopLeftRadius: 0 },
   messageText: { fontSize: 16, color: "#000" },
-  timestamp: { fontSize: 10, color: "#888", alignSelf: "flex-end", marginTop: 2 },
-  inputBar: { flexDirection: "row", alignItems: "center", padding: 8, width: "100%", borderTopWidth: 1, borderColor: "#ddd" },
-  textBox: { flex: 1, backgroundColor: "#f1f1f1", borderRadius: 25, paddingHorizontal: 15, paddingVertical: 8, fontSize: 16 },
-  sendBtn: { marginLeft: 8, backgroundColor: "#25D366", borderRadius: 25, padding: 12 },
+  timestamp: { fontSize: 10, color: "#666", alignSelf: "flex-end", marginTop: 4 },
+  inputBar: { flexDirection: "row", alignItems: "center", padding: 8, width: "100%", borderTopWidth: 1, borderColor: "#ddd", backgroundColor: "#fff" },
+  textBox: { flex: 1, backgroundColor: "#f2f2f2", borderRadius: 20, paddingHorizontal: 15, paddingVertical: 8, fontSize: 16 },
+  sendBtn: { marginLeft: 8, backgroundColor: "#128C7E", borderRadius: 20, padding: 12 },
   typingContainer: { flexDirection: "row", marginLeft: 15, marginBottom: 5, height: 10, alignItems: "center" },
   typingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#666", marginHorizontal: 2 },
 });
