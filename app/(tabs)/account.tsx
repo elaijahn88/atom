@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -106,10 +107,17 @@ export default function AccountAndMoneyManager() {
 
   // ---------------- Top-Up Function ----------------
   const simulateTopUp = async (amount: number, method?: string) => {
-    if (!amount || isNaN(amount)) {
-      setLabel("Enter valid amount.");
+    if (!amount || isNaN(amount) || amount <= 0) {
+      setLabel("Enter a valid amount.");
       return;
     }
+
+    // Check balance for manual/mobile top-up
+    if ((method === "Manual" || mobileMoneyProviders.some(p => p.name === method)) && (profile?.net || 0) < amount) {
+      setLabel(`Insufficient balance to top-up Shs ${amount} via ${method}.`);
+      return;
+    }
+
     const newTx = {
       receiver: method || "Top-Up",
       amount,
@@ -117,12 +125,18 @@ export default function AccountAndMoneyManager() {
       proof: `MM#${Math.floor(Math.random() * 10000)}`,
       status: "Completed",
     };
-    const newNet = (profile?.net || 0) + amount;
+
+    // Deduct for manual/mobile, add for automatic top-ups
+    const newNet =
+      method === "Manual" || mobileMoneyProviders.some(p => p.name === method)
+        ? (profile?.net || 0) - amount
+        : (profile?.net || 0) + amount;
+
     const updatedTxs = [newTx, ...transactions];
     setProfile({ ...profile, net: newNet });
     setTransactions(updatedTxs);
     setTopUpAmount("");
-    setLabel(`Top-up of Shs ${amount} via ${method || "manual"} successful!`);
+    setLabel(`${method || "Top-Up"} of Shs ${amount} processed successfully!`);
     await updateFirestore({ net: newNet, transactions: updatedTxs });
   };
 
@@ -134,7 +148,7 @@ export default function AccountAndMoneyManager() {
       return;
     }
     if (isNaN(amount) || amount <= 0) {
-      setLabel("Enter valid amount.");
+      setLabel("Enter a valid amount.");
       return;
     }
     if ((profile?.net || 0) < amount) {
@@ -179,7 +193,7 @@ export default function AccountAndMoneyManager() {
     setTransferAmount("");
   };
 
-  // ---------------- Open Edit Profile ----------------
+  // ---------------- Edit Profile ----------------
   const openEditProfile = () => {
     setEditData({
       Name: profile.Name || "",
@@ -195,7 +209,6 @@ export default function AccountAndMoneyManager() {
     setEditProfileModal(true);
   };
 
-  // ---------------- Save Edited Profile ----------------
   const saveProfile = async () => {
     await updateFirestore(editData);
     setProfile({ ...profile, ...editData });
@@ -211,6 +224,9 @@ export default function AccountAndMoneyManager() {
     );
 
   // ---------------- UI ----------------
+  const topUpAmountNum = Number(topUpAmount);
+  const sendAmountNum = Number(transferAmount);
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>{profile?.Name}</Text>
@@ -220,6 +236,7 @@ export default function AccountAndMoneyManager() {
         <Text style={styles.editProfileText}>Edit Profile</Text>
       </TouchableOpacity>
 
+      {/* ---------------- Top-Up Section ---------------- */}
       <Text style={styles.sectionTitle}>Top-Up Account</Text>
       <TextInput
         style={styles.input}
@@ -229,9 +246,18 @@ export default function AccountAndMoneyManager() {
         value={topUpAmount}
         onChangeText={setTopUpAmount}
       />
+      {topUpAmountNum > (profile?.net || 0) && (
+        <Text style={styles.warningText}>Insufficient funds for this top-up.</Text>
+      )}
+
       <View style={styles.quickTopUps}>
         {quickTopUps.map((amt) => (
-          <TouchableOpacity key={amt} style={styles.quickTopUpBtn} onPress={() => simulateTopUp(amt, "Manual")}>
+          <TouchableOpacity
+            key={amt}
+            style={[styles.quickTopUpBtn, { backgroundColor: (profile?.net || 0) >= amt ? "#333" : "#555" }]}
+            onPress={() => (profile?.net || 0) >= amt && simulateTopUp(amt, "Manual")}
+            disabled={(profile?.net || 0) < amt}
+          >
             <Text style={styles.quickTopUpText}>Shs {amt}</Text>
           </TouchableOpacity>
         ))}
@@ -239,17 +265,22 @@ export default function AccountAndMoneyManager() {
 
       <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Mobile Money</Text>
       <View style={styles.mmRow}>
-        {mobileMoneyProviders.map((provider) => (
-          <TouchableOpacity
-            key={provider.name}
-            style={[styles.mmBtn, { backgroundColor: provider.color }]}
-            onPress={() => simulateTopUp(Number(topUpAmount), provider.name)}
-          >
-            <Text style={styles.mmText}>{provider.name}</Text>
-          </TouchableOpacity>
-        ))}
+        {mobileMoneyProviders.map((provider) => {
+          const canAfford = !isNaN(topUpAmountNum) && topUpAmountNum > 0 && (profile?.net || 0) >= topUpAmountNum;
+          return (
+            <TouchableOpacity
+              key={provider.name}
+              style={[styles.mmBtn, { backgroundColor: canAfford ? provider.color : "#555" }]}
+              onPress={() => canAfford && simulateTopUp(topUpAmountNum, provider.name)}
+              disabled={!canAfford}
+            >
+              <Text style={styles.mmText}>{provider.name}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
+      {/* ---------------- Send Money ---------------- */}
       <Text style={styles.sectionTitle}>Send Money</Text>
       <TextInput
         style={styles.input}
@@ -266,7 +297,14 @@ export default function AccountAndMoneyManager() {
         value={transferAmount}
         onChangeText={setTransferAmount}
       />
-      <TouchableOpacity style={styles.topUpButton} onPress={sendMoney}>
+      {sendAmountNum > (profile?.net || 0) && (
+        <Text style={styles.warningText}>Insufficient funds to send.</Text>
+      )}
+      <TouchableOpacity
+        style={[styles.topUpButton, { backgroundColor: sendAmountNum > (profile?.net || 0) || !recipientName ? "#555" : "#FF5722" }]}
+        onPress={sendMoney}
+        disabled={sendAmountNum > (profile?.net || 0) || !recipientName || !transferAmount}
+      >
         <Text style={styles.topUpButtonText}>Send Money</Text>
       </TouchableOpacity>
 
@@ -345,6 +383,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     fontSize: 16,
   },
+  warningText: { color: "#FF3B30", marginBottom: 8, fontSize: 14 },
   quickTopUps: { flexDirection: "row", justifyContent: "space-between", marginBottom: 10 },
   quickTopUpBtn: { backgroundColor: "#333", padding: 10, borderRadius: 10 },
   quickTopUpText: { color: "#fff", fontWeight: "600" },
