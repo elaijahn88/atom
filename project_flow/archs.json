@@ -1,0 +1,86 @@
+{
+  "hybridArchitecture": {
+    "firestore": {
+      "users": {
+        "userId": {
+          "username": "string",
+          "email": "string",
+          "profileImageUrl": "string",
+          "createdAt": "timestamp",
+          "lastActive": "timestamp",
+          "accounts": {
+            "accountId": {
+              "accountType": "savings | loan | investment",
+              "balance": "number",
+              "currency": "string",
+              "createdAt": "timestamp",
+              "updatedAt": "timestamp",
+              "status": "active | closed | pending",
+              "details": {
+                "interestRate": "number (for savings/loans)",
+                "minimumBalance": "number (for savings)",
+                "principal": "number (for loans)",
+                "durationMonths": "number (for loans)",
+                "remainingBalance": "number (for loans)",
+                "nextDueDate": "timestamp (for loans)",
+                "portfolioType": "string (for investments)",
+                "investedAmount": "number (for investments)",
+                "currentValue": "number (for investments)",
+                "riskLevel": "string (for investments)"
+              },
+              "transactions": {
+                "transactionId": {
+                  "type": "deposit | withdrawal | loanPayment | investmentBuy | investmentSell",
+                  "amount": "number",
+                  "timestamp": "timestamp",
+                  "description": "string",
+                  "balanceAfter": "number"
+                }
+              }
+            }
+          },
+          "chats": {
+            "chatId": {
+              "participants": ["userId1", "userId2"],
+              "lastMessage": "string",
+              "lastUpdated": "timestamp",
+              "unreadCounts": {
+                "userId1": "number",
+                "userId2": "number"
+              }
+            }
+          }
+        }
+      }
+    },
+    "realtimeDatabase": {
+      "messages": {
+        "chatId_user1_user2": {
+          "messageId": {
+            "senderId": "user1",
+            "receiverId": "user2",
+            "messageText": "Hello!",
+            "timestamp": 1700000000000,
+            "read": false
+          },
+          "messageId2": {
+            "senderId": "user2",
+            "receiverId": "user1",
+            "messageText": "Hi!",
+            "timestamp": 1700000005000,
+            "read": false
+          }
+        },
+        "chatId_user1_user3": {
+          "messageId": {
+            "senderId": "user1",
+            "receiverId": "user3",
+            "messageText": "Hey!",
+            "timestamp": 1700000010000,
+            "read": false
+          }
+        }
+      }
+    }
+  }
+}
