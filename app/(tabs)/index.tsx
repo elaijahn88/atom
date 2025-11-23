@@ -11,11 +11,18 @@ import {
   Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { getDatabase, ref, set, push, onValue, update, serverTimestamp } from "firebase/database";
-import { database } from "../../firebase"; // changed from db to database
+import {
+  ref,
+  set,
+  push,
+  onValue,
+  update,
+  serverTimestamp,
+} from "firebase/database";
+import { database } from "../../firebase";
 
 export default function GreenChatApp() {
-  const db = database; // assign database to db for easier usage throughout
+  const db = database;
 
   const user = {
     email: "elajahn8@gmail.com",
@@ -35,39 +42,30 @@ export default function GreenChatApp() {
   const [inbox, setInbox] = useState<any[]>([]);
   const flatListRef = useRef<FlatList>(null);
 
+  const sanitizeEmail = (email: string) => email.replace(/\./g, ",");
+
   // ------------------ Setup users ------------------
   useEffect(() => {
     const setupUsers = async () => {
-      // Main user
-      const mainRef = ref(db, `users/${user.email.replace(".", ",")}`);
-      onValue(
-        mainRef,
-        (snap) => {
-          if (!snap.exists()) {
-            set(mainRef, { name: user.name, email: user.email, avatar: user.avatar, inbox: {} });
-          }
-        },
-        { onlyOnce: true }
-      );
+      const mainRef = ref(db, `users/${sanitizeEmail(user.email)}`);
+      onValue(mainRef, (snap) => {
+        if (!snap.exists()) {
+          set(mainRef, { name: user.name, email: user.email, avatar: user.avatar, inbox: {} });
+        }
+      }, { onlyOnce: true });
 
-      // Default users
       for (let u of defaultUsers) {
-        const uRef = ref(db, `users/${u.email.replace(".", ",")}`);
-        onValue(
-          uRef,
-          (snap) => {
-            if (!snap.exists()) {
-              set(uRef, { name: u.name, email: u.email, avatar: u.avatar, inbox: {} });
-            }
-          },
-          { onlyOnce: true }
-        );
+        const uRef = ref(db, `users/${sanitizeEmail(u.email)}`);
+        onValue(uRef, (snap) => {
+          if (!snap.exists()) {
+            set(uRef, { name: u.name, email: u.email, avatar: u.avatar, inbox: {} });
+          }
+        }, { onlyOnce: true });
       }
 
-      // Initialize inbox for main user
       const inboxData: any = {};
       defaultUsers.forEach((u) => {
-        inboxData[u.email.replace(".", ",")] = { lastText: "", unreadCount: 0, timestamp: null };
+        inboxData[sanitizeEmail(u.email)] = { lastText: "", unreadCount: 0, timestamp: null };
       });
       update(mainRef, { inbox: inboxData });
     };
@@ -77,12 +75,34 @@ export default function GreenChatApp() {
 
   // ------------------ Inbox listener ------------------
   useEffect(() => {
-    const inboxRef = ref(db, `users/${user.email.replace(".", ",")}/inbox`);
-    const unsubscribe = onValue(inboxRef, (snapshot) => {
+    const inboxRef = ref(db, `users/${sanitizeEmail(user.email)}/inbox`);
+    const unsubscribe = onValue(inboxRef, async (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
-        const inboxArr = Object.entries(data).map(([peer, val]: any) => ({ peer, ...val }));
-        setInbox(inboxArr);
+        const inboxArr: any[] = [];
+
+        for (let [peerSanitized, val] of Object.entries(data)) {
+          const peerEmail = peerSanitized.replace(/,/g, ".");
+          const userRef = ref(db, `users/${peerSanitized}`);
+
+          let profile: any = {};
+          await new Promise<void>((resolve) => {
+            onValue(userRef, (snap) => {
+              if (snap.exists()) profile = snap.val();
+              resolve();
+            }, { onlyOnce: true });
+          });
+
+          inboxArr.push({
+            peer: peerEmail,
+            peerSanitized,
+            name: profile.name || peerEmail,
+            avatar: profile.avatar,
+            ...val,
+          });
+        }
+
+        setInbox(inboxArr.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
       } else {
         setInbox([]);
       }
@@ -95,15 +115,14 @@ export default function GreenChatApp() {
   useEffect(() => {
     if (!receiverEmail) return setReceiverProfile(null);
 
-    const receiverRef = ref(db, `users/${receiverEmail.replace(".", ",")}`);
+    const receiverRef = ref(db, `users/${sanitizeEmail(receiverEmail)}`);
     const unsubscribe = onValue(receiverRef, (snap) => {
       if (snap.exists()) setReceiverProfile(snap.val());
     });
 
-    // Reset unread count for this chat
     const inboxRef = ref(
       db,
-      `users/${user.email.replace(".", ",")}/inbox/${receiverEmail.replace(".", ",")}`
+      `users/${sanitizeEmail(user.email)}/inbox/${sanitizeEmail(receiverEmail)}`
     );
     update(inboxRef, { unreadCount: 0 });
 
@@ -145,12 +164,11 @@ export default function GreenChatApp() {
     const newMsgRef = push(ref(db, chatPath));
     await set(newMsgRef, msg);
 
-    // Update inbox for sender and receiver
     const updateInbox = (targetEmail: string, lastText: string, incrementUnread: boolean) => {
       const peerEmail = targetEmail === user.email ? receiverEmail : user.email;
       const inboxRef = ref(
         db,
-        `users/${targetEmail.replace(".", ",")}/inbox/${peerEmail.replace(".", ",")}`
+        `users/${sanitizeEmail(targetEmail)}/inbox/${sanitizeEmail(peerEmail)}`
       );
 
       onValue(
@@ -169,8 +187,8 @@ export default function GreenChatApp() {
       );
     };
 
-    updateInbox(user.email, text, false); // sender unread = 0
-    updateInbox(receiverEmail, text, true); // receiver unread += 1
+    updateInbox(user.email, text, false);
+    updateInbox(receiverEmail, text, true);
 
     setText("");
   };
@@ -193,16 +211,23 @@ export default function GreenChatApp() {
         />
       </View>
 
+      {/* Inbox */}
       {!receiverEmail && (
         <FlatList
-          style={{ maxHeight: 200 }}
-          data={inbox.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))}
+          style={{ maxHeight: 250 }}
+          data={inbox}
           keyExtractor={(item) => item.peer}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.inboxItem} onPress={() => setReceiverEmail(item.peer)}>
-              <Ionicons name="person-circle-outline" size={40} color="#25D366" />
+            <TouchableOpacity
+              style={styles.inboxItem}
+              onPress={() => setReceiverEmail(item.peer)}
+            >
+              <Image
+                source={{ uri: item.avatar || "https://i.pravatar.cc/150?u=default" }}
+                style={{ width: 40, height: 40, borderRadius: 20 }}
+              />
               <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={styles.nameText}>{item.peer}</Text>
+                <Text style={styles.nameText}>{item.name}</Text>
                 <Text style={styles.lastMessage} numberOfLines={1}>
                   {item.lastText}
                 </Text>
@@ -217,9 +242,13 @@ export default function GreenChatApp() {
         />
       )}
 
+      {/* Chat UI */}
       {receiverEmail && (
         <>
           <View style={styles.header}>
+            <TouchableOpacity onPress={() => setReceiverEmail("")} style={{ marginRight: 10 }}>
+              <Ionicons name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
             <Text style={styles.headerText}>{receiverProfile?.name || receiverEmail}</Text>
           </View>
 
