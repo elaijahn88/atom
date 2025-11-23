@@ -82,7 +82,7 @@ export default function GreenChatApp() {
       // Populate main user's inbox
       const inboxUsers = defaultUsers.map((u) => ({
         peer: u.email,
-        text: "Start chatting!",
+        text: "sms",
       }));
       await updateDoc(doc(db, "users", user.email), { inbox: inboxUsers });
     };
