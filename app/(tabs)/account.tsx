@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -66,7 +65,9 @@ export default function AccountAndMoneyManager() {
           if (!("transactions" in data)) data.transactions = [];
           setProfile(data);
           setTransactions(data.transactions);
-          setLabel(`Welcome back, ${data.Name || currentUser.displayName || "User"}!`);
+          setLabel(
+            `Welcome back, ${data.Name || currentUser.displayName || "User"}!`
+          );
         } else {
           const defaultData = {
             Name: currentUser.displayName || "User",
@@ -102,7 +103,12 @@ export default function AccountAndMoneyManager() {
   const updateFirestore = async (updates: any) => {
     if (!currentUser) return;
     const docRef = doc(db, "acc", currentUser.uid);
-    await updateDoc(docRef, updates);
+    try {
+      await updateDoc(docRef, updates);
+    } catch (err) {
+      console.error("Firestore update failed:", err);
+      setLabel("Failed to update data.");
+    }
   };
 
   // ---------------- Top-Up Function ----------------
@@ -112,8 +118,10 @@ export default function AccountAndMoneyManager() {
       return;
     }
 
-    // Check balance for manual/mobile top-up
-    if ((method === "Manual" || mobileMoneyProviders.some(p => p.name === method)) && (profile?.net || 0) < amount) {
+    if (
+      (method === "Manual" || mobileMoneyProviders.some((p) => p.name === method)) &&
+      (profile?.net || 0) < amount
+    ) {
       setLabel(`Insufficient balance to top-up Shs ${amount} via ${method}.`);
       return;
     }
@@ -126,9 +134,8 @@ export default function AccountAndMoneyManager() {
       status: "Completed",
     };
 
-    // Deduct for manual/mobile, add for automatic top-ups
     const newNet =
-      method === "Manual" || mobileMoneyProviders.some(p => p.name === method)
+      method === "Manual" || mobileMoneyProviders.some((p) => p.name === method)
         ? (profile?.net || 0) - amount
         : (profile?.net || 0) + amount;
 
@@ -195,25 +202,33 @@ export default function AccountAndMoneyManager() {
 
   // ---------------- Edit Profile ----------------
   const openEditProfile = () => {
+    if (!profile) return;
+
     setEditData({
       Name: profile.Name || "",
-      age: profile.age || "",
+      age: profile.age ? String(profile.age) : "",
       dob: profile.dob || "",
       father: profile.father || "",
       mother: profile.mother || "",
       idno: profile.idno || "",
       nin: profile.nin || "",
       nok: profile.nok || "",
-      phone: profile.phone || "",
+      phone: profile.phone ? String(profile.phone) : "",
     });
+
     setEditProfileModal(true);
   };
 
   const saveProfile = async () => {
-    await updateFirestore(editData);
-    setProfile({ ...profile, ...editData });
+    try {
+      await updateFirestore(editData);
+      setProfile((prev) => ({ ...prev, ...editData }));
+      setLabel("Profile updated successfully!");
+    } catch (err) {
+      console.error("Profile update error:", err);
+      setLabel("Failed to update profile.");
+    }
     setEditProfileModal(false);
-    setLabel("Profile updated successfully!");
   };
 
   if (loading)
@@ -223,7 +238,6 @@ export default function AccountAndMoneyManager() {
       </View>
     );
 
-  // ---------------- UI ----------------
   const topUpAmountNum = Number(topUpAmount);
   const sendAmountNum = Number(transferAmount);
 
@@ -254,7 +268,10 @@ export default function AccountAndMoneyManager() {
         {quickTopUps.map((amt) => (
           <TouchableOpacity
             key={amt}
-            style={[styles.quickTopUpBtn, { backgroundColor: (profile?.net || 0) >= amt ? "#333" : "#555" }]}
+            style={[
+              styles.quickTopUpBtn,
+              { backgroundColor: (profile?.net || 0) >= amt ? "#333" : "#555" },
+            ]}
             onPress={() => (profile?.net || 0) >= amt && simulateTopUp(amt, "Manual")}
             disabled={(profile?.net || 0) < amt}
           >
@@ -266,7 +283,8 @@ export default function AccountAndMoneyManager() {
       <Text style={[styles.sectionTitle, { marginTop: 10 }]}>Mobile Money</Text>
       <View style={styles.mmRow}>
         {mobileMoneyProviders.map((provider) => {
-          const canAfford = !isNaN(topUpAmountNum) && topUpAmountNum > 0 && (profile?.net || 0) >= topUpAmountNum;
+          const canAfford =
+            !isNaN(topUpAmountNum) && topUpAmountNum > 0 && (profile?.net || 0) >= topUpAmountNum;
           return (
             <TouchableOpacity
               key={provider.name}
@@ -301,7 +319,10 @@ export default function AccountAndMoneyManager() {
         <Text style={styles.warningText}>Insufficient funds to send.</Text>
       )}
       <TouchableOpacity
-        style={[styles.topUpButton, { backgroundColor: sendAmountNum > (profile?.net || 0) || !recipientName ? "#555" : "#FF5722" }]}
+        style={[
+          styles.topUpButton,
+          { backgroundColor: sendAmountNum > (profile?.net || 0) || !recipientName ? "#555" : "#FF5722" },
+        ]}
         onPress={sendMoney}
         disabled={sendAmountNum > (profile?.net || 0) || !recipientName || !transferAmount}
       >
@@ -309,14 +330,16 @@ export default function AccountAndMoneyManager() {
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={[styles.topUpButton, { backgroundColor: '#007bff' }]}
+        style={[styles.topUpButton, { backgroundColor: "#007bff" }]}
         onPress={() => setShowTransactions(!showTransactions)}
       >
-        <Text style={styles.topUpButtonText}>{showTransactions ? 'Hide Transactions' : 'Show Transactions'}</Text>
+        <Text style={styles.topUpButtonText}>
+          {showTransactions ? "Hide Transactions" : "Show Transactions"}
+        </Text>
       </TouchableOpacity>
 
-      {showTransactions && (
-        transactions.length > 0 ? (
+      {showTransactions &&
+        (transactions.length > 0 ? (
           <FlatList
             data={transactions}
             keyExtractor={(_, i) => i.toString()}
@@ -336,34 +359,46 @@ export default function AccountAndMoneyManager() {
           />
         ) : (
           <Text style={styles.noTx}>No transactions yet.</Text>
-        )
-      )}
+        ))}
 
       <Text style={styles.label}>{label}</Text>
 
       {/* ---------------- Edit Profile Modal ---------------- */}
-      <Modal visible={editProfileModal} transparent animationType="slide">
-        <ScrollView contentContainerStyle={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={{ fontSize: 20, fontWeight: "700", marginBottom: 12 }}>Edit Profile</Text>
-            {Object.keys(editData).map((key) => (
-              <TextInput
-                key={key}
-                style={styles.input}
-                placeholder={key}
-                value={editData[key as keyof typeof editData]?.toString() || ""}
-                onChangeText={(text) => setEditData({ ...editData, [key]: text })}
-              />
-            ))}
-            <TouchableOpacity style={styles.saveBtn} onPress={saveProfile}>
-              <Text style={{ color: "#fff", fontWeight: "700" }}>Save</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.saveBtn, { backgroundColor: "#ccc" }]} onPress={() => setEditProfileModal(false)}>
-              <Text style={{ color: "#333" }}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </Modal>
+      {editProfileModal && profile && (
+        <Modal visible transparent animationType="slide">
+          <ScrollView contentContainerStyle={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={{ fontSize: 20, fontWeight: "700", marginBottom: 12 }}>
+                Edit Profile
+              </Text>
+
+              {Object.keys(editData).map((key) => (
+                <TextInput
+                  key={key}
+                  style={styles.input}
+                  placeholder={key}
+                  placeholderTextColor="#999"
+                  value={String(editData[key] ?? "")}
+                  onChangeText={(text) =>
+                    setEditData((prev) => ({ ...prev, [key]: text }))
+                  }
+                />
+              ))}
+
+              <TouchableOpacity style={styles.saveBtn} onPress={saveProfile}>
+                <Text style={{ color: "#fff", fontWeight: "700" }}>Save</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.saveBtn, { backgroundColor: "#ccc" }]}
+                onPress={() => setEditProfileModal(false)}
+              >
+                <Text style={{ color: "#333" }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </Modal>
+      )}
     </ScrollView>
   );
 }
