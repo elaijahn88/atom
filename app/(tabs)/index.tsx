@@ -23,7 +23,7 @@ import {
 } from "firebase/database";
 import { database } from "../../firebase";
 
-export default function GreenChatApp() {
+export default function Green() {
   const db = database;
 
   // ------------------ MAIN USER ------------------
@@ -121,13 +121,13 @@ export default function GreenChatApp() {
         );
       }
 
-      // Create inbox entries
+      // Ensure inbox exists for all users
       const inboxData = {};
       defaultUsers.forEach((u) => {
         inboxData[sanitizeEmail(u.email)] = {
           lastText: "",
           unreadCount: 0,
-          timestamp: null,
+          timestamp: 0,
         };
       });
       update(mainRef, { inbox: inboxData });
@@ -172,9 +172,7 @@ export default function GreenChatApp() {
         });
       }
 
-      setInbox(
-        inboxArr.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-      );
+      setInbox(inboxArr);
     });
   }, []);
 
@@ -262,10 +260,8 @@ export default function GreenChatApp() {
 
       setMessages(msgs);
 
-      setTimeout(
-        () => flatListRef.current?.scrollToEnd({ animated: true }),
-        100
-      );
+      // Scroll to bottom
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     });
   }, [receiverEmail]);
 
@@ -391,7 +387,7 @@ export default function GreenChatApp() {
 
     if (readCount <= 1) return "✓";        // sent
     if (readCount === 2) return "✓✓";      // delivered
-    if (readCount > 2) return "✓✓";        // (only show blue color, not special symbol)
+    if (readCount > 2) return "✓✓";        // (blue color only)
   };
 
   // ------------------ TYPING INDICATOR ------------------
@@ -412,12 +408,32 @@ export default function GreenChatApp() {
     );
   };
 
+  // ------------------ MERGED INBOX ------------------
+  const mergedInbox = defaultUsers
+    .filter((u) => u.email !== user.email)
+    .map((u) => {
+      const sanEmail = sanitizeEmail(u.email);
+      const inboxItem = inbox.find((i) => i.peerSanitized === sanEmail);
+
+      return {
+        peer: u.email,
+        peerSanitized: sanEmail,
+        name: u.name,
+        avatar: u.avatar,
+        status: inboxItem?.status || "offline",
+        lastText: inboxItem?.lastText || "",
+        unreadCount: inboxItem?.unreadCount || 0,
+        timestamp: inboxItem?.timestamp || 0,
+      };
+    })
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
   // ------------------ UI ------------------
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="#075E54" barStyle="light-content" />
 
-      <Text style={styles.appLogo}>Green Chat</Text>
+      <Text style={styles.appLogo}>Green</Text>
 
       {/* SELECT RECEIVER */}
       <View style={styles.chatTo}>
@@ -435,7 +451,7 @@ export default function GreenChatApp() {
       {!receiverEmail && (
         <FlatList
           style={{ maxHeight: 250 }}
-          data={inbox}
+          data={mergedInbox}
           keyExtractor={(item) => item.peer}
           renderItem={({ item }) => (
             <TouchableOpacity
@@ -449,7 +465,7 @@ export default function GreenChatApp() {
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={styles.nameText}>{item.name}</Text>
                 <Text style={styles.lastMessage} numberOfLines={1}>
-                  {item.lastText}
+                  {item.lastText || "Say hi!"}
                 </Text>
               </View>
 
@@ -532,6 +548,11 @@ export default function GreenChatApp() {
                 </View>
               );
             }}
+            ListEmptyComponent={() => (
+              <Text style={{ textAlign: "center", color: "#aaa", marginTop: 20 }}>
+                No messages yet. Say hi!
+              </Text>
+            )}
           />
 
           {/* TYPING INDICATOR */}
@@ -574,82 +595,73 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === "ios" ? 10 : 5,
     color: "#fff",
   },
-  header: {
-    height: 60,
-    backgroundColor: "#075E54",
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 15,
-  },
-  headerText: { color: "#fff", fontSize: 20, fontWeight: "bold" },
-
   inboxItem: {
     flexDirection: "row",
-    padding: 10,
-    borderBottomWidth: 1,
-    borderColor: "#333",
     alignItems: "center",
+    padding: 10,
+    borderBottomColor: "#333",
+    borderBottomWidth: 1,
   },
-  nameText: { fontSize: 16, fontWeight: "600", color: "#fff" },
-  lastMessage: { fontSize: 14, color: "#aaa" },
+  nameText: { color: "#fff", fontWeight: "bold" },
+  lastMessage: { color: "#aaa", fontSize: 12 },
   unreadBadge: {
     backgroundColor: "#25D366",
     borderRadius: 12,
-    minWidth: 24,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    width: 24,
+    height: 24,
     justifyContent: "center",
     alignItems: "center",
   },
-  unreadText: { color: "#fff", fontWeight: "bold", fontSize: 12 },
-
-  messageRow: { flexDirection: "row", marginVertical: 4, alignItems: "flex-end" },
-  avatar: { width: 36, height: 36, borderRadius: 18, marginHorizontal: 6 },
-  messageBubble: { maxWidth: "75%", padding: 10, borderRadius: 10 },
-  myBubble: { backgroundColor: "#25D366" },
+  unreadText: { color: "#fff", fontSize: 12 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#075E54",
+    padding: 10,
+  },
+  headerText: { color: "#fff", fontWeight: "bold", fontSize: 18 },
+  messageRow: { flexDirection: "row", marginBottom: 10, alignItems: "flex-end" },
+  avatar: { width: 32, height: 32, borderRadius: 16 },
+  messageBubble: {
+    maxWidth: "70%",
+    borderRadius: 10,
+    padding: 8,
+    marginHorizontal: 5,
+  },
+  myBubble: { backgroundColor: "#056162" },
   theirBubble: { backgroundColor: "#1E2C33" },
-  senderName: { fontSize: 12, fontWeight: "600", color: "#fff" },
-  messageText: { fontSize: 16, color: "#fff" },
-
+  senderName: { color: "#ccc", fontSize: 10 },
+  messageText: { color: "#fff", fontSize: 14 },
   inputBar: {
     flexDirection: "row",
-    padding: 8,
-    backgroundColor: "#121B22",
+    alignItems: "center",
+    padding: 5,
+    borderTopColor: "#333",
     borderTopWidth: 1,
-    borderColor: "#333",
   },
   textBox: {
     flex: 1,
     backgroundColor: "#1E2C33",
-    borderRadius: 20,
+    borderRadius: 25,
     paddingHorizontal: 15,
     paddingVertical: Platform.OS === "ios" ? 10 : 5,
     color: "#fff",
   },
   sendBtn: {
-    marginLeft: 8,
     backgroundColor: "#25D366",
-    padding: 10,
-    borderRadius: 20,
-  },
-
-  // TYPING INDICATOR (CENTERED)
-  typingContainer: {
-    position: "absolute",
-    top: "40%",
-    left: 0,
-    right: 0,
+    borderRadius: 25,
+    width: 40,
+    height: 40,
+    justifyContent: "center",
     alignItems: "center",
+    marginLeft: 5,
   },
+  typingContainer: { paddingHorizontal: 10, paddingBottom: 5 },
   typingBubble: {
     backgroundColor: "#1E2C33",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
+    padding: 8,
+    borderRadius: 15,
+    width: 50,
   },
-  typingDots: {
-    color: "#fff",
-    fontSize: 20,
-    letterSpacing: 2,
-  },
+  typingDots: { color: "#fff", textAlign: "center" },
 });
