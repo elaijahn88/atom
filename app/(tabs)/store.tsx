@@ -26,6 +26,7 @@ const MyStore = () => {
   const [userEmail, setUserEmail] = useState("");
   const toastAnim = useRef(new Animated.Value(0)).current;
 
+  // Toast notification
   const showToast = (msg: string) => {
     Animated.sequence([
       Animated.timing(toastAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
@@ -35,35 +36,43 @@ const MyStore = () => {
     console.log(msg);
   };
 
-  // 🔹 Get logged-in user email
+  // 🔹 Detect logged-in user
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (user) => {
       if (user?.email) setUserEmail(user.email);
+      else setUserEmail(""); // logged out
     });
     return () => unsubAuth();
   }, []);
 
-  // 🔹 Fetch user info from acc collection
+  // 🔹 Fetch user info ONLY if logged in
   useEffect(() => {
-    if (!userEmail) return;
+    if (!userEmail) {
+      setUserInfo(null);
+      return;
+    }
+
     const userRef = doc(db, "acc", userEmail);
     const unsub = onSnapshot(userRef, (snap) => {
       if (!snap.exists()) return setUserInfo(null);
       setUserInfo(snap.data());
     });
+
     return () => unsub();
   }, [userEmail]);
 
-  // 🔹 Fetch products automatically
+  // 🔹 Fetch products no matter what (public)
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "phones", "iphone"), (snap) => {
       const data = snap.data() || {};
       const arr = Array.isArray(data.products) ? data.products : [];
       setProducts(arr);
     });
+
     return () => unsub();
   }, []);
 
+  // Add item to cart
   const addToCart = (item: any) => {
     setCart((prev = []) => {
       const safePrev = Array.isArray(prev) ? prev : [];
@@ -77,25 +86,29 @@ const MyStore = () => {
     return cart.reduce((sum, item) => sum + Number(item.price || 0), 0);
   };
 
+  // 🔹 Payment handler with login protection
   const handlePayment = async () => {
-    if (!userInfo) return;
+    if (!userInfo) {
+      Alert.alert("Login Required", "Please log in to complete your purchase.");
+      return;
+    }
+
     const total = getCartTotal();
     if (total > (userInfo.net || 0)) {
-      Alert.alert("Insufficient Funds", "Your balance is too low to complete this purchase.");
+      Alert.alert("Insufficient Funds", "Your balance is too low.");
       return;
     }
 
     try {
       const userRef = doc(db, "acc", userEmail);
 
-      // Update net balance
       await updateDoc(userRef, { net: userInfo.net - total });
 
-      // Add each purchased item to purchases array
       const purchaseRecords = cart.map((item) => ({
         ...item,
         timestamp: new Date(),
       }));
+
       await updateDoc(userRef, { purchases: arrayUnion(...purchaseRecords) });
 
       setCart([]);
@@ -106,6 +119,7 @@ const MyStore = () => {
     }
   };
 
+  // Render product item
   const renderItem = ({ item }: { item: any }) => (
     <View style={styles.card}>
       <Image
@@ -123,6 +137,8 @@ const MyStore = () => {
 
   return (
     <View style={styles.container}>
+      
+      {/* 🔹 Show ONLY if logged in */}
       {userInfo && (
         <View style={{ marginBottom: 10 }}>
           <Text style={styles.header}>Welcome, {userInfo.Name}</Text>
@@ -131,6 +147,7 @@ const MyStore = () => {
         </View>
       )}
 
+      {/* 🔹 Products always visible */}
       <FlatList
         data={products}
         renderItem={renderItem}
@@ -139,15 +156,24 @@ const MyStore = () => {
         contentContainerStyle={{ paddingBottom: 120 }}
       />
 
+      {/* 🔹 Cart bar always visible, but checkout depends on login */}
       {cart.length > 0 && (
         <View style={styles.cartBar}>
           <Text style={styles.cartText}>Cart Total: {getCartTotal().toLocaleString()} UGX</Text>
-          <TouchableOpacity style={styles.payButton} onPress={handlePayment}>
-            <Text style={{ color: "#fff", fontWeight: "bold" }}>Pay Now</Text>
-          </TouchableOpacity>
+
+          {userInfo ? (
+            <TouchableOpacity style={styles.payButton} onPress={handlePayment}>
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>Pay Now</Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={{ color: "yellow", fontWeight: "bold" }}>
+              Login to Checkout
+            </Text>
+          )}
         </View>
       )}
 
+      {/* Toast */}
       <Animated.View
         style={{
           position: "absolute",
@@ -194,7 +220,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   addText: { color: "#fff", marginLeft: 5 },
-
   cartBar: {
     position: "absolute",
     bottom: 0,
