@@ -1,5 +1,4 @@
-// --- ENTIRE FIXED FILE ---
-import React, { useEffect, useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,34 +7,18 @@ import {
   FlatList,
   StyleSheet,
   Image,
-  StatusBar,
-  Platform,
   Animated,
 } from "react-native";
-import { AppState } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  ref,
-  set,
-  push,
-  onValue,
-  update,
-  serverTimestamp,
-} from "firebase/database";
-import { database } from "../../firebase";
 
-export default function Green() {
-  const db = database;
-
+export default function GreenDemo() {
   const user = {
     email: "elajahn8@gmail.com",
     name: "Elajahn",
     avatar: "https://i.pravatar.cc/150?u=elajahn8",
   };
 
-  const sanitizeEmail = (email) =>
-    email ? email.replace(/\./g, ",") : "";
-
+  // --- 10 demo users ---
   const defaultUsers = [
     { email: "alice@green.com", name: "Alice", avatar: "https://i.pravatar.cc/150?u=alice" },
     { email: "bob@green.com", name: "Bob", avatar: "https://i.pravatar.cc/150?u=bob" },
@@ -49,245 +32,71 @@ export default function Green() {
     { email: "julia@green.com", name: "Julia", avatar: "https://i.pravatar.cc/150?u=julia" },
   ];
 
-  const [messages, setMessages] = useState([]);
   const [receiverEmail, setReceiverEmail] = useState("");
-  const [receiverProfile, setReceiverProfile] = useState(null);
-  const [inbox, setInbox] = useState([]);
+  const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const typingAnim = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef(null);
 
-  // --- PRESENCE ---
+  const receiverProfile = defaultUsers.find((u) => u.email === receiverEmail) || null;
+
+  // --- Typing animation ---
   useEffect(() => {
-    const presenceRef = ref(db, `users/${sanitizeEmail(user.email)}/status`);
-    const goOnline = () => set(presenceRef, "online");
-    const goOffline = () => set(presenceRef, "offline");
-
-    goOnline();
-
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") goOnline();
-      else goOffline();
-    });
-
-    return () => {
-      sub.remove();
-      goOffline();
-    };
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(typingAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+        Animated.timing(typingAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
+      ])
+    ).start();
   }, []);
 
-  // --- USER SETUP ---
+  // --- Simulate "other user typing" ---
   useEffect(() => {
-    const setupUsers = async () => {
-      const mainRef = ref(db, `users/${sanitizeEmail(user.email)}`);
-
-      onValue(
-        mainRef,
-        (snap) => {
-          if (!snap.exists()) {
-            set(mainRef, {
-              name: user.name,
-              email: user.email,
-              avatar: user.avatar,
-              status: "online",
-              inbox: {},
-            });
-          }
-        },
-        { onlyOnce: true }
-      );
-
-      for (let u of defaultUsers) {
-        const uRef = ref(db, `users/${sanitizeEmail(u.email)}`);
-        onValue(
-          uRef,
-          (snap) => {
-            if (!snap.exists()) {
-              set(uRef, {
-                name: u.name,
-                email: u.email,
-                avatar: u.avatar,
-                status: "offline",
-                inbox: {},
-              });
-            }
-          },
-          { onlyOnce: true }
-        );
-      }
-
-      const inboxData = {};
-      defaultUsers.forEach((u) => {
-        inboxData[sanitizeEmail(u.email)] = {
-          lastText: "",
-          unreadCount: 0,
-          timestamp: 0,
-        };
-      });
-
-      update(mainRef, { inbox: inboxData });
-    };
-
-    setupUsers();
-  }, []);
-
-  // --- INBOX LISTENER ---
-  useEffect(() => {
-    const inboxRef = ref(db, `users/${sanitizeEmail(user.email)}/inbox`);
-
-    return onValue(inboxRef, async (snap) => {
-      if (!snap.exists()) return setInbox([]);
-
-      const data = snap.val();
-      const inboxArr = [];
-
-      for (let [peerSanitized, val] of Object.entries(data)) {
-        const peerEmail = peerSanitized.replace(/,/g, ".");
-        const userRef = ref(db, `users/${peerSanitized}`);
-
-        let profile = {};
-        await new Promise((resolve) =>
-          onValue(
-            userRef,
-            (snap2) => {
-              if (snap2.exists()) profile = snap2.val();
-              resolve();
-            },
-            { onlyOnce: true }
-          )
-        );
-
-        inboxArr.push({
-          peer: peerEmail,
-          peerSanitized,
-          name: profile.name || peerEmail,
-          avatar: profile.avatar,
-          status: profile.status,
-          ...val,
-        });
-      }
-
-      setInbox(inboxArr);
-    });
-  }, []);
-
-  // ---- RECEIVER LISTENER ----
-  useEffect(() => {
-    // Prevent crashes for invalid emails (typed input)
-    if (!receiverEmail.includes("@") || !receiverEmail.includes(".")) {
-      setReceiverProfile(null);
-      return;
-    }
-
-    const receiverRef = ref(db, `users/${sanitizeEmail(receiverEmail)}`);
-
-    const unsub = onValue(receiverRef, (snap) => {
-      if (snap.exists()) setReceiverProfile(snap.val());
-      else setReceiverProfile(null); // prevents undefined crash
-    });
-
-    // Reset unread count
-    update(
-      ref(
-        db,
-        `users/${sanitizeEmail(user.email)}/inbox/${sanitizeEmail(receiverEmail)}`
-      ),
-      { unreadCount: 0 }
-    );
-
-    return () => unsub();
-  }, [receiverEmail]);
-
-  // --- MESSAGES ---
-  useEffect(() => {
-    if (!receiverEmail.includes("@")) return;
     if (!receiverProfile) return;
+    if (messages.length === 0) return;
 
-    const chatPath = `chats/${[user.email, receiverEmail].sort().join("_")}/messages`;
-    const messagesRef = ref(db, chatPath);
+    const timeout = setTimeout(() => {
+      setIsTyping(true);
+      const sendDelay = Math.random() * 2000 + 1000;
+      setTimeout(() => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            text: "This is a demo reply!",
+            senderEmail: receiverProfile.email,
+            senderName: receiverProfile.name,
+            senderAvatar: receiverProfile.avatar,
+          },
+        ]);
+        setIsTyping(false);
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+      }, sendDelay);
+    }, Math.random() * 3000 + 1000);
 
-    return onValue(messagesRef, (snap) => {
-      const msgs = [];
-      snap.forEach((child) => {
-        msgs.push({
-          id: child.key,
-          ...child.val(),
-          readBy: child.val().readBy || {},
-        });
-      });
+    return () => clearTimeout(timeout);
+  }, [messages, receiverProfile]);
 
-      // FIX: set() instead of update()
-      msgs.forEach((msg) => {
-        if (msg.senderEmail !== user.email) {
-          set(
-            ref(
-              db,
-              `${chatPath}/${msg.id}/readBy/${sanitizeEmail(user.email)}`
-            ),
-            true
-          );
-        }
-      });
+  const handleSend = () => {
+    if (!text.trim() || !receiverProfile) return;
 
-      setMessages(msgs);
-
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-    });
-  }, [receiverEmail, receiverProfile]);
-
-  // SEND MESSAGE --------------
-  const handleSend = async () => {
-    if (!text.trim()) return;
-    if (!receiverEmail.includes("@")) return;
-
-    const chatPath = `chats/${[user.email, receiverEmail].sort().join("_")}/messages`;
-
-    const msg = {
+    const newMsg = {
+      id: Date.now().toString(),
       text,
       senderEmail: user.email,
       senderName: user.name,
       senderAvatar: user.avatar,
-      timestamp: serverTimestamp(),
-      readBy: {
-        [sanitizeEmail(user.email)]: true,
-      },
     };
 
-    const newMsgRef = push(ref(db, chatPath));
-    await set(newMsgRef, msg);
-
-    update(
-      ref(
-        db,
-        `users/${sanitizeEmail(receiverEmail)}/inbox/${sanitizeEmail(user.email)}`
-      ),
-      {
-        lastText: text,
-        timestamp: Date.now(),
-        unreadCount: 1,
-      }
-    );
-
-    update(
-      ref(
-        db,
-        `users/${sanitizeEmail(user.email)}/inbox/${sanitizeEmail(receiverEmail)}`
-      ),
-      {
-        lastText: text,
-        timestamp: Date.now(),
-        unreadCount: 0,
-      }
-    );
-
+    setMessages((prev) => [...prev, newMsg]);
     setText("");
+
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
   };
 
-  // ---- TYPING BUBBLE ----
   const renderTypingBubble = () => {
     if (!isTyping) return null;
-
     return (
       <View style={styles.typingContainer}>
         <Animated.View
@@ -311,51 +120,38 @@ export default function Green() {
     );
   };
 
-  // ---- MERGED INBOX ----
-  const mergedInbox = defaultUsers
-    .filter((u) => u.email !== user.email)
-    .map((u) => {
-      const san = sanitizeEmail(u.email);
-      const inboxItem = inbox.find((i) => i.peerSanitized === san);
-
-      return {
-        peer: u.email,
-        peerSanitized: san,
-        name: u.name,
-        avatar: u.avatar,
-        status: inboxItem?.status || "offline",
-        lastText: inboxItem?.lastText || "Say hi!",
-        unreadCount: inboxItem?.unreadCount || 0,
-        timestamp: inboxItem?.timestamp || 0,
-      };
-    })
-    .sort((a, b) => b.timestamp - a.timestamp);
+  const mergedInbox = defaultUsers.map((u) => ({
+    ...u,
+    lastText: messages
+      .filter((m) => m.senderEmail === u.email || m.senderEmail === user.email)
+      .slice(-1)[0]?.text || "Say hi!",
+    unreadCount: messages.filter((m) => m.senderEmail === u.email).length,
+  }));
 
   return (
     <View style={styles.container}>
-      <StatusBar backgroundColor="#075E54" barStyle="light-content" />
-      <Text style={styles.appLogo}>Green</Text>
+      <Text style={styles.appLogo}>Green Demo</Text>
 
       {/* EMAIL INPUT */}
       <View style={styles.chatTo}>
         <TextInput
           style={styles.chatToInput}
-          placeholder="phone number"
+          placeholder="Type email to chat"
           placeholderTextColor="#ccc"
           value={receiverEmail}
-          onChangeText={(t) => setReceiverEmail(t.trim())}
+          onChangeText={setReceiverEmail}
           autoCapitalize="none"
         />
       </View>
 
       {/* INBOX */}
-      {!receiverEmail.includes("@") && (
+      {!receiverEmail && (
         <FlatList
           style={{ maxHeight: 250 }}
           data={mergedInbox}
-          keyExtractor={(item) => item.peer}
+          keyExtractor={(item) => item.email}
           renderItem={({ item }) => (
-            <TouchableOpacity onPress={() => setReceiverEmail(item.peer)}>
+            <TouchableOpacity onPress={() => setReceiverEmail(item.email)}>
               <View style={styles.inboxItem}>
                 <Image source={{ uri: item.avatar }} style={styles.avatar} />
                 <View style={{ marginLeft: 10, flex: 1 }}>
@@ -376,33 +172,18 @@ export default function Green() {
       )}
 
       {/* CHAT SCREEN */}
-      {receiverEmail.includes("@") && receiverProfile && (
+      {receiverEmail && receiverProfile && (
         <>
-          {/* HEADER FIXED */}
           <View style={styles.header}>
             <TouchableOpacity onPress={() => setReceiverEmail("")}>
               <Ionicons name="arrow-back" size={24} color="#fff" />
             </TouchableOpacity>
-
             <View style={{ marginLeft: 10 }}>
-              <Text style={styles.headerText}>
-                {receiverProfile?.name || "Loading..."}
-              </Text>
-              <Text
-                style={{
-                  fontSize: 12,
-                  color:
-                    receiverProfile?.status === "online"
-                      ? "#00FF95"
-                      : "#aaa",
-                }}
-              >
-                {receiverProfile?.status || "offline"}
-              </Text>
+              <Text style={styles.headerText}>{receiverProfile.name}</Text>
+              <Text style={{ fontSize: 12, color: "#00FF95" }}>online</Text>
             </View>
           </View>
 
-          {/* MESSAGES */}
           <FlatList
             ref={flatListRef}
             data={messages}
@@ -417,10 +198,7 @@ export default function Green() {
                     mine && { flexDirection: "row-reverse" },
                   ]}
                 >
-                  <Image
-                    source={{ uri: item.senderAvatar }}
-                    style={styles.avatar}
-                  />
+                  <Image source={{ uri: item.senderAvatar }} style={styles.avatar} />
                   <View
                     style={[
                       styles.messageBubble,
@@ -435,10 +213,8 @@ export default function Green() {
             }}
           />
 
-          {/* TYPING INDICATOR */}
           {renderTypingBubble()}
 
-          {/* INPUT BAR */}
           <View style={styles.inputBar}>
             <TextInput
               style={styles.textBox}
@@ -457,7 +233,6 @@ export default function Green() {
   );
 }
 
-// --- STYLES ---
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#121B22" },
   appLogo: { color: "#25D366", textAlign: "center", fontSize: 26, marginTop: 10 },
@@ -484,50 +259,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   unreadText: { color: "#fff" },
-  header: {
-    flexDirection: "row",
-    padding: 10,
-    backgroundColor: "#075E54",
-    alignItems: "center",
-  },
+  header: { flexDirection: "row", padding: 10, backgroundColor: "#075E54", alignItems: "center" },
   headerText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
   messageRow: { flexDirection: "row", marginBottom: 10, alignItems: "flex-end" },
-  messageBubble: {
-    padding: 10,
-    borderRadius: 10,
-    maxWidth: "70%",
-    marginHorizontal: 5,
-  },
+  messageBubble: { padding: 10, borderRadius: 10, maxWidth: "70%", marginHorizontal: 5 },
   myBubble: { backgroundColor: "#056162" },
   theirBubble: { backgroundColor: "#1E2C33" },
   senderName: { color: "#ccc", fontSize: 10 },
   messageText: { color: "#fff", fontSize: 14 },
-  inputBar: {
-    flexDirection: "row",
-    padding: 8,
-    borderTopWidth: 1,
-    borderTopColor: "#333",
-    alignItems: "center",
-  },
-  textBox: {
-    flex: 1,
-    backgroundColor: "#1E2C33",
-    color: "#fff",
-    paddingHorizontal: 15,
-    borderRadius: 25,
-  },
-  sendBtn: {
-    backgroundColor: "#25D366",
-    padding: 10,
-    marginLeft: 5,
-    borderRadius: 25,
-  },
-  typingContainer: { paddingHorizontal: 20 },
-  typingBubble: {
-    backgroundColor: "#1E2C33",
-    padding: 8,
-    borderRadius: 10,
-    width: 50,
-  },
+  inputBar: { flexDirection: "row", padding: 8, borderTopWidth: 1, borderTopColor: "#333", alignItems: "center" },
+  textBox: { flex: 1, backgroundColor: "#1E2C33", color: "#fff", paddingHorizontal: 15, borderRadius: 25 },
+  sendBtn: { backgroundColor: "#25D366", padding: 10, marginLeft: 5, borderRadius: 25 },
+  typingContainer: { paddingHorizontal: 20, marginVertical: 5 },
+  typingBubble: { backgroundColor: "#1E2C33", padding: 8, borderRadius: 10, width: 50 },
   typingDots: { color: "#fff", textAlign: "center" },
 });
