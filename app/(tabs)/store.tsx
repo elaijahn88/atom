@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -11,19 +11,23 @@ import {
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { auth, db } from "../../firebase";
-import { onAuthStateChanged } from "firebase/auth";
-import { doc, onSnapshot, updateDoc, arrayUnion } from "firebase/firestore";
 
 const numColumns = 2;
 const screenWidth = Dimensions.get("window").width;
 const cardWidth = screenWidth / numColumns - 20;
 
+const demoProducts = [
+  { id: 12, name: "iPhone 12", price: 3500000, image: "https://xlijah.com/pics/phones/iphone/12.jpg" },
+  { id: 13, name: "iPhone 13", price: 4500000, image: "https://xlijah.com/pics/phones/iphone/13.jpg" },
+  { id: 14, name: "iPhone 14", price: 5500000, image: "https://xlijah.com/pics/phones/iphone/14.jpg" },
+  { id: 15, name: "iPhone 15", price: 6500000, image: "https://xlijah.com/pics/phones/iphone/15.jpg" },
+  { id: 16, name: "iPhone 16", price: 7500000, image: "https://xlijah.com/pics/phones/iphone/16.jpg" },
+  { id: 17, name: "iPhone 17", price: 8500000, image: "https://xlijah.com/pics/phones/iphone/17.jpg" },
+];
+
 const MyStore = () => {
-  const [products, setProducts] = useState([]);
+  const [products] = useState(demoProducts);
   const [cart, setCart] = useState([]);
-  const [userInfo, setUserInfo] = useState<any>(null);
-  const [userEmail, setUserEmail] = useState("");
   const toastAnim = useRef(new Animated.Value(0)).current;
 
   // Toast notification
@@ -36,43 +40,6 @@ const MyStore = () => {
     console.log(msg);
   };
 
-  // 🔹 Detect logged-in user
-  useEffect(() => {
-    const unsubAuth = onAuthStateChanged(auth, (user) => {
-      if (user?.email) setUserEmail(user.email);
-      else setUserEmail(""); // logged out
-    });
-    return () => unsubAuth();
-  }, []);
-
-  // 🔹 Fetch user info ONLY if logged in
-  useEffect(() => {
-    if (!userEmail) {
-      setUserInfo(null);
-      return;
-    }
-
-    const userRef = doc(db, "acc", userEmail);
-    const unsub = onSnapshot(userRef, (snap) => {
-      if (!snap.exists()) return setUserInfo(null);
-      setUserInfo(snap.data());
-    });
-
-    return () => unsub();
-  }, [userEmail]);
-
-  // 🔹 Fetch products no matter what (public)
-  useEffect(() => {
-    const unsub = onSnapshot(doc(db, "phones", "iphone"), (snap) => {
-      const data = snap.data() || {};
-      const arr = Array.isArray(data.products) ? data.products : [];
-      setProducts(arr);
-    });
-
-    return () => unsub();
-  }, []);
-
-  // Add item to cart
   const addToCart = (item: any) => {
     setCart((prev = []) => {
       const safePrev = Array.isArray(prev) ? prev : [];
@@ -86,46 +53,16 @@ const MyStore = () => {
     return cart.reduce((sum, item) => sum + Number(item.price || 0), 0);
   };
 
-  // 🔹 Payment handler with login protection
-  const handlePayment = async () => {
-    if (!userInfo) {
-      Alert.alert("Login Required", "Please log in to complete your purchase.");
-      return;
-    }
-
+  const handlePayment = () => {
     const total = getCartTotal();
-    if (total > (userInfo.net || 0)) {
-      Alert.alert("Insufficient Funds", "Your balance is too low.");
-      return;
-    }
-
-    try {
-      const userRef = doc(db, "acc", userEmail);
-
-      await updateDoc(userRef, { net: userInfo.net - total });
-
-      const purchaseRecords = cart.map((item) => ({
-        ...item,
-        timestamp: new Date(),
-      }));
-
-      await updateDoc(userRef, { purchases: arrayUnion(...purchaseRecords) });
-
-      setCart([]);
-      showToast(`Payment successful! UGX ${total.toLocaleString()} deducted.`);
-    } catch (err) {
-      console.error(err);
-      showToast("Payment failed. Try again.");
-    }
+    Alert.alert("Payment Successful", `UGX ${total.toLocaleString()} deducted.`);
+    setCart([]);
+    showToast("Payment successful!");
   };
 
-  // Render product item
   const renderItem = ({ item }: { item: any }) => (
     <View style={styles.card}>
-      <Image
-        source={item.image ? { uri: item.image.trim() } : { uri: "https://xlijah.com/pics/phones/iphone/12.jpg" }}
-        style={styles.image}
-      />
+      <Image source={{ uri: item.image }} style={styles.image} />
       <Text style={styles.title}>{item.name}</Text>
       <Text style={styles.price}>{Number(item.price).toLocaleString()} UGX</Text>
       <TouchableOpacity style={styles.addButton} onPress={() => addToCart(item)}>
@@ -137,17 +74,6 @@ const MyStore = () => {
 
   return (
     <View style={styles.container}>
-      
-      {/* 🔹 Show ONLY if logged in */}
-      {userInfo && (
-        <View style={{ marginBottom: 10 }}>
-          <Text style={styles.header}>Welcome, {userInfo.Name}</Text>
-          <Text style={styles.balance}>Balance: {Number(userInfo.net).toLocaleString()} UGX</Text>
-          <Text>Phone: {userInfo.phone}</Text>
-        </View>
-      )}
-
-      {/* 🔹 Products always visible */}
       <FlatList
         data={products}
         renderItem={renderItem}
@@ -156,24 +82,15 @@ const MyStore = () => {
         contentContainerStyle={{ paddingBottom: 120 }}
       />
 
-      {/* 🔹 Cart bar always visible, but checkout depends on login */}
       {cart.length > 0 && (
         <View style={styles.cartBar}>
           <Text style={styles.cartText}>Cart Total: {getCartTotal().toLocaleString()} UGX</Text>
-
-          {userInfo ? (
-            <TouchableOpacity style={styles.payButton} onPress={handlePayment}>
-              <Text style={{ color: "#fff", fontWeight: "bold" }}>Pay Now</Text>
-            </TouchableOpacity>
-          ) : (
-            <Text style={{ color: "yellow", fontWeight: "bold" }}>
-              Login to Checkout
-            </Text>
-          )}
+          <TouchableOpacity style={styles.payButton} onPress={handlePayment}>
+            <Text style={{ color: "#fff", fontWeight: "bold" }}>Pay Now</Text>
+          </TouchableOpacity>
         </View>
       )}
 
-      {/* Toast */}
       <Animated.View
         style={{
           position: "absolute",
@@ -194,8 +111,6 @@ const MyStore = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f5f5", padding: 10 },
-  header: { fontSize: 24, fontWeight: "bold", marginBottom: 5 },
-  balance: { fontSize: 16, marginBottom: 5 },
   card: {
     backgroundColor: "#fff",
     borderRadius: 10,
