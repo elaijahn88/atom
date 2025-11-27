@@ -130,13 +130,13 @@ export default function GreenDemo() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.appLogo}>Green Demo</Text>
+      <Text style={styles.appLogo}>Green</Text>
 
       {/* EMAIL INPUT */}
       <View style={styles.chatTo}>
         <TextInput
           style={styles.chatToInput}
-          placeholder="Type email to chat"
+          placeholder="phone number"
           placeholderTextColor="#ccc"
           value={receiverEmail}
           onChangeText={setReceiverEmail}
