@@ -439,7 +439,7 @@ export default function Green() {
       <View style={styles.chatTo}>
         <TextInput
           style={styles.chatToInput}
-          placeholder="Enter email to chat with"
+          placeholder="phone number"
           placeholderTextColor="#ccc"
           value={receiverEmail}
           onChangeText={(t) => setReceiverEmail(t.trim())}
