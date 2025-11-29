@@ -1,0 +1,117 @@
+{
+  "users": {
+    "alice@green,com": {
+      "avatar": "https://i.pravatar.cc/150?u=alice",
+      "email": "alice@green.com",
+      "name": "Alice"
+    },
+    "bob@green,com": {
+      "avatar": "https://i.pravatar.cc/150?u=bob",
+      "email": "bob@green.com",
+      "name": "Bob"
+    },
+    "charlie@green,com": {
+      "avatar": "https://i.pravatar.cc/150?u=charlie",
+      "email": "charlie@green.com",
+      "name": "Charlie",
+      "status": "offline"
+    },
+    "diana@green,com": {
+      "avatar": "https://i.pravatar.cc/150?u=diana",
+      "email": "diana@green.com",
+      "name": "Diana",
+      "status": "offline"
+    },
+    "elajahn8@gmail,com": {
+      "inbox": {
+        "alice@green,com": {
+          "lastText": "",
+          "timestamp": 0,
+          "unreadCount": 0
+        },
+        "bob@green,com": {
+          "lastText": "",
+          "timestamp": 0,
+          "unreadCount": 0
+        },
+        "charlie@green,com": {
+          "lastText": "",
+          "timestamp": 0,
+          "unreadCount": 0
+        },
+        "diana@green,com": {
+          "lastText": "",
+          "timestamp": 0,
+          "unreadCount": 0
+        },
+        "eric@green,com": {
+          "lastText": "",
+          "timestamp": 0,
+          "unreadCount": 0
+        },
+        "fiona@green,com": {
+          "lastText": "",
+          "timestamp": 0,
+          "unreadCount": 0
+        },
+        "george@green,com": {
+          "lastText": "",
+          "timestamp": 0,
+          "unreadCount": 0
+        },
+        "hannah@green,com": {
+          "lastText": "",
+          "timestamp": 0,
+          "unreadCount": 0
+        },
+        "ian@green,com": {
+          "lastText": "",
+          "timestamp": 0,
+          "unreadCount": 0
+        },
+        "julia@green,com": {
+          "lastText": "",
+          "timestamp": 0,
+          "unreadCount": 0
+        }
+      },
+      "status": "online"
+    },
+    "eric@green,com": {
+      "avatar": "https://i.pravatar.cc/150?u=eric",
+      "email": "eric@green.com",
+      "name": "Eric",
+      "status": "offline"
+    },
+    "fiona@green,com": {
+      "avatar": "https://i.pravatar.cc/150?u=fiona",
+      "email": "fiona@green.com",
+      "name": "Fiona",
+      "status": "offline"
+    },
+    "george@green,com": {
+      "avatar": "https://i.pravatar.cc/150?u=george",
+      "email": "george@green.com",
+      "name": "George",
+      "status": "offline"
+    },
+    "hannah@green,com": {
+      "avatar": "https://i.pravatar.cc/150?u=hannah",
+      "email": "hannah@green.com",
+      "name": "Hannah",
+      "status": "offline"
+    },
+    "ian@green,com": {
+      "avatar": "https://i.pravatar.cc/150?u=ian",
+      "email": "ian@green.com",
+      "name": "Ian",
+      "status": "offline"
+    },
+    "julia@green,com": {
+      "avatar": "https://i.pravatar.cc/150?u=julia",
+      "email": "julia@green.com",
+      "name": "Julia",
+      "status": "offline"
+    }
+  }
+}
