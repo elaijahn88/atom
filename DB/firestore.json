@@ -1,0 +1,108 @@
+{
+  "firestore": {
+    "users": {
+      "userId": {
+        "username": "string",
+        "email": "string",
+        "phoneNumber": "string",
+        "isPhoneVerified": "boolean",
+        "profileImageUrl": "string",
+        "createdAt": "timestamp",
+        "lastActive": "timestamp",
+
+        "personalInfo": {
+          "fullName": "string",
+          "dob": "timestamp",
+          "nationalId": "string",
+          "address": {
+            "street": "string",
+            "city": "string",
+            "state": "string",
+            "postalCode": "string",
+            "country": "string"
+          }
+        },
+
+        "kyc": {
+          "status": "pending | verified | rejected",
+          "submittedAt": "timestamp",
+          "verifiedAt": "timestamp",
+          "documents": {
+            "frontIdUrl": "string",
+            "backIdUrl": "string",
+            "selfieUrl": "string"
+          }
+        },
+
+        "deviceSessions": {
+          "sessionId": {
+            "deviceModel": "string",
+            "platform": "iOS | Android",
+            "lastLogin": "timestamp",
+            "pushToken": "string"
+          }
+        },
+
+        "preferences": {
+          "language": "string",
+          "currency": "string",
+          "notificationsEnabled": "boolean"
+        },
+
+        "accounts": {
+          "accountId": {
+            "accountType": "savings | loan | investment",
+            "accountName": "string",
+            "balance": "number",
+            "currency": "string",
+            "createdAt": "timestamp",
+            "updatedAt": "timestamp",
+            "status": "active | closed | pending",
+
+            "details": {
+              "interestRate": "number",
+              "minimumBalance": "number",
+              "principal": "number",
+              "durationMonths": "number",
+              "remainingBalance": "number",
+              "nextDueDate": "timestamp",
+              "portfolioType": "string",
+              "investedAmount": "number",
+              "currentValue": "number",
+              "riskLevel": "string"
+            },
+
+            "transactions": {
+              "transactionId": {
+                "type": "deposit | withdrawal | loanPayment | investmentBuy | investmentSell | transferIn | transferOut",
+                "amount": "number",
+                "timestamp": "timestamp",
+                "description": "string",
+                "balanceAfter": "number",
+
+                "counterparty": {
+                  "name": "string",
+                  "phoneNumber": "string",
+                  "maskedAccount": "string"
+                }
+              }
+            }
+          }
+        },
+
+        "chats": {
+          "chatId": {
+            "participants": ["userId1", "userId2"],
+            "lastMessage": "string",
+            "lastUpdated": "timestamp",
+            "unreadCounts": {
+              "userId1": "number",
+              "userId2": "number"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
