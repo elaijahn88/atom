@@ -3,12 +3,14 @@
     "alice@green,com": {
       "avatar": "https://i.pravatar.cc/150?u=alice",
       "email": "alice@green.com",
-      "name": "Alice"
+      "name": "Alice",
+      "status": "online"
     },
     "bob@green,com": {
       "avatar": "https://i.pravatar.cc/150?u=bob",
       "email": "bob@green.com",
-      "name": "Bob"
+      "name": "Bob",
+      "status": "online"
     },
     "charlie@green,com": {
       "avatar": "https://i.pravatar.cc/150?u=charlie",
@@ -23,59 +25,13 @@
       "status": "offline"
     },
     "elajahn8@gmail,com": {
+      "status": "online",
       "inbox": {
-        "alice@green,com": {
-          "lastText": "",
-          "timestamp": 0,
-          "unreadCount": 0
-        },
-        "bob@green,com": {
-          "lastText": "",
-          "timestamp": 0,
-          "unreadCount": 0
-        },
-        "charlie@green,com": {
-          "lastText": "",
-          "timestamp": 0,
-          "unreadCount": 0
-        },
-        "diana@green,com": {
-          "lastText": "",
-          "timestamp": 0,
-          "unreadCount": 0
-        },
-        "eric@green,com": {
-          "lastText": "",
-          "timestamp": 0,
-          "unreadCount": 0
-        },
-        "fiona@green,com": {
-          "lastText": "",
-          "timestamp": 0,
-          "unreadCount": 0
-        },
-        "george@green,com": {
-          "lastText": "",
-          "timestamp": 0,
-          "unreadCount": 0
-        },
-        "hannah@green,com": {
-          "lastText": "",
-          "timestamp": 0,
-          "unreadCount": 0
-        },
-        "ian@green,com": {
-          "lastText": "",
-          "timestamp": 0,
-          "unreadCount": 0
-        },
-        "julia@green,com": {
-          "lastText": "",
-          "timestamp": 0,
-          "unreadCount": 0
-        }
-      },
-      "status": "online"
+        "alice@green,com": { "lastText": "", "timestamp": 0, "unreadCount": 0 },
+        "bob@green,com": { "lastText": "", "timestamp": 0, "unreadCount": 0 },
+        "group_g1001": { "lastText": "", "timestamp": 0, "unreadCount": 0 },
+        "group_g1002": { "lastText": "", "timestamp": 0, "unreadCount": 0 }
+      }
     },
     "eric@green,com": {
       "avatar": "https://i.pravatar.cc/150?u=eric",
@@ -112,6 +68,50 @@
       "email": "julia@green.com",
       "name": "Julia",
       "status": "offline"
+    }
+  },
+
+  "groups": {
+    "group_g1001": {
+      "name": "Green Coders",
+      "groupIcon": "https://i.pravatar.cc/150?u=group1",
+      "createdBy": "elajahn8@gmail,com",
+      "createdAt": 1700000000000,
+      "admins": {
+        "elajahn8@gmail,com": true
+      },
+      "members": {
+        "elajahn8@gmail,com": true,
+        "alice@green,com": true,
+        "bob@green,com": true,
+        "charlie@green,com": true
+      },
+      "lastMessage": {
+        "sender": "alice@green,com",
+        "text": "Hello team 👋",
+        "timestamp": 1700000000500
+      }
+    },
+
+    "group_g1002": {
+      "name": "Family Chat",
+      "groupIcon": "https://i.pravatar.cc/150?u=group2",
+      "createdBy": "elajahn8@gmail,com",
+      "createdAt": 1700000001000,
+      "admins": {
+        "elajahn8@gmail,com": true
+      },
+      "members": {
+        "elajahn8@gmail,com": true,
+        "diana@green,com": true,
+        "eric@green,com": true,
+        "fiona@green,com": true
+      },
+      "lastMessage": {
+        "sender": "diana@green,com",
+        "text": "Dinner at 7 😊",
+        "timestamp": 1700000002000
+      }
     }
   }
 }
