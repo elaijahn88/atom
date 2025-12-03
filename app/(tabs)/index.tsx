@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ref, onValue, push, update } from "firebase/database";
-import { db } from "../firebase";
+import { db } from "../../firebase";
 
 export default function GreenChatTextOnly() {
   const userEmail = "elajahn8@gmail.com";
