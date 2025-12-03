@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet } from "react-native";
 import { ref, push, set, update, remove, onValue } from "firebase/database";
-import { db } from "./firebase";
+import { db } from "../../firebase";
 
 const safeEmail = (email) => email.replace(/\./g, ",");
 
