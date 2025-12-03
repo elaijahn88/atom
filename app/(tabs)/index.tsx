@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -7,270 +7,171 @@ import {
   FlatList,
   StyleSheet,
   Image,
-  Animated,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { ref, onValue, push, update } from "firebase/database";
+import { db } from "../firebase";
 
-export default function GreenDemo() {
-  const user = {
-    email: "elajahn8@gmail.com",
-    name: "Elajahn",
-    avatar: "https://i.pravatar.cc/150?u=elajahn8",
-  };
+export default function GreenChatTextOnly() {
+  const userEmail = "elajahn8@gmail.com";
+  const userKey = userEmail.replace(/\./g, ",");
 
-  // --- 10 demo users ---
-  const defaultUsers = [
-    { email: "alice@green.com", name: "Alice", avatar: "https://i.pravatar.cc/150?u=alice" },
-    { email: "bob@green.com", name: "Bob", avatar: "https://i.pravatar.cc/150?u=bob" },
-    { email: "charlie@green.com", name: "Charlie", avatar: "https://i.pravatar.cc/150?u=charlie" },
-    { email: "diana@green.com", name: "Diana", avatar: "https://i.pravatar.cc/150?u=diana" },
-    { email: "eric@green.com", name: "Eric", avatar: "https://i.pravatar.cc/150?u=eric" },
-    { email: "fiona@green.com", name: "Fiona", avatar: "https://i.pravatar.cc/150?u=fiona" },
-    { email: "george@green.com", name: "George", avatar: "https://i.pravatar.cc/150?u=george" },
-    { email: "hannah@green.com", name: "Hannah", avatar: "https://i.pravatar.cc/150?u=hannah" },
-    { email: "ian@green.com", name: "Ian", avatar: "https://i.pravatar.cc/150?u=ian" },
-    { email: "julia@green.com", name: "Julia", avatar: "https://i.pravatar.cc/150?u=julia" },
-  ];
-
-  const [receiverEmail, setReceiverEmail] = useState("");
+  const [users, setUsers] = useState({});
+  const [groups, setGroups] = useState({});
+  const [inbox, setInbox] = useState({});
+  const [receiverKey, setReceiverKey] = useState(null);
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const typingAnim = useRef(new Animated.Value(0)).current;
+
   const flatListRef = useRef(null);
 
-  const receiverProfile = defaultUsers.find((u) => u.email === receiverEmail) || null;
-
-  // --- Typing animation ---
+  // --- Fetch Users / Groups / Inbox ---
   useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(typingAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-        Animated.timing(typingAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
-      ])
-    ).start();
+    onValue(ref(db, "users"), snap => { if (snap.exists()) setUsers(snap.val()); });
+    onValue(ref(db, "groups"), snap => { if (snap.exists()) setGroups(snap.val()); });
+    onValue(ref(db, `users/${userKey}/inbox`), snap => { if (snap.exists()) setInbox(snap.val()); });
   }, []);
 
-  // --- Simulate "other user typing" ---
+  // --- Fetch Chat Messages ---
   useEffect(() => {
-    if (!receiverProfile) return;
-    if (messages.length === 0) return;
+    if (!receiverKey) return;
+    const isGroup = receiverKey.startsWith("GROUP_");
+    const path = isGroup
+      ? `groupChats/${receiverKey.replace("GROUP_", "")}`
+      : `chats/${[userKey, receiverKey].sort().join("_")}`;
+    return onValue(ref(db, path), snap => {
+      const msgs = [];
+      snap.forEach(s => msgs.push({ id: s.key, ...s.val() }));
+      setMessages(msgs.sort((a, b) => a.timestamp - b.timestamp));
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+    });
+  }, [receiverKey]);
 
-    const timeout = setTimeout(() => {
-      setIsTyping(true);
-      const sendDelay = Math.random() * 2000 + 1000;
-      setTimeout(() => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            text: "This is a demo reply!",
-            senderEmail: receiverProfile.email,
-            senderName: receiverProfile.name,
-            senderAvatar: receiverProfile.avatar,
-          },
-        ]);
-        setIsTyping(false);
-        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-      }, sendDelay);
-    }, Math.random() * 3000 + 1000);
-
-    return () => clearTimeout(timeout);
-  }, [messages, receiverProfile]);
-
-  const handleSend = () => {
-    if (!text.trim() || !receiverProfile) return;
-
-    const newMsg = {
-      id: Date.now().toString(),
-      text,
-      senderEmail: user.email,
-      senderName: user.name,
-      senderAvatar: user.avatar,
-    };
-
-    setMessages((prev) => [...prev, newMsg]);
+  // --- Send Text Message ---
+  const sendMessage = async () => {
+    if (!text.trim() || !receiverKey) return;
+    await sendMessageToDB({ text, type: "text" });
     setText("");
-
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
   };
 
-  const renderTypingBubble = () => {
-    if (!isTyping) return null;
-    return (
-      <View style={styles.typingContainer}>
-        <Animated.View
-          style={[
-            styles.typingBubble,
-            {
-              transform: [
-                {
-                  scale: typingAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.8, 1],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <Text style={styles.typingDots}>●●●</Text>
-        </Animated.View>
-      </View>
-    );
+  // --- Generic DB Message Sender ---
+  const sendMessageToDB = async ({ text, type }) => {
+    const isGroup = receiverKey.startsWith("GROUP_");
+    const id = isGroup ? receiverKey.replace("GROUP_", "") : [userKey, receiverKey].sort().join("_");
+    const path = isGroup ? `groupChats/${id}` : `chats/${id}`;
+    const msg = { text, sender: userKey, timestamp: Date.now(), type, reactions: {} };
+    await push(ref(db, path), msg);
+
+    if (isGroup) await updateGroupInbox(text, id);
+    else await updatePrivateInbox(text);
   };
 
-  const mergedInbox = defaultUsers.map((u) => ({
-    ...u,
-    lastText: messages
-      .filter((m) => m.senderEmail === u.email || m.senderEmail === user.email)
-      .slice(-1)[0]?.text || "Say hi!",
-    unreadCount: messages.filter((m) => m.senderEmail === u.email).length,
-  }));
+  // --- Update Private Inbox ---
+  const updatePrivateInbox = async (text) => {
+    const updates = {};
+    updates[`users/${userKey}/inbox/${receiverKey}`] = { lastText: text, timestamp: Date.now(), unreadCount: 0 };
+    updates[`users/${receiverKey}/inbox/${userKey}/lastText`] = text;
+    updates[`users/${receiverKey}/inbox/${userKey}/timestamp`] = Date.now();
+    updates[`users/${receiverKey}/inbox/${userKey}/unreadCount`] = (users[receiverKey]?.inbox?.[userKey]?.unreadCount || 0) + 1;
+    await update(ref(db), updates);
+  };
+
+  // --- Update Group Inbox ---
+  const updateGroupInbox = async (text, id) => {
+    const members = groups[id]?.members || {};
+    const updates = {};
+    Object.keys(members).forEach(memberKey => {
+      const base = `users/${memberKey}/inbox/GROUP_${id}`;
+      updates[`${base}/lastText`] = text;
+      updates[`${base}/timestamp`] = Date.now();
+      updates[`${base}/unreadCount`] = memberKey !== userKey ? (users[memberKey]?.inbox?.[`GROUP_${id}`]?.unreadCount || 0) + 1 : 0;
+    });
+    await update(ref(db), updates);
+  };
+
+  // --- Mark as read ---
+  useEffect(() => {
+    if (!receiverKey) return;
+    update(ref(db, `users/${userKey}/inbox/${receiverKey}`), { unreadCount: 0 });
+  }, [receiverKey]);
+
+  const renderInbox = Object.keys(inbox).sort((a, b) => inbox[b]?.timestamp - inbox[a]?.timestamp);
 
   return (
     <View style={styles.container}>
-      <Text style={styles.appLogo}>Green</Text>
+      <Text style={styles.logo}>Green Chat</Text>
 
-      {/* EMAIL INPUT */}
-      <View style={styles.chatTo}>
-        <TextInput
-          style={styles.chatToInput}
-          placeholder="phone number"
-          placeholderTextColor="#ccc"
-          value={receiverEmail}
-          onChangeText={setReceiverEmail}
-          autoCapitalize="none"
-        />
-      </View>
-
-      {/* INBOX */}
-      {!receiverEmail && (
-        <FlatList
-          style={{ maxHeight: 250 }}
-          data={mergedInbox}
-          keyExtractor={(item) => item.email}
-          renderItem={({ item }) => (
-            <TouchableOpacity onPress={() => setReceiverEmail(item.email)}>
+      {!receiverKey && <FlatList
+        data={renderInbox}
+        keyExtractor={k => k}
+        renderItem={({ item }) => {
+          const isGroup = item.startsWith("GROUP_");
+          const data = isGroup ? groups[item.replace("GROUP_", "")] : users[item];
+          const i = inbox[item];
+          return (
+            <TouchableOpacity onPress={() => setReceiverKey(item)}>
               <View style={styles.inboxItem}>
-                <Image source={{ uri: item.avatar }} style={styles.avatar} />
-                <View style={{ marginLeft: 10, flex: 1 }}>
-                  <Text style={styles.nameText}>{item.name}</Text>
-                  <Text numberOfLines={1} style={styles.lastMessage}>
-                    {item.lastText}
-                  </Text>
+                <Image source={{ uri: data?.avatar }} style={styles.avatar} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.name}>{data?.name}</Text>
+                  <Text style={styles.last}>{i?.lastText || "Say hi!"}</Text>
                 </View>
-                {item.unreadCount > 0 && (
-                  <View style={styles.unreadBadge}>
-                    <Text style={styles.unreadText}>{item.unreadCount}</Text>
-                  </View>
-                )}
+                {i?.unreadCount > 0 && <View style={styles.unread}><Text style={{ color: "#fff" }}>{i.unreadCount}</Text></View>}
               </View>
             </TouchableOpacity>
-          )}
+          )
+        }}
+      />}
+
+      {receiverKey && <>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => setReceiverKey(null)}>
+            <Ionicons name="arrow-back" size={22} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerName}>{receiverKey.startsWith("GROUP_") ? groups[receiverKey.replace("GROUP_", "")]?.name : users[receiverKey]?.name}</Text>
+        </View>
+
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={i => i.id}
+          renderItem={({ item }) => {
+            const mine = item.sender === userKey;
+            return (
+              <View style={[styles.message, mine && styles.mine]}>
+                <Text style={{ color: "#fff" }}>{item.text}</Text>
+              </View>
+            );
+          }}
         />
-      )}
 
-      {/* CHAT SCREEN */}
-      {receiverEmail && receiverProfile && (
-        <>
-          <View style={styles.header}>
-            <TouchableOpacity onPress={() => setReceiverEmail("")}>
-              <Ionicons name="arrow-back" size={24} color="#fff" />
-            </TouchableOpacity>
-            <View style={{ marginLeft: 10 }}>
-              <Text style={styles.headerText}>{receiverProfile.name}</Text>
-              <Text style={{ fontSize: 12, color: "#00FF95" }}>online</Text>
-            </View>
-          </View>
-
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={{ padding: 10 }}
-            renderItem={({ item }) => {
-              const mine = item.senderEmail === user.email;
-              return (
-                <View
-                  style={[
-                    styles.messageRow,
-                    mine && { flexDirection: "row-reverse" },
-                  ]}
-                >
-                  <Image source={{ uri: item.senderAvatar }} style={styles.avatar} />
-                  <View
-                    style={[
-                      styles.messageBubble,
-                      mine ? styles.myBubble : styles.theirBubble,
-                    ]}
-                  >
-                    <Text style={styles.senderName}>{item.senderName}</Text>
-                    <Text style={styles.messageText}>{item.text}</Text>
-                  </View>
-                </View>
-              );
-            }}
+        <View style={styles.inputBar}>
+          <TextInput
+            style={styles.input}
+            value={text}
+            onChangeText={setText}
+            placeholder="Message..."
+            placeholderTextColor="#888"
           />
-
-          {renderTypingBubble()}
-
-          <View style={styles.inputBar}>
-            <TextInput
-              style={styles.textBox}
-              placeholder="Type a message"
-              placeholderTextColor="#ccc"
-              value={text}
-              onChangeText={setText}
-            />
-            <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
-              <Ionicons name="send" size={20} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        </>
-      )}
+          <TouchableOpacity onPress={sendMessage}><Ionicons name="send" size={22} color="#25D366" /></TouchableOpacity>
+        </View>
+      </>}
     </View>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#121B22" },
-  appLogo: { color: "#25D366", textAlign: "center", fontSize: 26, marginTop: 10 },
-  chatTo: { padding: 10 },
-  chatToInput: {
-    backgroundColor: "#1E2C33",
-    color: "#fff",
-    borderRadius: 20,
-    paddingHorizontal: 15,
-  },
-  inboxItem: {
-    flexDirection: "row",
-    padding: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#333",
-    alignItems: "center",
-  },
-  avatar: { width: 40, height: 40, borderRadius: 20 },
-  nameText: { color: "#fff", fontWeight: "bold" },
-  lastMessage: { color: "#aaa", fontSize: 12 },
-  unreadBadge: {
-    backgroundColor: "#25D366",
-    paddingHorizontal: 8,
-    borderRadius: 12,
-  },
-  unreadText: { color: "#fff" },
-  header: { flexDirection: "row", padding: 10, backgroundColor: "#075E54", alignItems: "center" },
-  headerText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
-  messageRow: { flexDirection: "row", marginBottom: 10, alignItems: "flex-end" },
-  messageBubble: { padding: 10, borderRadius: 10, maxWidth: "70%", marginHorizontal: 5 },
-  myBubble: { backgroundColor: "#056162" },
-  theirBubble: { backgroundColor: "#1E2C33" },
-  senderName: { color: "#ccc", fontSize: 10 },
-  messageText: { color: "#fff", fontSize: 14 },
-  inputBar: { flexDirection: "row", padding: 8, borderTopWidth: 1, borderTopColor: "#333", alignItems: "center" },
-  textBox: { flex: 1, backgroundColor: "#1E2C33", color: "#fff", paddingHorizontal: 15, borderRadius: 25 },
-  sendBtn: { backgroundColor: "#25D366", padding: 10, marginLeft: 5, borderRadius: 25 },
-  typingContainer: { paddingHorizontal: 20, marginVertical: 5 },
-  typingBubble: { backgroundColor: "#1E2C33", padding: 8, borderRadius: 10, width: 50 },
-  typingDots: { color: "#fff", textAlign: "center" },
+  logo: { color: "#25D366", fontSize: 22, textAlign: "center", margin: 10 },
+  inboxItem: { flexDirection: "row", padding: 12, borderBottomWidth: 1, borderColor: "#333" },
+  avatar: { width: 45, height: 45, borderRadius: 22, marginRight: 10 },
+  name: { color: "#fff", fontWeight: "bold" },
+  last: { color: "#aaa", fontSize: 12 },
+  unread: { backgroundColor: "#25D366", padding: 6, borderRadius: 20 },
+  header: { backgroundColor: "#075E54", padding: 10, flexDirection: "row", alignItems: "center" },
+  headerName: { color: "#fff", marginLeft: 10, fontSize: 16, fontWeight: "bold" },
+  message: { backgroundColor: "#1E2C33", padding: 8, margin: 6, borderRadius: 8, maxWidth: "70%" },
+  mine: { backgroundColor: "#056162", alignSelf: "flex-end" },
+  inputBar: { flexDirection: "row", padding: 8, alignItems: "center" },
+  input: { flex: 1, backgroundColor: "#1E2C33", borderRadius: 25, padding: 10, color: "#fff", marginRight: 5 }
 });
