@@ -1,177 +1,142 @@
-// GroupChatScreen.js
-import React, { useEffect, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet } from "react-native";
-import { ref, push, set, update, remove, onValue } from "firebase/database";
-import { db } from "../../firebase";
+import React, { useState, useRef } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  Image,
+  Modal,
+} from "react-native";
 
-const safeEmail = (email) => email.replace(/\./g, ",");
+export default function GroupChatScreen() {
+  const me = "me@example.com"; // placeholder
+  const isAdmin = true; // placeholder for admin check
+  const groupName = "My Group"; // placeholder
 
-export default function GroupChatScreen({ route }) {
-  const { userEmail, groupId } = route.params;
-  const me = safeEmail(userEmail);
-
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState([
+    { id: '1', sender: me, text: "Hi there!", time: "10:00 AM", avatar: "https://i.pravatar.cc/150?u=me" },
+    { id: '2', sender: "friend@example.com", text: "Hello!", time: "10:01 AM", avatar: "https://i.pravatar.cc/150?u=friend" },
+  ]);
   const [text, setText] = useState("");
-  const [members, setMembers] = useState({});
-  const [admins, setAdmins] = useState({});
-  const [typingUsers, setTypingUsers] = useState({});
+  const [typingUsers, setTypingUsers] = useState({ "friend@example.com": true });
+  const [menuVisible, setMenuVisible] = useState(false);
 
-  // LOAD GROUP METADATA
-  useEffect(() => {
-    onValue(ref(db, `groups/${groupId}`), snap => {
-      if (snap.exists()) {
-        const data = snap.val();
-        setMembers(data.members || {});
-        setAdmins(data.admins || {});
-      }
-    });
-  }, []);
+  const flatListRef = useRef();
 
-  // LOAD MESSAGES
-  useEffect(() => {
-    onValue(ref(db, `groupMessages/${groupId}`), snap => {
-      if (snap.exists()) {
-        const msgs = Object.values(snap.val());
-        setMessages(msgs.sort((a,b)=>a.timestamp-b.timestamp));
-        markRead();
-      }
-    });
-  }, []);
-
-  // MARK AS READ
-  const markRead = async () => {
-    await update(ref(db, `users/${me}/inbox/${groupId}`), {
-      unreadCount: 0
-    });
-  };
-
-  // SEND MESSAGE
-  const sendMessage = async () => {
+  const sendMessage = () => {
     if (!text.trim()) return;
-
-    const msgRef = push(ref(db, `groupMessages/${groupId}`));
-
-    const message = {
+    const newMsg = {
+      id: Date.now().toString(),
       sender: me,
       text,
-      timestamp: Date.now(),
-      readBy: { [me]: true }
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      avatar: "https://i.pravatar.cc/150?u=me"
     };
-
-    await set(msgRef, message);
-
-    // Update group lastMessage
-    await update(ref(db, `groups/${groupId}/lastMessage`), message);
-
-    // Update inbox for all users
-    Object.keys(members).forEach(async (u) => {
-      await update(ref(db, `users/${u}/inbox/${groupId}`), {
-        lastText: text,
-        timestamp: Date.now(),
-        unreadCount: u === me ? 0 : 1
-      });
-    });
-
+    setMessages([...messages, newMsg]);
     setText("");
-    setTyping(false);
+    flatListRef.current.scrollToEnd({ animated: true });
   };
 
-  // TYPING INDICATOR
-  const setTyping = async (state) => {
-    await set(ref(db, `groups/${groupId}/typing/${me}`), state);
+  const renderItem = ({ item }) => {
+    const isMe = item.sender === me;
+    return (
+      <View style={[styles.messageRow, isMe ? { justifyContent: "flex-end" } : { justifyContent: "flex-start" }]}>
+        {!isMe && <Image source={{ uri: item.avatar }} style={styles.avatar} />}
+        <View style={[styles.messageContainer, isMe ? styles.myMessage : styles.otherMessage]}>
+          <Text style={styles.messageText}>{item.text}</Text>
+          <Text style={styles.timeText}>{item.time}</Text>
+        </View>
+        {isMe && <Image source={{ uri: item.avatar }} style={styles.avatar} />}
+      </View>
+    );
   };
-
-  useEffect(() => {
-    onValue(ref(db, `groups/${groupId}/typing`), snap => {
-      setTypingUsers(snap.val() || {});
-    });
-  }, []);
-
-  // ADD MEMBER (ADMIN)
-  const addMember = async (email) => {
-    const u = safeEmail(email);
-    await set(ref(db, `groups/${groupId}/members/${u}`), true);
-    await set(ref(db, `users/${u}/inbox/${groupId}`), { lastText:"", timestamp:0, unreadCount:0 });
-  };
-
-  // REMOVE MEMBER
-  const removeMember = async (email) => {
-    const u = safeEmail(email);
-    await remove(ref(db, `groups/${groupId}/members/${u}`));
-    await remove(ref(db, `users/${u}/inbox/${groupId}`));
-  };
-
-  // DELETE GROUP
-  const deleteGroup = async () => {
-    if (!admins[me]) return alert("Admins only!");
-
-    await remove(ref(db, `groups/${groupId}`));
-    await remove(ref(db, `groupMessages/${groupId}`));
-
-    Object.keys(members).forEach(async u => {
-      await remove(ref(db, `users/${u}/inbox/${groupId}`));
-    });
-
-    alert("Group deleted");
-  };
-
-  // READ RECEIPT DISPLAY
-  const renderItem = ({ item }) => (
-    <Text style={{padding:5, color: item.sender===me?"green":"black"}}>
-      {item.text}
-      {"  "}
-      ✅ {item.readBy ? Object.keys(item.readBy).length : 0}
-    </Text>
-  );
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={80}
+    >
+      {/* HEADER */}
+      <View style={styles.header}>
+        <Text style={styles.headerText}>{groupName}</Text>
+        {isAdmin && (
+          <TouchableOpacity onPress={() => setMenuVisible(true)} style={styles.menuBtn}>
+            <Text style={{color:"white", fontSize:18}}>⋮</Text>
+          </TouchableOpacity>
+        )}
+      </View>
 
-      <Text style={styles.header}>Group Chat</Text>
+      {/* ADMIN MENU */}
+      <Modal transparent visible={menuVisible} animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setMenuVisible(false)}>
+          <View style={styles.menuContainer}>
+            <TouchableOpacity style={styles.menuItem} onPress={() => alert("Add Member clicked")}>
+              <Text style={styles.menuText}>Add Member</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={() => alert("Delete Group clicked")}>
+              <Text style={[styles.menuText, { color: "red" }]}>Delete Group</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
-      {Object.entries(typingUsers).map(([u,v]) =>
-        v && u!==me && <Text key={u}>{u} is typing...</Text>
-      )}
-
+      {/* MESSAGES */}
       <FlatList
+        ref={flatListRef}
         data={messages}
         renderItem={renderItem}
-        keyExtractor={(item, index) => index.toString()}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ paddingVertical: 10 }}
+        onContentSizeChange={() => flatListRef.current.scrollToEnd({ animated: true })}
       />
 
-      <TextInput
-        style={styles.input}
-        value={text}
-        onChangeText={(t) => {
-          setText(t);
-          setTyping(true);
-        }}
-        placeholder="Type a message..."
-      />
-
-      <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
-        <Text style={{color:"white"}}>Send</Text>
-      </TouchableOpacity>
-
-      {admins[me] && (
-        <>
-          <TouchableOpacity onPress={()=>addMember("new@green.com")}>
-            <Text>Add Member</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={deleteGroup}>
-            <Text style={{color:"red"}}>Delete Group</Text>
-          </TouchableOpacity>
-        </>
+      {/* TYPING */}
+      {Object.entries(typingUsers).map(([u, v]) =>
+        v && u !== me && (
+          <Text key={u} style={styles.typingText}>{u} is typing...</Text>
+        )
       )}
 
-    </View>
+      {/* INPUT */}
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.input}
+          value={text}
+          onChangeText={setText}
+          placeholder="Type a message..."
+        />
+        <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
+          <Text style={styles.sendBtnText}>Send</Text>
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container:{flex:1,padding:10},
-  header:{fontSize:18,fontWeight:"bold"},
-  input:{borderWidth:1,marginTop:10,padding:8},
-  sendBtn:{backgroundColor:"green",padding:10,marginTop:5}
+  container: { flex: 1, backgroundColor: "#f5f5f5" },
+  header: { padding: 15, backgroundColor: "#4CAF50", flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  headerText: { fontSize: 20, fontWeight: "bold", color: "white" },
+  menuBtn: { paddingHorizontal: 10 },
+  modalOverlay: { flex:1, backgroundColor:'rgba(0,0,0,0.3)', justifyContent:'flex-start', alignItems:'flex-end' },
+  menuContainer: { marginTop:60, marginRight:10, backgroundColor:'white', borderRadius:5, width:150, paddingVertical:5 },
+  menuItem: { padding:10 },
+  menuText: { fontSize:16 },
+  messageRow: { flexDirection: "row", marginVertical: 5, alignItems: "flex-end", paddingHorizontal: 10 },
+  avatar: { width: 35, height: 35, borderRadius: 17.5, marginHorizontal: 5 },
+  messageContainer: { maxWidth: "70%", padding: 10, borderRadius: 15 },
+  myMessage: { backgroundColor: "#DCF8C6", borderTopRightRadius: 0 },
+  otherMessage: { backgroundColor: "white", borderTopLeftRadius: 0 },
+  messageText: { fontSize: 16 },
+  timeText: { fontSize: 10, color: "#555", alignSelf: "flex-end", marginTop: 3 },
+  typingText: { fontStyle: "italic", color: "#888", marginLeft: 50, marginBottom: 5 },
+  inputContainer: { flexDirection: "row", padding: 10, borderTopWidth: 1, borderColor: "#ddd", backgroundColor: "white" },
+  input: { flex: 1, borderWidth: 1, borderColor: "#ccc", borderRadius: 25, paddingHorizontal: 15, fontSize: 16 },
+  sendBtn: { backgroundColor: "#4CAF50", borderRadius: 25, paddingHorizontal: 20, justifyContent: "center", marginLeft: 10 },
+  sendBtnText: { color: "white", fontWeight: "bold", fontSize: 16 },
 });
