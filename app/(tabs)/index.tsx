@@ -1,4 +1,3 @@
-// GreenChatTextOnly.js
 import React, { useEffect, useState, useRef } from "react";
 import {
   View,
@@ -9,10 +8,9 @@ import {
   StyleSheet,
   Image,
   StatusBar,
-  InteractionManager,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { ref, onValue, push, update, off } from "firebase/database";
+import { ref, onValue, push, update } from "firebase/database";
 import { db } from "../../firebase";
 
 export default function GreenChatTextOnly() {
@@ -27,263 +25,216 @@ export default function GreenChatTextOnly() {
   const [text, setText] = useState("");
 
   const flatListRef = useRef(null);
-  // store the listeners' unsubscribe functions so we can clean up
-  const listenersRef = useRef({});
 
-  // Load top-level data (users, groups, this user's inbox)
+  // ✅ LOAD USERS + GROUPS + INBOX
   useEffect(() => {
-    // Attach listeners and keep their unsubscribe functions
-    const usersUnsub = onValue(ref(db, "users"), (snap) =>
-      setUsers(snap.exists() ? snap.val() : {})
-    );
-    const groupsUnsub = onValue(ref(db, "groups"), (snap) =>
-      setGroups(snap.exists() ? snap.val() : {})
-    );
-    const inboxUnsub = onValue(ref(db, `users/${userKey}/inbox`), (snap) =>
-      setInbox(snap.exists() ? snap.val() : {})
-    );
+    const uRef = ref(db, "users/users");
+    const gRef = ref(db, "groups");
+    const iRef = ref(db, `users/users/${userKey}/inbox`);
 
-    listenersRef.current.top = { usersUnsub, groupsUnsub, inboxUnsub };
+    const unUsers = onValue(uRef, (s) => setUsers(s.val() || {}));
+    const unGroups = onValue(gRef, (s) => setGroups(s.val() || {}));
+    const unInbox = onValue(iRef, (s) => setInbox(s.val() || {}));
 
-    // cleanup
     return () => {
-      // onValue in modular SDK returns an unsubscribe function, call them
-      try {
-        typeof usersUnsub === "function" && usersUnsub();
-        typeof groupsUnsub === "function" && groupsUnsub();
-        typeof inboxUnsub === "function" && inboxUnsub();
-      } catch (e) {
-        // best-effort cleanup
-      }
+      unUsers?.();
+      unGroups?.();
+      unInbox?.();
     };
-  }, [userKey]);
+  }, []);
 
-  // Messages listener for the selected receiver (private chat or group)
+  // ✅ LOAD MESSAGES (FROM USERS AND GROUPS ONLY)
   useEffect(() => {
-    // remove previous messages listener if any
-    if (listenersRef.current.messagesUnsub) {
-      try {
-        listenersRef.current.messagesUnsub();
-      } catch (e) {}
-      listenersRef.current.messagesUnsub = null;
-    }
-
-    if (!receiverKey) {
-      setMessages([]);
-      return;
-    }
+    if (!receiverKey) return;
 
     const isGroup = receiverKey.startsWith("group_");
-    const id = isGroup ? receiverKey : [userKey, receiverKey].sort().join("_");
-    const path = isGroup ? `groupChats/${id}` : `chats/${id}`;
+
+    const chatId = isGroup
+      ? null
+      : [userKey, receiverKey].sort().join("_");
+
+    const path = isGroup
+      ? `groups/${receiverKey}/messages`
+      : `users/users/${userKey}/messages/${chatId}`;
 
     const unsub = onValue(ref(db, path), (snap) => {
       const list = [];
-      snap.forEach((s) => list.push({ id: s.key, ...s.val() }));
-      // guard for undefined timestamp
-      const sorted = list.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-      setMessages(sorted);
+      snap.forEach((x) => list.push({ id: x.key, ...x.val() }));
+      list.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      setMessages(list);
 
-      // scroll after interactions to avoid calling before layout
-      InteractionManager.runAfterInteractions(() => {
-        try {
-          // scroll to the last index in a safe way
-          const lastIndex = Math.max(0, sorted.length - 1);
-          if (flatListRef.current && typeof flatListRef.current.scrollToIndex === "function") {
-            flatListRef.current.scrollToIndex({ index: lastIndex, animated: true });
-          } else if (flatListRef.current && typeof flatListRef.current.scrollToEnd === "function") {
-            flatListRef.current.scrollToEnd({ animated: true });
-          }
-        } catch (e) {
-          // ignore scroll errors (e.g., index out of range)
-        }
-      });
+      setTimeout(
+        () => flatListRef.current?.scrollToEnd({ animated: true }),
+        50
+      );
     });
 
-    listenersRef.current.messagesUnsub = unsub;
-    return () => {
-      try {
-        typeof unsub === "function" && unsub();
-      } catch (e) {}
-    };
-  }, [receiverKey, userKey]);
+    return () => unsub();
+  }, [receiverKey]);
 
-  // mark inbox unreadCount = 0 for the opened conversation
-  useEffect(() => {
-    if (!receiverKey) return;
-    const targetRef = ref(db, `users/${userKey}/inbox/${receiverKey}`);
-    // set unreadCount to 0 (best-effort, catch errors)
-    update(targetRef, { unreadCount: 0 }).catch(() => {});
-  }, [receiverKey, userKey]);
-
-  // Utilities
-  const safeAvatar = (data) => data?.avatar || data?.groupIcon || "https://i.pravatar.cc/100";
-
-  // Send message
+  // ✅ SEND MESSAGE
   const sendMessage = async () => {
-    try {
-      if (!text.trim() || !receiverKey) return;
-      const isGroup = receiverKey.startsWith("group_");
-      const id = isGroup ? receiverKey : [userKey, receiverKey].sort().join("_");
-      const path = isGroup ? `groupChats/${id}` : `chats/${id}`;
-      const msg = {
-        sender: userKey,
-        text: text.trim(),
-        timestamp: Date.now(),
-        type: "text",
-        reactions: {},
-      };
-      await push(ref(db, path), msg);
+    if (!text || !receiverKey) return;
 
-      // update inbox entries
-      if (isGroup) {
-        await updateGroupInbox(text.trim(), id);
-      } else {
-        await updatePrivateInbox(text.trim());
-      }
-      setText("");
-    } catch (err) {
-      console.warn("sendMessage error:", err);
+    const isGroup = receiverKey.startsWith("group_");
+    const chatId = isGroup
+      ? null
+      : [userKey, receiverKey].sort().join("_");
+
+    const basePath = isGroup
+      ? `groups/${receiverKey}/messages`
+      : `users/users/${userKey}/messages/${chatId}`;
+
+    const msg = {
+      sender: userKey,
+      text,
+      timestamp: Date.now(),
+    };
+
+    await push(ref(db, basePath), msg);
+
+    // ✅ SYNC PRIVATE COPY TO RECEIVER
+    if (!isGroup) {
+      await push(
+        ref(db, `users/users/${receiverKey}/messages/${chatId}`),
+        msg
+      );
     }
+
+    updateInbox(text);
+    setText("");
   };
 
-  const updatePrivateInbox = async (lastText) => {
-    try {
-      // read current unread counts safely from local state (may be slightly stale)
-      const receiverInboxForMe = users[receiverKey]?.inbox?.[userKey]?.unreadCount || 0;
-      const updates = {};
-      updates[`users/${userKey}/inbox/${receiverKey}`] = {
-        lastText,
-        timestamp: Date.now(),
-        unreadCount: 0,
-      };
-      updates[`users/${receiverKey}/inbox/${userKey}`] = {
-        lastText,
-        timestamp: Date.now(),
-        unreadCount: receiverInboxForMe + 1,
-      };
-      await update(ref(db), updates);
-    } catch (e) {
-      console.warn("updatePrivateInbox failed", e);
-    }
-  };
+  // ✅ UPDATE INBOX (PRIVATE + GROUPS)
+  const updateInbox = async (lastText) => {
+    const isGroup = receiverKey.startsWith("group_");
 
-  const updateGroupInbox = async (lastText, groupId) => {
-    try {
-      const members = groups[groupId]?.members || {};
+    if (isGroup) {
+      const members = groups[receiverKey]?.members || {};
       const updates = {};
+
       Object.keys(members).forEach((uid) => {
-        updates[`users/${uid}/inbox/${groupId}`] = {
+        updates[`users/users/${uid}/inbox/${receiverKey}`] = {
           lastText,
           timestamp: Date.now(),
           unreadCount:
-            uid === userKey ? 0 : (users[uid]?.inbox?.[groupId]?.unreadCount || 0) + 1,
+            uid === userKey ? 0 : (users[uid]?.inbox?.[receiverKey]?.unreadCount || 0) + 1,
         };
       });
+
       await update(ref(db), updates);
-    } catch (e) {
-      console.warn("updateGroupInbox failed", e);
+      return;
     }
+
+    // ✅ PRIVATE
+    await update(ref(db), {
+      [`users/users/${userKey}/inbox/${receiverKey}`]: {
+        lastText,
+        timestamp: Date.now(),
+        unreadCount: 0,
+      },
+      [`users/users/${receiverKey}/inbox/${userKey}`]: {
+        lastText,
+        timestamp: Date.now(),
+        unreadCount:
+          (users[receiverKey]?.inbox?.[userKey]?.unreadCount || 0) + 1,
+      },
+    });
   };
 
-  // stable sorted inbox keys
-  const sortedInbox = Array.isArray(Object.keys(inbox))
-    ? Object.keys(inbox).sort((a, b) => (inbox[b]?.timestamp || 0) - (inbox[a]?.timestamp || 0))
-    : [];
+  // ✅ MARK READ
+  useEffect(() => {
+    if (!receiverKey) return;
+    update(ref(db, `users/users/${userKey}/inbox/${receiverKey}`), {
+      unreadCount: 0,
+    });
+  }, [receiverKey]);
 
-  // helpers for FlatList rendering
-  const renderInboxItem = ({ item }) => {
-    const isGroup = item.startsWith("group_");
-    const data = isGroup ? groups[item] : users[item];
-    if (!data) return null;
-    const i = inbox[item] || {};
-    return (
-      <TouchableOpacity activeOpacity={0.8} onPress={() => setReceiverKey(item)}>
-        <View style={styles.inboxItem}>
-          <Image source={{ uri: safeAvatar(data) }} style={styles.avatar} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.name}>{data.name || (isGroup ? "Group" : "Unknown")}</Text>
-            <Text style={styles.last} numberOfLines={1}>
-              {i?.lastText || "Say hi!"}
-            </Text>
-          </View>
-          {i?.unreadCount > 0 && (
-            <View style={styles.unread}>
-              <Text style={{ color: "#fff", fontSize: 12 }}>{i.unreadCount}</Text>
-            </View>
-          )}
-        </View>
-      </TouchableOpacity>
-    );
-  };
+  const sortedInbox = Object.keys(inbox).sort(
+    (a, b) => (inbox[b]?.timestamp || 0) - (inbox[a]?.timestamp || 0)
+  );
 
-  const renderMessage = ({ item }) => {
-    const mine = item.sender === userKey;
-    const senderName = users[item.sender]?.name || "Unknown";
-    return (
-      <View style={[styles.msgContainer, mine ? styles.right : styles.left]}>
-        {!mine && <Text style={styles.senderName}>{senderName}</Text>}
-        <View style={[styles.message, mine && styles.mine]}>
-          <Text style={{ color: "#fff" }}>{item.text}</Text>
-        </View>
-      </View>
-    );
-  };
-
+  // ✅ UI
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="#075E54" barStyle="light-content" />
+
+      {/* TOP BAR */}
       <View style={styles.topBar}>
         <Text style={styles.logo}>Green Chat</Text>
-        <Ionicons name="chatbubble-ellipses" size={22} color="#fff" />
+        <Ionicons name="chatbubble-outline" size={22} color="#fff" />
       </View>
 
-      {/* Inbox */}
+      {/* INBOX */}
       {!receiverKey && (
         <FlatList
           data={sortedInbox}
           keyExtractor={(k) => k}
-          contentContainerStyle={{ paddingBottom: 10 }}
-          renderItem={renderInboxItem}
-          ListEmptyComponent={
-            <View style={{ padding: 20 }}>
-              <Text style={{ color: "#aaa" }}>No conversations yet</Text>
-            </View>
-          }
+          renderItem={({ item }) => {
+            const isGroup = item.startsWith("group_");
+            const data = isGroup ? groups[item] : users[item];
+            if (!data) return null;
+
+            return (
+              <TouchableOpacity onPress={() => setReceiverKey(item)}>
+                <View style={styles.inboxItem}>
+                  <Image
+                    source={{ uri: data.avatar || data.groupIcon }}
+                    style={styles.avatar}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.name}>{data.name}</Text>
+                    <Text style={styles.last}>
+                      {inbox[item]?.lastText || "Say hi"}
+                    </Text>
+                  </View>
+                  {inbox[item]?.unreadCount > 0 && (
+                    <View style={styles.unread}>
+                      <Text style={{ color: "white" }}>
+                        {inbox[item].unreadCount}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          }}
         />
       )}
 
-      {/* Chat */}
+      {/* CHAT */}
       {receiverKey && (
         <>
           <View style={styles.header}>
             <TouchableOpacity onPress={() => setReceiverKey(null)}>
-              <Ionicons name="arrow-back" size={22} color="#fff" />
+              <Ionicons name="arrow-back" size={22} color="white" />
             </TouchableOpacity>
             <Image
               source={{
-                uri: safeAvatar(groups[receiverKey] || users[receiverKey] || {}),
+                uri:
+                  groups[receiverKey]?.groupIcon ||
+                  users[receiverKey]?.avatar ||
+                  "https://i.pravatar.cc/100",
               }}
               style={styles.headerAvatar}
             />
             <Text style={styles.headerName}>
-              {receiverKey.startsWith("group_")
-                ? groups[receiverKey]?.name || "Group"
-                : users[receiverKey]?.name || "Unknown"}
+              {groups[receiverKey]?.name || users[receiverKey]?.name}
             </Text>
           </View>
 
           <FlatList
             ref={flatListRef}
             data={messages}
-            keyExtractor={(i) => i.id || Math.random().toString()}
-            contentContainerStyle={{ padding: 10 }}
-            renderItem={renderMessage}
-            ListEmptyComponent={
-              <View style={{ padding: 20 }}>
-                <Text style={{ color: "#aaa" }}>No messages yet</Text>
-              </View>
-            }
+            keyExtractor={(m) => m.id}
+            renderItem={({ item }) => {
+              const mine = item.sender === userKey;
+              return (
+                <View style={[styles.msg, mine ? styles.right : styles.left]}>
+                  <Text style={{ color: "white" }}>{item.text}</Text>
+                </View>
+              );
+            }}
           />
 
           <View style={styles.inputBar}>
@@ -291,10 +242,7 @@ export default function GreenChatTextOnly() {
               style={styles.input}
               value={text}
               onChangeText={setText}
-              placeholder="Message..."
-              placeholderTextColor="#888"
-              returnKeyType="send"
-              onSubmitEditing={sendMessage}
+              placeholder="Type message"
             />
             <TouchableOpacity onPress={sendMessage}>
               <Ionicons name="send" size={22} color="#25D366" />
@@ -310,81 +258,53 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#121B22" },
   topBar: {
     backgroundColor: "#075E54",
+    padding: 12,
     flexDirection: "row",
     justifyContent: "space-between",
-    padding: 12,
-    alignItems: "center",
   },
-  logo: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
-  },
+  logo: { color: "white", fontSize: 20, fontWeight: "bold" },
   inboxItem: {
     flexDirection: "row",
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    padding: 12,
     borderBottomWidth: 0.5,
     borderColor: "#2A3942",
-    alignItems: "center",
   },
-  avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 12,
-  },
-  name: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  last: { color: "#aaa", fontSize: 13 },
+  avatar: { width: 45, height: 45, borderRadius: 23, marginRight: 12 },
+  name: { color: "white", fontSize: 16 },
+  last: { color: "#bbb", fontSize: 13 },
   unread: {
     backgroundColor: "#25D366",
-    minWidth: 24,
-    alignItems: "center",
+    paddingHorizontal: 8,
+    borderRadius: 10,
     justifyContent: "center",
-    borderRadius: 12,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
   },
   header: {
     backgroundColor: "#075E54",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
     flexDirection: "row",
     alignItems: "center",
+    padding: 8,
   },
-  headerAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    marginHorizontal: 8,
-  },
-  headerName: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  msgContainer: { marginVertical: 4, maxWidth: "80%" },
-  left: { alignSelf: "flex-start" },
-  right: { alignSelf: "flex-end" },
-  senderName: { color: "#25D366", fontSize: 12, marginLeft: 8, marginBottom: 3 },
-  message: {
+  headerAvatar: { width: 32, height: 32, borderRadius: 16, marginHorizontal: 8 },
+  headerName: { color: "white", fontSize: 16 },
+  msg: {
     backgroundColor: "#1E2C33",
+    margin: 6,
     padding: 10,
     borderRadius: 10,
+    maxWidth: "70%",
   },
-  mine: { backgroundColor: "#056162" },
+  left: { alignSelf: "flex-start" },
+  right: { alignSelf: "flex-end", backgroundColor: "#056162" },
   inputBar: {
     flexDirection: "row",
-    padding: 10,
     backgroundColor: "#1E2C33",
-    alignItems: "center",
+    padding: 10,
   },
   input: {
     flex: 1,
     backgroundColor: "#2A3942",
-    borderRadius: 25,
-    paddingHorizontal: 15,
-    color: "#fff",
-    marginRight: 8,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    color: "white",
   },
 });
