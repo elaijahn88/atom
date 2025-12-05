@@ -284,7 +284,7 @@ export default function App() {
 
       {/* TOP BAR */}
       <View style={styles.topBar}>
-        <Text style={styles.logo}>Green Chat</Text>
+        <Text style={styles.logo}>Green</Text>
 
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <TouchableOpacity
