@@ -12,75 +12,236 @@ import {
   Switch,
   SafeAreaView,
   ScrollView,
+  ActivityIndicator,
+  Keyboard,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { ref, onValue, push, update } from "firebase/database";
+import { db } from "../../firebase"; // <-- adjust this path to your firebase config
 
-/*
-  Full UI-only chat with:
-  - Theme toggle (dark/light)
-  - Stories UI on Inbox
-  - Chat wallpapers (selectable in Settings)
-  - Modular local components (easy to split into files)
-  - Fake messages + typing + auto-scroll
-*/
+// --------------------------
+// CONFIG: logged-in user
+// --------------------------
+const userEmail = "elajahn8@gmail.com";
+const userKey = userEmail.replace(/\./g, ",");
 
+// --------------------------
+// WALLPAPERS
+// --------------------------
+const wallpapers = [
+  "https://images.unsplash.com/photo-1503264116251-35a269479413?w=1200&q=60&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1470167290877-7d5b1f83c9a0?w=1200&q=60&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1526772662000-3f88f10405ff?w=1200&q=60&auto=format&fit=crop",
+];
+
+// --------------------------
+// MAIN APP
+// --------------------------
 export default function App() {
   const [theme, setTheme] = useState("dark"); // 'dark' | 'light'
   const [screen, setScreen] = useState("inbox"); // inbox | chat | settings
-  const [receiverKey, setReceiverKey] = useState(null);
-  const [wallpaper, setWallpaper] = useState(wallpapers[0]); // current chat wallpaper
+  const [receiverKey, setReceiverKey] = useState(null); // either userKey-like 'alice@green,com' or 'group_g1001'
+  const [wallpaper, setWallpaper] = useState(wallpapers[0]);
 
-  // central styles getter
+  // data from DB
+  const [users, setUsers] = useState({});
+  const [groups, setGroups] = useState({});
+  const [inbox, setInbox] = useState({});
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // chat UI state
+  const [text, setText] = useState("");
+  const [typing, setTyping] = useState(false);
+  const flatRef = useRef(null);
+
   const styles = makeStyles(theme);
 
-  // shared dummy inbox (users) and stories
-  const inbox = {
-    alice: {
-      id: "alice",
-      name: "Alice",
-      avatar: "https://i.pravatar.cc/150?u=alice",
-      lastText: "Sent a photo",
-    },
-    bob: {
-      id: "bob",
-      name: "Bob",
-      avatar: "https://i.pravatar.cc/150?u=bob",
-      lastText: "On my way",
-    },
-    carol: {
-      id: "carol",
-      name: "Carol",
-      avatar: "https://i.pravatar.cc/150?u=carol",
-      lastText: "See you!",
-    },
-  };
-
-  // messages per chat (local only)
-  const messagesRef = useRef({
-    alice: [
-      { id: "1", sender: "them", text: "Hey there!" },
-      { id: "2", sender: "me", text: "Hi Alice!" },
-    ],
-    bob: [
-      { id: "1", sender: "them", text: "Morning :)" },
-      { id: "2", sender: "me", text: "Morning!" },
-      { id: "3", sender: "them", text: "Ready for today?" },
-    ],
-    carol: [{ id: "1", sender: "them", text: "Movie tonight?" }],
-  });
-
-  const openChat = (key) => {
-    setReceiverKey(key);
-    setScreen("chat");
-  };
-
-  // platform top status bar color
+  // --------------------------
+  // LOAD USERS + GROUPS + INBOX
+  // --------------------------
   useEffect(() => {
-    StatusBar.setBarStyle(theme === "dark" ? "light-content" : "dark-content");
-  }, [theme]);
+    setLoading(true);
 
+    const usersRef = ref(db, "users/users"); // your DB has users/users
+    const groupsRootRef = ref(db, "groups"); // top-level groups
+    const usersGroupsRef = ref(db, "users/groups"); // sometimes groups stored under users/groups
+    const inboxRef = ref(db, `users/users/${userKey}/inbox`);
+
+    const unsubUsers = onValue(usersRef, (snap) => {
+      setUsers(snap.val() || {});
+    });
+
+    const unsubGroupsRoot = onValue(groupsRootRef, (snap) => {
+      setGroups((prev) => {
+        const rootGroups = snap.val() || {};
+        // merge with any groups coming from users/groups later
+        return { ...rootGroups, ...prev };
+      });
+    });
+
+    const unsubUsersGroups = onValue(usersGroupsRef, (snap) => {
+      const uGroups = snap.val() || {};
+      setGroups((prev) => ({ ...prev, ...uGroups }));
+    });
+
+    const unsubInbox = onValue(inboxRef, (snap) => {
+      setInbox(snap.val() || {});
+      setLoading(false);
+    });
+
+    return () => {
+      unsubUsers?.();
+      unsubGroupsRoot?.();
+      unsubUsersGroups?.();
+      unsubInbox?.();
+    };
+  }, []);
+
+  // --------------------------
+  // LOAD MESSAGES (PRIVATE OR GROUP)
+  // --------------------------
+  useEffect(() => {
+    if (!receiverKey) {
+      setMessages([]);
+      return;
+    }
+
+    const isGroup = receiverKey.startsWith("group_");
+    const chatId = isGroup ? null : [userKey, receiverKey].sort().join("_");
+    const path = isGroup
+      ? `groups/${receiverKey}/messages`
+      : `users/users/${userKey}/messages/${chatId}`;
+
+    const messagesRef = ref(db, path);
+    const unsub = onValue(messagesRef, (snap) => {
+      const list = [];
+      snap.forEach((s) => {
+        list.push({ id: s.key, ...s.val() });
+      });
+      // sort by timestamp (defensive)
+      list.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      setMessages(list);
+      // scroll to bottom
+      setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 80);
+    });
+
+    // mark inbox unreadCount 0 (mark read)
+    const inboxPath = `users/users/${userKey}/inbox/${receiverKey}`;
+    update(ref(db, inboxPath), { unreadCount: 0 }).catch(() => {});
+
+    return () => unsub();
+  }, [receiverKey]);
+
+  // --------------------------
+  // SEND MESSAGE (private + group)
+  // --------------------------
+  const sendMessage = async () => {
+    if (!text.trim() || !receiverKey) return;
+
+    const isGroup = receiverKey.startsWith("group_");
+    const chatId = isGroup ? null : [userKey, receiverKey].sort().join("_");
+
+    const basePath = isGroup
+      ? `groups/${receiverKey}/messages`
+      : `users/users/${userKey}/messages/${chatId}`;
+
+    const msg = {
+      sender: userKey,
+      text: text.trim(),
+      timestamp: Date.now(),
+    };
+
+    try {
+      // push to base path (current user's copy)
+      await push(ref(db, basePath), msg);
+
+      // if private -> push to receiver's private copy
+      if (!isGroup) {
+        await push(ref(db, `users/users/${receiverKey}/messages/${chatId}`), msg);
+      }
+
+      // update inboxes
+      await updateInbox(msg.text, receiverKey);
+      setText("");
+      Keyboard.dismiss();
+    } catch (err) {
+      console.error("sendMessage error", err);
+    }
+  };
+
+  // --------------------------
+  // UPDATE INBOX (private + group)
+  // --------------------------
+  const updateInbox = async (lastText, targetKey) => {
+    const isGroup = targetKey.startsWith("group_");
+
+    if (isGroup) {
+      // update inbox for all group members
+      const members = groups[targetKey]?.members || {};
+      const updates = {};
+      Object.keys(members).forEach((uid) => {
+        updates[`users/users/${uid}/inbox/${targetKey}`] = {
+          lastText,
+          timestamp: Date.now(),
+          unreadCount:
+            uid === userKey
+              ? 0
+              : (users[uid]?.inbox?.[targetKey]?.unreadCount || 0) + 1,
+        };
+      });
+
+      // write batch update
+      await update(ref(db), updates);
+      return;
+    }
+
+    // private: update sender and receiver inbox
+    const updates = {};
+    updates[`users/users/${userKey}/inbox/${targetKey}`] = {
+      lastText,
+      timestamp: Date.now(),
+      unreadCount: 0,
+    };
+    updates[`users/users/${targetKey}/inbox/${userKey}`] = {
+      lastText,
+      timestamp: Date.now(),
+      unreadCount: (users[targetKey]?.inbox?.[userKey]?.unreadCount || 0) + 1,
+    };
+
+    await update(ref(db), updates);
+  };
+
+  // --------------------------
+  // Sorted inbox keys for UI
+  // --------------------------
+  const sortedInboxKeys = Object.keys(inbox || {}).sort(
+    (a, b) => (inbox[b]?.timestamp || 0) - (inbox[a]?.timestamp || 0)
+  );
+
+  // --------------------------
+  // UI: quick loading
+  // --------------------------
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator size="large" color="#25D366" />
+          <Text style={{ color: theme === "dark" ? "#fff" : "#111", marginTop: 12 }}>
+            Loading...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // --------------------------
+  // Render
+  // --------------------------
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar backgroundColor="#075E54" barStyle="light-content" />
+
       {/* TOP BAR */}
       <View style={styles.topBar}>
         <Text style={styles.logo}>Green Chat</Text>
@@ -106,252 +267,207 @@ export default function App() {
         </View>
       </View>
 
-      {/* SCREENS */}
+      {/* --- INBOX SCREEN --- */}
       {screen === "inbox" && (
-        <InboxScreen
-          inbox={inbox}
-          styles={styles}
-          onOpenChat={openChat}
-          theme={theme}
-        />
+        <View style={{ flex: 1 }}>
+          {/* STORIES (UI-only) */}
+          <View style={styles.storiesContainer}>
+            <FlatList
+              data={Object.values(users).slice(0, 6)}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(u) => u.email || u.name}
+              renderItem={({ item }) => (
+                <StoryBubble
+                  item={{
+                    id: item.email || item.name,
+                    user: item.name,
+                    avatar: item.avatar,
+                  }}
+                  onPress={() => {}}
+                  theme={theme}
+                />
+              )}
+            />
+          </View>
+
+          {/* INBOX LIST (users + groups) */}
+          <FlatList
+            data={sortedInboxKeys}
+            keyExtractor={(k) => k}
+            renderItem={({ item }) => {
+              const isGroup = item.startsWith("group_");
+              const data = isGroup ? groups[item] : users[item];
+              if (!data) return null;
+
+              return (
+                <TouchableOpacity
+                  onPress={() => {
+                    setReceiverKey(item);
+                    setScreen("chat");
+                  }}
+                >
+                  <View style={styles.inboxItem}>
+                    <Image
+                      source={{ uri: data.avatar || data.groupIcon || "https://i.pravatar.cc/100" }}
+                      style={styles.avatar}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.name}>
+                        {isGroup ? data.name : data.name}
+                      </Text>
+                      <Text style={styles.last}>
+                        {inbox[item]?.lastText || (isGroup ? "Group created" : "Say hi")}
+                      </Text>
+                    </View>
+
+                    <View style={styles.timestampBox}>
+                      <Text style={styles.timestamp}>
+                        {inbox[item]?.unreadCount > 0 ? inbox[item].unreadCount : ""}
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </View>
       )}
 
+      {/* --- CHAT SCREEN --- */}
       {screen === "chat" && receiverKey && (
-        <ChatScreen
-          chatId={receiverKey}
-          user={inbox[receiverKey]}
-          messagesRef={messagesRef}
-          onBack={() => setScreen("inbox")}
-          styles={styles}
-          theme={theme}
-          wallpaper={wallpaper}
-        />
+        <>
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={() => {
+                setScreen("inbox");
+                setReceiverKey(null);
+              }}
+            >
+              <Ionicons name="arrow-back" size={22} color={theme === "dark" ? "#fff" : "#222"} />
+            </TouchableOpacity>
+
+            <Image
+              source={{
+                uri:
+                  (receiverKey.startsWith("group_") ? groups[receiverKey]?.groupIcon : users[receiverKey]?.avatar) ||
+                  "https://i.pravatar.cc/100",
+              }}
+              style={styles.headerAvatar}
+            />
+            <Text style={styles.headerName}>
+              {receiverKey.startsWith("group_") ? groups[receiverKey]?.name : users[receiverKey]?.name}
+            </Text>
+          </View>
+
+          <ImageBackground source={{ uri: wallpaper }} style={styles.chatBackground}>
+            <FlatList
+              ref={flatRef}
+              data={messages}
+              keyExtractor={(m) => m.id}
+              contentContainerStyle={{ padding: 12, paddingBottom: 80 }}
+              renderItem={({ item }) => {
+                const mine = item.sender === userKey;
+                return (
+                  <View
+                    style={[
+                      styles.msg,
+                      mine ? styles.right : styles.left,
+                      mine ? { backgroundColor: "#056162" } : null,
+                    ]}
+                  >
+                    <Text style={{ color: theme === "dark" ? "#fff" : "#111" }}>
+                      {item.text}
+                    </Text>
+                  </View>
+                );
+              }}
+            />
+
+            {typing && (
+              <View style={styles.typingRow}>
+                <Image
+                  source={{
+                    uri: receiverKey.startsWith("group_")
+                      ? groups[receiverKey]?.groupIcon
+                      : users[receiverKey]?.avatar,
+                  }}
+                  style={styles.typingAvatar}
+                />
+                <Text style={styles.typingText}>Typing…</Text>
+              </View>
+            )}
+          </ImageBackground>
+
+          <View style={styles.inputBar}>
+            <TouchableOpacity>
+              <Ionicons name="happy-outline" size={26} color="#aaa" />
+            </TouchableOpacity>
+
+            <TextInput
+              style={styles.input}
+              value={text}
+              onChangeText={setText}
+              placeholder="Message"
+              placeholderTextColor="#aaa"
+            />
+
+            <TouchableOpacity
+              onPress={() => {
+                setTyping(true);
+                sendMessage();
+                // small client-side typing feedback
+                setTimeout(() => setTyping(false), 800);
+              }}
+            >
+              <Ionicons name="send" size={26} color="#25D366" />
+            </TouchableOpacity>
+          </View>
+        </>
       )}
 
+      {/* --- SETTINGS SCREEN --- */}
       {screen === "settings" && (
-        <SettingsScreen
-          styles={styles}
-          theme={theme}
-          onClose={() => setScreen("inbox")}
-          wallpaper={wallpaper}
-          setWallpaper={setWallpaper}
-        />
+        <ScrollView style={{ flex: 1, padding: 16 }}>
+          <Text style={styles.settingsTitle}>Settings</Text>
+
+          <TouchableOpacity onPress={() => setScreen("inbox")}>
+            <Text style={styles.settingsItem}>Back</Text>
+          </TouchableOpacity>
+
+          <Text style={[styles.settingsItem, { marginTop: 18 }]}>Chat Wallpapers</Text>
+
+          <FlatList
+            data={wallpapers}
+            horizontal
+            keyExtractor={(w) => w}
+            showsHorizontalScrollIndicator={false}
+            style={{ marginTop: 8 }}
+            renderItem={({ item }) => (
+              <TouchableOpacity onPress={() => setWallpaper(item)}>
+                <Image
+                  source={{ uri: item }}
+                  style={{
+                    width: 120,
+                    height: 80,
+                    borderRadius: 8,
+                    marginRight: 12,
+                    borderWidth: item === wallpaper ? 3 : 0,
+                    borderColor: "#25D366",
+                  }}
+                />
+              </TouchableOpacity>
+            )}
+          />
+        </ScrollView>
       )}
     </SafeAreaView>
   );
 }
 
-/* ---------------------------
-   InboxScreen component
-----------------------------*/
-function InboxScreen({ inbox, styles, onOpenChat, theme }) {
-  const storyData = [
-    { id: "s_alice", user: "Alice", avatar: "https://i.pravatar.cc/100?u=alice" },
-    { id: "s_bob", user: "Bob", avatar: "https://i.pravatar.cc/100?u=bob" },
-    { id: "s_carol", user: "Carol", avatar: "https://i.pravatar.cc/100?u=carol" },
-    { id: "s_dan", user: "Dan", avatar: "https://i.pravatar.cc/100?u=dan" },
-  ];
-
-  return (
-    <View style={{ flex: 1 }}>
-      {/* Stories bar */}
-      <View style={styles.storiesContainer}>
-        <FlatList
-          data={storyData}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={(i) => i.id}
-          renderItem={({ item }) => (
-            <StoryBubble item={item} onPress={() => {}} theme={theme} />
-          )}
-        />
-      </View>
-
-      {/* Inbox list */}
-      <FlatList
-        data={Object.values(inbox)}
-        keyExtractor={(u) => u.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity onPress={() => onOpenChat(item.id)}>
-            <View style={styles.inboxItem}>
-              <Image source={{ uri: item.avatar }} style={styles.avatar} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{item.name}</Text>
-                <Text style={styles.last}>{item.lastText}</Text>
-              </View>
-              <View style={styles.timestampBox}>
-                <Text style={styles.timestamp}>12:34</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        )}
-      />
-    </View>
-  );
-}
-
-/* ---------------------------
-   ChatScreen component
-   - shows wallpaper (ImageBackground)
-   - fake typing
-   - auto-scroll
-----------------------------*/
-function ChatScreen({
-  chatId,
-  user,
-  messagesRef,
-  onBack,
-  styles,
-  theme,
-  wallpaper,
-}) {
-  const [messages, setMessages] = useState(messagesRef.current[chatId] || []);
-  const [text, setText] = useState("");
-  const [typing, setTyping] = useState(false);
-  const flatRef = useRef(null);
-
-  // auto-scroll when messages change
-  useEffect(() => {
-    setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 80);
-  }, [messages]);
-
-  const fakeReplies = [
-    "Okay!",
-    "Nice 👍",
-    "On my way",
-    "Haha 😂",
-    "Let's do it",
-    "Cool",
-    "Got it",
-  ];
-
-  const sendMessage = () => {
-    if (!text.trim()) return;
-    const my = { id: Date.now().toString(), sender: "me", text: text.trim() };
-    setMessages((p) => [...p, my]);
-    messagesRef.current[chatId] = [...(messagesRef.current[chatId] || []), my];
-    setText("");
-    setTyping(true);
-
-    setTimeout(() => {
-      const r = {
-        id: (Date.now() + 1).toString(),
-        sender: "them",
-        text: fakeReplies[Math.floor(Math.random() * fakeReplies.length)],
-      };
-      setMessages((p) => [...p, r]);
-      messagesRef.current[chatId] = [...(messagesRef.current[chatId] || []), r];
-      setTyping(false);
-    }, 1400 + Math.random() * 1200);
-  };
-
-  return (
-    <View style={{ flex: 1 }}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Ionicons name="arrow-back" size={22} color={theme === "dark" ? "#fff" : "#222"} />
-        </TouchableOpacity>
-        <Image source={{ uri: user.avatar }} style={styles.headerAvatar} />
-        <Text style={styles.headerName}>{user.name}</Text>
-      </View>
-
-      <ImageBackground source={{ uri: wallpaper }} style={styles.chatBackground}>
-        <FlatList
-          ref={flatRef}
-          data={messages}
-          keyExtractor={(m) => m.id}
-          contentContainerStyle={{ padding: 12, paddingBottom: 80 }}
-          renderItem={({ item }) => {
-            const mine = item.sender === "me";
-            return (
-              <View
-                style={[
-                  styles.msg,
-                  mine ? styles.right : styles.left,
-                  mine ? { backgroundColor: "#056162" } : null,
-                ]}
-              >
-                <Text style={{ color: theme === "dark" ? "#fff" : "#111" }}>{item.text}</Text>
-              </View>
-            );
-          }}
-        />
-
-        {/* typing indicator */}
-        {typing && (
-          <View style={styles.typingRow}>
-            <Image source={{ uri: user.avatar }} style={styles.typingAvatar} />
-            <Text style={styles.typingText}>Typing…</Text>
-          </View>
-        )}
-      </ImageBackground>
-
-      {/* input */}
-      <View style={styles.inputBar}>
-        <TouchableOpacity>
-          <Ionicons name="happy-outline" size={26} color="#aaa" />
-        </TouchableOpacity>
-
-        <TextInput
-          style={styles.input}
-          value={text}
-          onChangeText={setText}
-          placeholder="Message"
-          placeholderTextColor="#aaa"
-        />
-
-        <TouchableOpacity onPress={sendMessage}>
-          <Ionicons name="send" size={26} color="#25D366" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
-/* ---------------------------
-   Settings screen
-   - select wallpaper
-----------------------------*/
-function SettingsScreen({ styles, theme, onClose, wallpaper, setWallpaper }) {
-  return (
-    <ScrollView style={{ flex: 1, padding: 16 }}>
-      <Text style={styles.settingsTitle}>Settings</Text>
-
-      <TouchableOpacity onPress={onClose}>
-        <Text style={styles.settingsItem}>Back</Text>
-      </TouchableOpacity>
-
-      <Text style={[styles.settingsItem, { marginTop: 18 }]}>Chat Wallpapers</Text>
-
-      <FlatList
-        data={wallpapers}
-        horizontal
-        keyExtractor={(w) => w}
-        showsHorizontalScrollIndicator={false}
-        style={{ marginTop: 8 }}
-        renderItem={({ item }) => (
-          <TouchableOpacity onPress={() => setWallpaper(item)}>
-            <Image
-              source={{ uri: item }}
-              style={{
-                width: 120,
-                height: 80,
-                borderRadius: 8,
-                marginRight: 12,
-                borderWidth: item === wallpaper ? 3 : 0,
-                borderColor: "#25D366",
-              }}
-            />
-          </TouchableOpacity>
-        )}
-      />
-    </ScrollView>
-  );
-}
-
-/* ---------------------------
-   StoryBubble small component
-----------------------------*/
+// --------------------------
+// Small UI components
+// --------------------------
 function StoryBubble({ item, onPress, theme }) {
   return (
     <TouchableOpacity onPress={onPress} style={{ paddingHorizontal: 8 }}>
@@ -372,19 +488,9 @@ function StoryBubble({ item, onPress, theme }) {
   );
 }
 
-/* ---------------------------
-   Wallpapers (sample URLs)
-----------------------------*/
-const wallpapers = [
-  // subtle patterns / gradients / photos
-  "https://images.unsplash.com/photo-1503264116251-35a269479413?w=1200&q=60&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1470167290877-7d5b1f83c9a0?w=1200&q=60&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1526772662000-3f88f10405ff?w=1200&q=60&auto=format&fit=crop",
-];
-
-/* ---------------------------
-   Styles factory (theme-aware)
-----------------------------*/
+// --------------------------
+// Styles (theme-aware)
+// --------------------------
 const makeStyles = (theme) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: theme === "dark" ? "#121B22" : "#fafafa" },
@@ -495,17 +601,3 @@ const makeStyles = (theme) =>
       marginVertical: 10,
     },
   });
-
-/* ---------------------------
-   Notes
-----------------------------
-- This is a single-file implementation with small local components.
-- To split into multiple files:
-  - InboxScreen -> Inbox.js
-  - ChatScreen -> Chat.js
-  - SettingsScreen -> Settings.js
-  - StoryBubble -> StoryBubble.js
-  - Move wallpapers array to constants.js
-- Wallpapers are Unsplash images — change to local assets if offline.
-- All data is local/dummy. Reconnect to your Firebase logic when ready.
-----------------------------*/
