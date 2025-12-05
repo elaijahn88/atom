@@ -73,11 +73,9 @@ export default function App() {
     });
 
     const unsubGroupsRoot = onValue(groupsRootRef, (snap) => {
-      setGroups((prev) => {
-        const rootGroups = snap.val() || {};
-        // merge with any groups coming from users/groups later
-        return { ...rootGroups, ...prev };
-      });
+      const rootGroups = snap.val() || {};
+      // Merge rootGroups with existing groups, preferring rootGroups for same keys
+      setGroups((prev) => ({ ...prev, ...rootGroups }));
     });
 
     const unsubUsersGroups = onValue(usersGroupsRef, (snap) => {
@@ -91,10 +89,10 @@ export default function App() {
     });
 
     return () => {
-      unsubUsers?.();
-      unsubGroupsRoot?.();
-      unsubUsersGroups?.();
-      unsubInbox?.();
+      try { unsubUsers && unsubUsers(); } catch {}
+      try { unsubGroupsRoot && unsubGroupsRoot(); } catch {}
+      try { unsubUsersGroups && unsubUsersGroups(); } catch {}
+      try { unsubInbox && unsubInbox(); } catch {}
     };
   }, []);
 
@@ -107,7 +105,8 @@ export default function App() {
       return;
     }
 
-    const isGroup = receiverKey.startsWith("group_");
+    // defensive: receiverKey might not be a string
+    const isGroup = typeof receiverKey === "string" && receiverKey.startsWith("group_");
     const chatId = isGroup ? null : [userKey, receiverKey].sort().join("_");
     const path = isGroup
       ? `groups/${receiverKey}/messages`
@@ -122,15 +121,23 @@ export default function App() {
       // sort by timestamp (defensive)
       list.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
       setMessages(list);
-      // scroll to bottom
-      setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 80);
+      // scroll to bottom (defensive)
+      setTimeout(() => {
+        try {
+          flatRef.current?.scrollToEnd?.({ animated: true });
+        } catch {}
+      }, 80);
     });
 
-    // mark inbox unreadCount 0 (mark read)
+    // mark inbox unreadCount 0 (mark read) — guard against invalid path
     const inboxPath = `users/users/${userKey}/inbox/${receiverKey}`;
-    update(ref(db, inboxPath), { unreadCount: 0 }).catch(() => {});
+    try {
+      update(ref(db, inboxPath), { unreadCount: 0 }).catch(() => {});
+    } catch {}
 
-    return () => unsub();
+    return () => {
+      try { unsub && unsub(); } catch {}
+    };
   }, [receiverKey]);
 
   // --------------------------
@@ -139,7 +146,7 @@ export default function App() {
   const sendMessage = async () => {
     if (!text.trim() || !receiverKey) return;
 
-    const isGroup = receiverKey.startsWith("group_");
+    const isGroup = typeof receiverKey === "string" && receiverKey.startsWith("group_");
     const chatId = isGroup ? null : [userKey, receiverKey].sort().join("_");
 
     const basePath = isGroup
@@ -156,12 +163,17 @@ export default function App() {
       // push to base path (current user's copy)
       await push(ref(db, basePath), msg);
 
-      // if private -> push to receiver's private copy
+      // if private -> push to receiver's private copy (defensive: only if receiver exists)
       if (!isGroup) {
-        await push(ref(db, `users/users/${receiverKey}/messages/${chatId}`), msg);
+        // if users[receiverKey] is undefined, attempt push anyway but guard errors
+        try {
+          await push(ref(db, `users/users/${receiverKey}/messages/${chatId}`), msg);
+        } catch (err) {
+          console.warn("failed to push to receiver copy (maybe user missing):", err);
+        }
       }
 
-      // update inboxes
+      // update inboxes (defensive)
       await updateInbox(msg.text, receiverKey);
       setText("");
       Keyboard.dismiss();
@@ -174,30 +186,54 @@ export default function App() {
   // UPDATE INBOX (private + group)
   // --------------------------
   const updateInbox = async (lastText, targetKey) => {
-    const isGroup = targetKey.startsWith("group_");
+    const isGroup = typeof targetKey === "string" && targetKey.startsWith("group_");
 
     if (isGroup) {
       // update inbox for all group members
-      const members = groups[targetKey]?.members || {};
+      const members = (groups && groups[targetKey] && groups[targetKey].members) || {};
+      if (!members || Object.keys(members).length === 0) {
+        // fallback: update only current user's inbox
+        const fallback = {};
+        fallback[`users/users/${userKey}/inbox/${targetKey}`] = {
+          lastText,
+          timestamp: Date.now(),
+          unreadCount: 0,
+        };
+        try {
+          await update(ref(db), fallback);
+        } catch (err) {
+          console.warn("updateInbox fallback failed:", err);
+        }
+        return;
+      }
+
       const updates = {};
       Object.keys(members).forEach((uid) => {
+        const prevUnread =
+          (users && users[uid] && users[uid].inbox && users[uid].inbox[targetKey] && users[uid].inbox[targetKey].unreadCount) ||
+          0;
         updates[`users/users/${uid}/inbox/${targetKey}`] = {
           lastText,
           timestamp: Date.now(),
-          unreadCount:
-            uid === userKey
-              ? 0
-              : (users[uid]?.inbox?.[targetKey]?.unreadCount || 0) + 1,
+          unreadCount: uid === userKey ? 0 : prevUnread + 1,
         };
       });
 
       // write batch update
-      await update(ref(db), updates);
+      try {
+        await update(ref(db), updates);
+      } catch (err) {
+        console.warn("group updateInbox failed:", err);
+      }
       return;
     }
 
-    // private: update sender and receiver inbox
+    // private: update sender and receiver inbox (defensive)
     const updates = {};
+    const prevUnreadForReceiver =
+      (users && users[targetKey] && users[targetKey].inbox && users[targetKey].inbox[userKey] && users[targetKey].inbox[userKey].unreadCount) ||
+      0;
+
     updates[`users/users/${userKey}/inbox/${targetKey}`] = {
       lastText,
       timestamp: Date.now(),
@@ -206,10 +242,14 @@ export default function App() {
     updates[`users/users/${targetKey}/inbox/${userKey}`] = {
       lastText,
       timestamp: Date.now(),
-      unreadCount: (users[targetKey]?.inbox?.[userKey]?.unreadCount || 0) + 1,
+      unreadCount: prevUnreadForReceiver + 1,
     };
 
-    await update(ref(db), updates);
+    try {
+      await update(ref(db), updates);
+    } catch (err) {
+      console.warn("private updateInbox failed:", err);
+    }
   };
 
   // --------------------------
@@ -273,16 +313,16 @@ export default function App() {
           {/* STORIES (UI-only) */}
           <View style={styles.storiesContainer}>
             <FlatList
-              data={Object.values(users).slice(0, 6)}
+              data={Object.values(users || {}).slice(0, 6)}
               horizontal
               showsHorizontalScrollIndicator={false}
-              keyExtractor={(u) => u.email || u.name}
+              keyExtractor={(u, idx) => (u?.email || u?.name || String(idx))}
               renderItem={({ item }) => (
                 <StoryBubble
                   item={{
-                    id: item.email || item.name,
-                    user: item.name,
-                    avatar: item.avatar,
+                    id: item?.email || item?.name || "anon",
+                    user: item?.name || "Unknown",
+                    avatar: item?.avatar || "https://i.pravatar.cc/100",
                   }}
                   onPress={() => {}}
                   theme={theme}
@@ -296,7 +336,7 @@ export default function App() {
             data={sortedInboxKeys}
             keyExtractor={(k) => k}
             renderItem={({ item }) => {
-              const isGroup = item.startsWith("group_");
+              const isGroup = typeof item === "string" && item.startsWith("group_");
               const data = isGroup ? groups[item] : users[item];
               if (!data) return null;
 
@@ -309,12 +349,15 @@ export default function App() {
                 >
                   <View style={styles.inboxItem}>
                     <Image
-                      source={{ uri: data.avatar || data.groupIcon || "https://i.pravatar.cc/100" }}
+                      source={{
+                        uri:
+                          data?.avatar || data?.groupIcon || "https://i.pravatar.cc/100",
+                      }}
                       style={styles.avatar}
                     />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.name}>
-                        {isGroup ? data.name : data.name}
+                        {isGroup ? data?.name || "Group" : data?.name || "Unknown"}
                       </Text>
                       <Text style={styles.last}>
                         {inbox[item]?.lastText || (isGroup ? "Group created" : "Say hi")}
@@ -323,7 +366,7 @@ export default function App() {
 
                     <View style={styles.timestampBox}>
                       <Text style={styles.timestamp}>
-                        {inbox[item]?.unreadCount > 0 ? inbox[item].unreadCount : ""}
+                        {inbox[item]?.unreadCount > 0 ? String(inbox[item].unreadCount) : ""}
                       </Text>
                     </View>
                   </View>
@@ -350,13 +393,16 @@ export default function App() {
             <Image
               source={{
                 uri:
-                  (receiverKey.startsWith("group_") ? groups[receiverKey]?.groupIcon : users[receiverKey]?.avatar) ||
-                  "https://i.pravatar.cc/100",
+                  (typeof receiverKey === "string" && receiverKey.startsWith("group_")
+                    ? groups[receiverKey]?.groupIcon
+                    : users[receiverKey]?.avatar) || "https://i.pravatar.cc/100",
               }}
               style={styles.headerAvatar}
             />
             <Text style={styles.headerName}>
-              {receiverKey.startsWith("group_") ? groups[receiverKey]?.name : users[receiverKey]?.name}
+              {typeof receiverKey === "string" && receiverKey.startsWith("group_")
+                ? groups[receiverKey]?.name || "Group"
+                : users[receiverKey]?.name || "Unknown"}
             </Text>
           </View>
 
@@ -364,10 +410,10 @@ export default function App() {
             <FlatList
               ref={flatRef}
               data={messages}
-              keyExtractor={(m) => m.id}
+              keyExtractor={(m, idx) => (m?.id ? String(m.id) : String(idx))}
               contentContainerStyle={{ padding: 12, paddingBottom: 80 }}
               renderItem={({ item }) => {
-                const mine = item.sender === userKey;
+                const mine = item?.sender === userKey;
                 return (
                   <View
                     style={[
@@ -377,7 +423,7 @@ export default function App() {
                     ]}
                   >
                     <Text style={{ color: theme === "dark" ? "#fff" : "#111" }}>
-                      {item.text}
+                      {item?.text}
                     </Text>
                   </View>
                 );
@@ -388,9 +434,10 @@ export default function App() {
               <View style={styles.typingRow}>
                 <Image
                   source={{
-                    uri: receiverKey.startsWith("group_")
-                      ? groups[receiverKey]?.groupIcon
-                      : users[receiverKey]?.avatar,
+                    uri:
+                      (typeof receiverKey === "string" && receiverKey.startsWith("group_")
+                        ? groups[receiverKey]?.groupIcon
+                        : users[receiverKey]?.avatar) || "https://i.pravatar.cc/100",
                   }}
                   style={styles.typingAvatar}
                 />
@@ -480,9 +527,14 @@ function StoryBubble({ item, onPress, theme }) {
             borderColor: theme === "dark" ? "#25D366" : "#075E54",
           }}
         >
-          <Image source={{ uri: item.avatar }} style={{ width: 64, height: 64, borderRadius: 32 }} />
+          <Image
+            source={{ uri: item?.avatar || "https://i.pravatar.cc/100" }}
+            style={{ width: 64, height: 64, borderRadius: 32 }}
+          />
         </View>
-        <Text style={{ color: theme === "dark" ? "#fff" : "#222", marginTop: 6 }}>{item.user}</Text>
+        <Text style={{ color: theme === "dark" ? "#fff" : "#222", marginTop: 6 }}>
+          {item?.user || "Unknown"}
+        </Text>
       </View>
     </TouchableOpacity>
   );
