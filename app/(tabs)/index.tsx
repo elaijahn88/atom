@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -6,100 +6,54 @@ import {
   TouchableOpacity,
   FlatList,
   StyleSheet,
-  Image,
   StatusBar,
-  ImageBackground,
-  Switch,
   SafeAreaView,
-  ScrollView,
+  Switch,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { ref, onValue, push, set } from "firebase/database";
-import { db } from "../../firebase"; // <-- your firebase config
+import { ref, onValue, push } from "firebase/database";
+import { db } from "../../firebase";
 
 /* =====================
-   HELPERS
+   CONSTANTS (JSON-BASED)
 ===================== */
-const safeKey = (email) => email.replace(/\./g, ",");
-
-const makeChatId = (email1, email2) => {
-  const a = safeKey(email1);
-  const b = safeKey(email2);
-  return [a, b].sort().join("_");
-};
-
-// 🔐 Logged-in user (replace later with Firebase Auth)
 const MY_EMAIL = "elajahn8@gmail.com";
-const MY_KEY = safeKey(MY_EMAIL);
+const MY_KEY = MY_EMAIL.replace(/\./g, ",");
+const THREAD_ID = `${MY_KEY}_${MY_KEY}`;
+const MESSAGE_PATH = `users/users/${MY_KEY}/messages/${THREAD_ID}`;
 
 /* =====================
    APP
 ===================== */
 export default function App() {
-  const [theme, setTheme] = useState("dark");
-  const [screen, setScreen] = useState("inbox");
-  const [activeChat, setActiveChat] = useState(null);
-  const [wallpaper, setWallpaper] = useState(wallpapers[0]);
-  const [inbox, setInbox] = useState({});
+  const [screen, setScreen] = useState("chat");
+  const [darkMode, setDarkMode] = useState(true);
+  const styles = stylesFn(darkMode);
 
-  const styles = makeStyles(theme);
-
-  /* 🔄 LOAD INBOX */
   useEffect(() => {
-    const inboxRef = ref(db, `users/${MY_KEY}/inbox`);
-    return onValue(inboxRef, (snap) => {
-      if (!snap.exists()) {
-        setInbox({});
-        return;
-      }
-      setInbox(snap.val());
-    });
+    StatusBar.setBarStyle("light-content");
   }, []);
-
-  useEffect(() => {
-    StatusBar.setBarStyle(theme === "dark" ? "light-content" : "dark-content");
-  }, [theme]);
-
-  const openChat = (otherKey) => {
-    const chatId = makeChatId(MY_EMAIL, otherKey.replace(/,/g, "."));
-    setActiveChat({ chatId, otherKey });
-    setScreen("chat");
-  };
 
   return (
     <SafeAreaView style={styles.container}>
       {/* TOP BAR */}
       <View style={styles.topBar}>
         <Text style={styles.logo}>Green Chat</Text>
-        <Switch
-          value={theme === "dark"}
-          onValueChange={(v) => setTheme(v ? "dark" : "light")}
-        />
+        <TouchableOpacity onPress={() => setScreen("settings")}>
+          <Ionicons name="settings" size={22} color="#fff" />
+        </TouchableOpacity>
       </View>
 
-      {screen === "inbox" && (
-        <InboxScreen
-          inbox={inbox}
-          styles={styles}
-          onOpenChat={openChat}
-        />
-      )}
-
-      {screen === "chat" && activeChat && (
-        <ChatScreen
-          {...activeChat}
-          styles={styles}
-          wallpaper={wallpaper}
-          onBack={() => setScreen("inbox")}
-        />
+      {screen === "chat" && (
+        <ChatScreen styles={styles} />
       )}
 
       {screen === "settings" && (
         <SettingsScreen
           styles={styles}
-          wallpaper={wallpaper}
-          setWallpaper={setWallpaper}
-          onClose={() => setScreen("inbox")}
+          darkMode={darkMode}
+          setDarkMode={setDarkMode}
+          onBack={() => setScreen("chat")}
         />
       )}
     </SafeAreaView>
@@ -107,70 +61,39 @@ export default function App() {
 }
 
 /* =====================
-   INBOX
+   CHAT SCREEN
 ===================== */
-function InboxScreen({ inbox, styles, onOpenChat }) {
-  const data = Object.entries(inbox).map(([key, v]) => ({
-    id: key,
-    ...v,
-  }));
-
-  return (
-    <FlatList
-      data={data}
-      keyExtractor={(i) => i.id}
-      renderItem={({ item }) => (
-        <TouchableOpacity onPress={() => onOpenChat(item.id)}>
-          <View style={styles.inboxItem}>
-            <Text style={styles.name}>{item.id.replace(/,/g, ".")}</Text>
-            <Text style={styles.last}>{item.lastText}</Text>
-          </View>
-        </TouchableOpacity>
-      )}
-    />
-  );
-}
-
-/* =====================
-   CHAT
-===================== */
-function ChatScreen({ chatId, otherKey, styles, wallpaper, onBack }) {
+function ChatScreen({ styles }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
-  const flatRef = useRef(null);
+  const listRef = useRef(null);
 
   useEffect(() => {
-    const msgRef = ref(db, `chats/${chatId}/messages`);
+    const msgRef = ref(db, MESSAGE_PATH);
     return onValue(msgRef, (snap) => {
       if (!snap.exists()) {
         setMessages([]);
         return;
       }
+
       const list = Object.entries(snap.val()).map(([id, v]) => ({
         id,
         ...v,
       }));
+
       list.sort((a, b) => a.timestamp - b.timestamp);
       setMessages(list);
-      setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 50);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
     });
-  }, [chatId]);
+  }, []);
 
   const sendMessage = () => {
     if (!text.trim()) return;
 
-    const msg = {
+    push(ref(db, MESSAGE_PATH), {
       sender: MY_KEY,
       text,
       timestamp: Date.now(),
-    };
-
-    push(ref(db, `chats/${chatId}/messages`), msg);
-
-    set(ref(db, `users/${MY_KEY}/inbox/${otherKey}`), {
-      lastText: text,
-      timestamp: msg.timestamp,
-      unreadCount: 0,
     });
 
     setText("");
@@ -178,37 +101,24 @@ function ChatScreen({ chatId, otherKey, styles, wallpaper, onBack }) {
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Ionicons name="arrow-back" size={22} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerName}>{otherKey.replace(/,/g, ".")}</Text>
-      </View>
-
-      <ImageBackground source={{ uri: wallpaper }} style={styles.chatBackground}>
-        <FlatList
-          ref={flatRef}
-          data={messages}
-          keyExtractor={(i) => i.id}
-          renderItem={({ item }) => (
-            <View
-              style={[
-                styles.msg,
-                item.sender === MY_KEY ? styles.right : styles.left,
-              ]}
-            >
-              <Text style={{ color: "#fff" }}>{item.text}</Text>
-            </View>
-          )}
-        />
-      </ImageBackground>
+      <FlatList
+        ref={listRef}
+        data={messages}
+        keyExtractor={(i) => i.id}
+        renderItem={({ item }) => (
+          <View style={styles.msgBubble}>
+            <Text style={styles.msgText}>{item.text}</Text>
+          </View>
+        )}
+      />
 
       <View style={styles.inputBar}>
         <TextInput
           style={styles.input}
           value={text}
           onChangeText={setText}
-          placeholder="Message"
+          placeholder="Type a message"
+          placeholderTextColor="#aaa"
         />
         <TouchableOpacity onPress={sendMessage}>
           <Ionicons name="send" size={26} color="#25D366" />
@@ -219,83 +129,74 @@ function ChatScreen({ chatId, otherKey, styles, wallpaper, onBack }) {
 }
 
 /* =====================
-   SETTINGS
+   SETTINGS SCREEN
 ===================== */
-function SettingsScreen({ styles, wallpaper, setWallpaper, onClose }) {
+function SettingsScreen({ styles, darkMode, setDarkMode, onBack }) {
   return (
-    <ScrollView style={{ padding: 16 }}>
-      <Text style={styles.settingsTitle}>Wallpapers</Text>
-      <TouchableOpacity onPress={onClose}>
-        <Text style={styles.settingsItem}>Back</Text>
+    <View style={{ flex: 1, padding: 16 }}>
+      <TouchableOpacity onPress={onBack}>
+        <Text style={styles.backText}>← Back</Text>
       </TouchableOpacity>
 
-      <FlatList
-        data={wallpapers}
-        horizontal
-        keyExtractor={(w) => w}
-        renderItem={({ item }) => (
-          <TouchableOpacity onPress={() => setWallpaper(item)}>
-            <Image
-              source={{ uri: item }}
-              style={{
-                width: 120,
-                height: 80,
-                margin: 8,
-                borderWidth: item === wallpaper ? 3 : 0,
-                borderColor: "#25D366",
-              }}
-            />
-          </TouchableOpacity>
-        )}
-      />
-    </ScrollView>
+      <Text style={styles.settingsTitle}>Settings</Text>
+
+      <View style={styles.settingItem}>
+        <Text style={styles.settingLabel}>Dark Mode</Text>
+        <Switch value={darkMode} onValueChange={setDarkMode} />
+      </View>
+
+      <View style={styles.settingItem}>
+        <Text style={styles.settingLabel}>Account</Text>
+        <Text style={styles.settingValue}>{MY_EMAIL}</Text>
+      </View>
+
+      <View style={styles.settingItem}>
+        <Text style={styles.settingLabel}>Chat Storage</Text>
+        <Text style={styles.settingValue}>Local Firebase Thread</Text>
+      </View>
+    </View>
   );
 }
 
 /* =====================
-   WALLPAPERS
-===================== */
-const wallpapers = [
-  "https://images.unsplash.com/photo-1503264116251-35a269479413?w=1200",
-  "https://images.unsplash.com/photo-1470167290877-7d5b1f83c9a0?w=1200",
-];
-
-/* =====================
    STYLES
 ===================== */
-const makeStyles = (theme) =>
+const stylesFn = (dark) =>
   StyleSheet.create({
-    container: { flex: 1, backgroundColor: "#121B22" },
-    topBar: { padding: 12, backgroundColor: "#075E54" },
-    logo: { color: "#fff", fontSize: 20, fontWeight: "bold" },
-
-    inboxItem: { padding: 14, borderBottomWidth: 0.5, borderColor: "#333" },
-    name: { color: "#fff", fontSize: 16 },
-    last: { color: "#aaa" },
-
-    header: {
-      flexDirection: "row",
-      alignItems: "center",
-      padding: 10,
-      backgroundColor: "#075E54",
+    container: {
+      flex: 1,
+      backgroundColor: dark ? "#121B22" : "#f2f2f2",
     },
-    headerName: { color: "#fff", fontSize: 16, marginLeft: 10 },
+    topBar: {
+      padding: 12,
+      backgroundColor: "#075E54",
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    logo: {
+      color: "#fff",
+      fontSize: 20,
+      fontWeight: "bold",
+    },
 
-    chatBackground: { flex: 1 },
-    msg: {
+    msgBubble: {
+      backgroundColor: "#056162",
       padding: 10,
       margin: 8,
       borderRadius: 10,
-      maxWidth: "75%",
-      backgroundColor: "#1E2C33",
+      alignSelf: "flex-end",
+      maxWidth: "80%",
     },
-    left: { alignSelf: "flex-start" },
-    right: { alignSelf: "flex-end", backgroundColor: "#056162" },
+    msgText: {
+      color: "#fff",
+    },
 
     inputBar: {
       flexDirection: "row",
       padding: 10,
       backgroundColor: "#1E2C33",
+      alignItems: "center",
     },
     input: {
       flex: 1,
@@ -303,8 +204,30 @@ const makeStyles = (theme) =>
       borderRadius: 20,
       paddingHorizontal: 12,
       color: "#fff",
+      marginRight: 8,
     },
 
-    settingsTitle: { fontSize: 20, color: "#fff" },
-    settingsItem: { color: "#25D366", marginVertical: 10 },
+    backText: {
+      color: "#25D366",
+      marginBottom: 20,
+      fontSize: 16,
+    },
+    settingsTitle: {
+      color: dark ? "#fff" : "#000",
+      fontSize: 22,
+      fontWeight: "bold",
+      marginBottom: 20,
+    },
+    settingItem: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      marginBottom: 16,
+    },
+    settingLabel: {
+      color: dark ? "#fff" : "#000",
+      fontSize: 16,
+    },
+    settingValue: {
+      color: "#aaa",
+    },
   });
