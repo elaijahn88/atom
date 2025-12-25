@@ -29,7 +29,7 @@ const makeChatId = (email1, email2) => {
 };
 
 // 🔐 Logged-in user (replace later with Firebase Auth)
-const MY_EMAIL = "elijahn8@gmail.com";
+const MY_EMAIL = "elajahn8@gmail.com";
 const MY_KEY = safeKey(MY_EMAIL);
 
 /* =====================
