@@ -38,7 +38,7 @@ export default function App() {
     <SafeAreaView style={styles.container}>
       {/* TOP BAR */}
       <View style={styles.topBar}>
-        <Text style={styles.logo}>Green Chat</Text>
+        <Text style={styles.logo}>Green₩</Text>
         <TouchableOpacity onPress={() => setScreen("settings")}>
           <Ionicons name="settings" size={22} color="#fff" />
         </TouchableOpacity>
