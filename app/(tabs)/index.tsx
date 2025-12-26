@@ -11,16 +11,19 @@ import {
   Switch,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { ref, onValue, push } from "firebase/database";
+import { ref, onValue, push, set } from "firebase/database";
 import { db } from "../../firebase";
 
 /* =====================
-   CONSTANTS (JSON-BASED)
+   USER & CHAT SETUP
 ===================== */
 const MY_EMAIL = "elajahn8@gmail.com";
 const MY_KEY = MY_EMAIL.replace(/\./g, ",");
-const THREAD_ID = `${MY_KEY}_${MY_KEY}`;
-const MESSAGE_PATH = `users/users/${MY_KEY}/messages/${THREAD_ID}`;
+
+// Self-chat for demo (can be replaced with other user)
+const CHAT_ID = `${MY_KEY}_${MY_KEY}`;
+const CHAT_PATH = `chats/${CHAT_ID}/messages`;
+const USER_PATH = `users/${MY_KEY}`;
 
 /* =====================
    APP
@@ -31,12 +34,25 @@ export default function App() {
   const styles = stylesFn(darkMode);
 
   useEffect(() => {
-    StatusBar.setBarStyle("light-content");
+    StatusBar.setBarStyle("light-content", true);
+
+    // Create USER node if not exists
+    set(ref(db, USER_PATH), {
+      email: MY_EMAIL,
+      createdAt: Date.now(),
+    });
+
+    // Create CHAT metadata if not exists
+    set(ref(db, `chats/${CHAT_ID}/info`), {
+      createdAt: Date.now(),
+      participants: {
+        [MY_KEY]: true,
+      },
+    });
   }, []);
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* TOP BAR */}
       <View style={styles.topBar}>
         <Text style={styles.logo}>Green₩</Text>
         <TouchableOpacity onPress={() => setScreen("settings")}>
@@ -44,10 +60,7 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {screen === "chat" && (
-        <ChatScreen styles={styles} />
-      )}
-
+      {screen === "chat" && <ChatScreen styles={styles} />}
       {screen === "settings" && (
         <SettingsScreen
           styles={styles}
@@ -69,8 +82,9 @@ function ChatScreen({ styles }) {
   const listRef = useRef(null);
 
   useEffect(() => {
-    const msgRef = ref(db, MESSAGE_PATH);
-    return onValue(msgRef, (snap) => {
+    const msgRef = ref(db, CHAT_PATH);
+
+    onValue(msgRef, (snap) => {
       if (!snap.exists()) {
         setMessages([]);
         return;
@@ -83,16 +97,19 @@ function ChatScreen({ styles }) {
 
       list.sort((a, b) => a.timestamp - b.timestamp);
       setMessages(list);
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
+
+      setTimeout(() => {
+        listRef.current?.scrollToEnd({ animated: true });
+      }, 50);
     });
   }, []);
 
   const sendMessage = () => {
     if (!text.trim()) return;
 
-    push(ref(db, MESSAGE_PATH), {
+    push(ref(db, CHAT_PATH), {
       sender: MY_KEY,
-      text,
+      text: text.trim(),
       timestamp: Date.now(),
     });
 
@@ -105,11 +122,19 @@ function ChatScreen({ styles }) {
         ref={listRef}
         data={messages}
         keyExtractor={(i) => i.id}
-        renderItem={({ item }) => (
-          <View style={styles.msgBubble}>
-            <Text style={styles.msgText}>{item.text}</Text>
-          </View>
-        )}
+        renderItem={({ item }) => {
+          const mine = item.sender === MY_KEY;
+          return (
+            <View
+              style={[
+                styles.msgBubble,
+                mine ? styles.mine : styles.theirs,
+              ]}
+            >
+              <Text style={styles.msgText}>{item.text}</Text>
+            </View>
+          );
+        }}
       />
 
       <View style={styles.inputBar}>
@@ -151,8 +176,8 @@ function SettingsScreen({ styles, darkMode, setDarkMode, onBack }) {
       </View>
 
       <View style={styles.settingItem}>
-        <Text style={styles.settingLabel}>Chat Storage</Text>
-        <Text style={styles.settingValue}>Local Firebase Thread</Text>
+        <Text style={styles.settingLabel}>Database</Text>
+        <Text style={styles.settingValue}>Realtime DB (Auto-created)</Text>
       </View>
     </View>
   );
@@ -181,12 +206,18 @@ const stylesFn = (dark) =>
     },
 
     msgBubble: {
-      backgroundColor: "#056162",
       padding: 10,
       margin: 8,
       borderRadius: 10,
-      alignSelf: "flex-end",
       maxWidth: "80%",
+    },
+    mine: {
+      backgroundColor: "#056162",
+      alignSelf: "flex-end",
+    },
+    theirs: {
+      backgroundColor: "#1E2C33",
+      alignSelf: "flex-start",
     },
     msgText: {
       color: "#fff",
