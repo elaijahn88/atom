@@ -36,7 +36,7 @@ export default function AccountAndMoneyManager() {
     phone: "",
   });
 
-  const USER_ID = "elajah"; // hardcoded user
+  const USER_ID = "elijah"; // hardcoded user
   const userDocRef = doc(db, "acc", USER_ID);
 
   // ---------------- Fetch existing user profile ----------------
