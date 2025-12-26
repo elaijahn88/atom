@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ref, onValue, push, set } from "firebase/database";
-import { db } from "../../firebase";
+import { database } from "../../firebase"; // <-- changed here
 
 /* =====================
    USER & CHAT SETUP
@@ -37,13 +37,13 @@ export default function App() {
     StatusBar.setBarStyle("light-content", true);
 
     // Create USER node if not exists
-    set(ref(db, USER_PATH), {
+    set(ref(database, USER_PATH), {
       email: MY_EMAIL,
       createdAt: Date.now(),
     });
 
     // Create CHAT metadata if not exists
-    set(ref(db, `chats/${CHAT_ID}/info`), {
+    set(ref(database, `chats/${CHAT_ID}/info`), {
       createdAt: Date.now(),
       participants: {
         [MY_KEY]: true,
@@ -82,7 +82,7 @@ function ChatScreen({ styles }) {
   const listRef = useRef(null);
 
   useEffect(() => {
-    const msgRef = ref(db, CHAT_PATH);
+    const msgRef = ref(database, CHAT_PATH);
 
     onValue(msgRef, (snap) => {
       if (!snap.exists()) {
@@ -107,7 +107,7 @@ function ChatScreen({ styles }) {
   const sendMessage = () => {
     if (!text.trim()) return;
 
-    push(ref(db, CHAT_PATH), {
+    push(ref(database, CHAT_PATH), {
       sender: MY_KEY,
       text: text.trim(),
       timestamp: Date.now(),
