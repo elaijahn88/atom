@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -8,141 +8,133 @@ import {
   FlatList,
   StyleSheet,
   ActivityIndicator,
-  Modal,
 } from "react-native";
 import { db } from "../../firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 
+type Transaction = {
+  receiver: string;
+  amount: number;
+  timestamp: string;
+  proof: string;
+  status: string;
+};
+
 export default function AccountAndMoneyManager() {
-  const [profile, setProfile] = useState<any>(null);
+  const USER_ID = "elijah";
+  const userRef = doc(db, "acc", USER_ID);
+
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<any>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [topUpAmount, setTopUpAmount] = useState("");
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [showTx, setShowTx] = useState(false);
   const [label, setLabel] = useState("");
-  const [recipientName, setRecipientName] = useState("");
-  const [transferAmount, setTransferAmount] = useState("");
-  const [showTransactions, setShowTransactions] = useState(false);
-  const [editProfileModal, setEditProfileModal] = useState(false);
 
-  const [editData, setEditData] = useState({
-    Name: "",
-    age: "",
-    dob: "",
-    father: "",
-    mother: "",
-    idno: "",
-    nin: "",
-    nok: "",
-    phone: "",
-  });
-
-  const USER_ID = "elijah"; // hardcoded user
-  const userDocRef = doc(db, "acc", USER_ID);
-
-  // ---------------- Fetch existing user profile ----------------
+  /* ---------------- FETCH USER DATA ---------------- */
   useEffect(() => {
-    const fetchUserProfile = async () => {
+    const loadAccount = async () => {
       try {
-        const snap = await getDoc(userDocRef);
-        if (snap.exists()) {
-          const data = snap.data();
-          setProfile(data);
-          setTransactions(data.transactions || []);
-          setLabel(`Welcome back, ${data.Name || "User"}!`);
-        } else {
-          setLabel("No account found for this user.");
+        const snap = await getDoc(userRef);
+        if (!snap.exists()) {
+          setLabel("Account not found.");
+          return;
         }
-      } catch (err) {
-        console.error(err);
-        setLabel("Failed to load user profile.");
+
+        const data = snap.data();
+        setProfile(data);
+        setTransactions(data.transactions || []);
+        setLabel(`Welcome, ${data.Name || "User"}`);
+      } catch (e) {
+        console.error(e);
+        setLabel("Failed to load account.");
       } finally {
         setLoading(false);
       }
     };
 
-    fetchUserProfile();
+    loadAccount();
   }, []);
 
-  // ---------------- Firestore Update ----------------
-  const updateFirestore = async (updates: any) => {
-    try {
-      await updateDoc(userDocRef, updates);
-    } catch (err) {
-      console.error("Firestore update failed:", err);
-      setLabel("Failed to update data.");
-    }
-  };
-
-  // ---------------- Top-Up Function ----------------
-  const simulateTopUp = async (amount: number, method?: string) => {
-    if (!amount || isNaN(amount) || amount <= 0) {
-      setLabel("Enter a valid amount.");
+  /* ---------------- TOP-UP ---------------- */
+  const topUp = async () => {
+    const amount = Number(topUpAmount);
+    if (!amount || amount <= 0) {
+      setLabel("Enter a valid amount");
       return;
     }
 
-    const newTx = {
-      receiver: method || "Top-Up",
+    const tx: Transaction = {
+      receiver: "Top-Up",
       amount,
       timestamp: new Date().toLocaleString(),
-      proof: `MM#${Math.floor(Math.random() * 10000)}`,
+      proof: `MM#${Math.floor(Math.random() * 9000 + 1000)}`,
       status: "Completed",
     };
 
-    const newNet = (profile?.net || 0) + amount;
-    const updatedTxs = [newTx, ...transactions];
-    setProfile({ ...profile, net: newNet });
-    setTransactions(updatedTxs);
+    const newBalance = (profile?.net || 0) + amount;
+    const updatedTx = [tx, ...transactions];
+
+    setProfile({ ...profile, net: newBalance });
+    setTransactions(updatedTx);
     setTopUpAmount("");
-    setLabel(`${method || "Top-Up"} of Shs ${amount} processed successfully!`);
-    await updateFirestore({ net: newNet, transactions: updatedTxs });
+
+    await updateDoc(userRef, {
+      net: newBalance,
+      transactions: updatedTx,
+    });
+
+    setLabel(`Top-up of Shs ${amount} successful`);
   };
 
   if (loading)
     return (
-      <View style={styles.centered}>
+      <View style={styles.center}>
         <ActivityIndicator size="large" color="#fff" />
       </View>
     );
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>{profile?.Name}</Text>
-      <Text style={styles.balanceText}>Net: Shs {profile?.net?.toFixed(2)}</Text>
+      {/* USER INFO */}
+      <Text style={styles.name}>{profile?.Name}</Text>
+      <Text style={styles.balance}>Balance: Shs {profile?.net?.toFixed(2)}</Text>
 
-      {/* Top-Up Section */}
-      <Text style={styles.sectionTitle}>Top-Up Account</Text>
+      {/* OPTIONAL EXTRA DATA */}
+      {profile?.phone && <Text style={styles.sub}>Phone: {profile.phone}</Text>}
+      {profile?.nin && <Text style={styles.sub}>NIN: {profile.nin}</Text>}
+
+      {/* TOP UP */}
+      <Text style={styles.section}>Top Up</Text>
       <TextInput
         style={styles.input}
-        placeholder="Enter amount"
-        placeholderTextColor="#999"
         keyboardType="numeric"
+        placeholder="Enter amount"
+        placeholderTextColor="#777"
         value={topUpAmount}
         onChangeText={setTopUpAmount}
       />
-      <TouchableOpacity
-        style={styles.topUpButton}
-        onPress={() => simulateTopUp(Number(topUpAmount))}
-      >
-        <Text style={styles.topUpButtonText}>Top-Up</Text>
+      <TouchableOpacity style={styles.btn} onPress={topUp}>
+        <Text style={styles.btnText}>Top Up</Text>
       </TouchableOpacity>
 
-      {/* Transactions */}
+      {/* TRANSACTIONS */}
       <TouchableOpacity
-        style={[styles.topUpButton, { backgroundColor: "#007bff" }]}
-        onPress={() => setShowTransactions(!showTransactions)}
+        style={[styles.btn, { backgroundColor: "#2196F3" }]}
+        onPress={() => setShowTx(!showTx)}
       >
-        <Text style={styles.topUpButtonText}>
-          {showTransactions ? "Hide Transactions" : "Show Transactions"}
+        <Text style={styles.btnText}>
+          {showTx ? "Hide Transactions" : "Show Transactions"}
         </Text>
       </TouchableOpacity>
 
-      {showTransactions &&
-        (transactions.length > 0 ? (
+      {showTx &&
+        (transactions.length ? (
           <FlatList
             data={transactions}
             keyExtractor={(_, i) => i.toString()}
             renderItem={({ item }) => (
-              <View style={styles.txCard}>
+              <View style={styles.tx}>
                 <Text style={styles.txText}>To: {item.receiver}</Text>
                 <Text style={styles.txText}>Amount: Shs {item.amount}</Text>
                 <Text style={styles.txText}>{item.timestamp}</Text>
@@ -150,16 +142,16 @@ export default function AccountAndMoneyManager() {
                 <Text
                   style={[
                     styles.txText,
-                    { color: item.status === "Completed" ? "#4CAF50" : "#FFD700" },
+                    { color: item.status === "Completed" ? "#4CAF50" : "#FFC107" },
                   ]}
                 >
-                  Status: {item.status}
+                  {item.status}
                 </Text>
               </View>
             )}
           />
         ) : (
-          <Text style={styles.noTx}>No transactions yet.</Text>
+          <Text style={styles.empty}>No transactions</Text>
         ))}
 
       <Text style={styles.label}>{label}</Text>
@@ -167,25 +159,31 @@ export default function AccountAndMoneyManager() {
   );
 }
 
+/* ---------------- STYLES ---------------- */
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, padding: 15, backgroundColor: "#121212" },
-  centered: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#000" },
-  title: { fontSize: 22, fontWeight: "700", color: "#fff", marginBottom: 12 },
-  balanceText: { fontSize: 20, color: "#fff", marginVertical: 5 },
-  sectionTitle: { fontSize: 20, color: "#fff", fontWeight: "600", marginVertical: 10 },
+  container: { padding: 15, backgroundColor: "#121212", flexGrow: 1 },
+  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#000" },
+  name: { fontSize: 24, fontWeight: "700", color: "#fff" },
+  balance: { fontSize: 20, color: "#fff", marginVertical: 5 },
+  sub: { color: "#aaa", marginBottom: 4 },
+  section: { color: "#fff", fontSize: 18, marginVertical: 10 },
   input: {
-    width: "100%",
-    backgroundColor: "#1a1a1a",
+    backgroundColor: "#1e1e1e",
     color: "#fff",
-    borderRadius: 12,
     padding: 14,
-    marginBottom: 12,
-    fontSize: 16,
+    borderRadius: 12,
+    marginBottom: 10,
   },
-  topUpButton: { backgroundColor: "#FF5722", padding: 14, borderRadius: 20, alignItems: "center", marginBottom: 10 },
-  topUpButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  txCard: { backgroundColor: "#1a1a1a", borderRadius: 10, padding: 10, marginBottom: 10 },
-  txText: { color: "#fff", fontSize: 14, marginBottom: 2 },
-  noTx: { color: "#888", fontStyle: "italic", textAlign: "center", marginVertical: 10 },
-  label: { color: "#ccc", textAlign: "center", marginTop: 10 },
+  btn: {
+    backgroundColor: "#FF5722",
+    padding: 14,
+    borderRadius: 20,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  btnText: { color: "#fff", fontWeight: "700" },
+  tx: { backgroundColor: "#1e1e1e", padding: 10, borderRadius: 10, marginBottom: 10 },
+  txText: { color: "#fff", fontSize: 14 },
+  empty: { color: "#777", textAlign: "center", marginTop: 10 },
+  label: { color: "#bbb", textAlign: "center", marginTop: 10 },
 });
