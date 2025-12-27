@@ -21,10 +21,9 @@ import {
   orderBy,
   onSnapshot,
 } from "firebase/firestore";
-import { app } from "../../firebase";
+import { db } from "../../firebase";
 
-/* ================= CONFIG ================= */
-const db = getFirestore(app);
+/* ================= CONFIG ================
 const CURRENT_USER = "Nabimanya elijah"; // 👈 CHANGE USER HERE
 
 /* ================= TYPES ================= */
