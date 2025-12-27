@@ -25,7 +25,7 @@ import { app } from "../../firebase";
 
 /* ================= CONFIG ================= */
 const db = getFirestore(app);
-const CURRENT_USER = "elijah"; // 👈 CHANGE USER HERE
+const CURRENT_USER = "Nabimanya elijah"; // 👈 CHANGE USER HERE
 
 /* ================= TYPES ================= */
 type Message = {
