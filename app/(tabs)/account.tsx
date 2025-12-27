@@ -4,186 +4,291 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   FlatList,
   StyleSheet,
   ActivityIndicator,
+  Alert,
 } from "react-native";
-import { db } from "../../firebase";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  collection,
+  addDoc,
+  query,
+  orderBy,
+  onSnapshot,
+} from "firebase/firestore";
+import { app } from "../../firebase";
 
-type Transaction = {
-  receiver: string;
-  amount: number;
-  timestamp: string;
-  proof: string;
-  status: string;
+/* ================= CONFIG ================= */
+const db = getFirestore(app);
+const CURRENT_USER = "elijah"; // 👈 CHANGE USER HERE
+
+/* ================= TYPES ================= */
+type Message = {
+  sender: string;
+  type: "text" | "money";
+  text?: string;
+  amount?: number;
+  timestamp: number;
 };
 
-export default function AccountAndMoneyManager() {
-  const USER_ID = "elijah";
-  const userRef = doc(db, "acc", USER_ID);
+/* ================= ROOT ================= */
+export default function WhatsAppMoneyApp() {
+  const [ready, setReady] = useState(false);
 
-  const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState<any>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [topUpAmount, setTopUpAmount] = useState("");
-  const [showTx, setShowTx] = useState(false);
-  const [label, setLabel] = useState("");
-
-  /* ---------------- FETCH USER DATA ---------------- */
+  // Ensure user exists
   useEffect(() => {
-    const loadAccount = async () => {
-      try {
-        const snap = await getDoc(userRef);
-        if (!snap.exists()) {
-          setLabel("Account not found.");
-          return;
-        }
-
-        const data = snap.data();
-        setProfile(data);
-        setTransactions(data.transactions || []);
-        setLabel(`Welcome, ${data.Name || "User"}`);
-      } catch (e) {
-        console.error(e);
-        setLabel("Failed to load account.");
-      } finally {
-        setLoading(false);
+    const init = async () => {
+      const ref = doc(db, "users", CURRENT_USER);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, {
+          username: CURRENT_USER,
+          balance: 0,
+        });
       }
+      setReady(true);
     };
-
-    loadAccount();
+    init();
   }, []);
 
-  /* ---------------- TOP-UP ---------------- */
-  const topUp = async () => {
-    const amount = Number(topUpAmount);
-    if (!amount || amount <= 0) {
-      setLabel("Enter a valid amount");
-      return;
-    }
-
-    const tx: Transaction = {
-      receiver: "Top-Up",
-      amount,
-      timestamp: new Date().toLocaleString(),
-      proof: `MM#${Math.floor(Math.random() * 9000 + 1000)}`,
-      status: "Completed",
-    };
-
-    const newBalance = (profile?.net || 0) + amount;
-    const updatedTx = [tx, ...transactions];
-
-    setProfile({ ...profile, net: newBalance });
-    setTransactions(updatedTx);
-    setTopUpAmount("");
-
-    await updateDoc(userRef, {
-      net: newBalance,
-      transactions: updatedTx,
-    });
-
-    setLabel(`Top-up of Shs ${amount} successful`);
-  };
-
-  if (loading)
+  if (!ready)
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#fff" />
+        <ActivityIndicator size="large" color="#25D366" />
       </View>
     );
 
+  return <Inbox />;
+}
+
+/* ================= INBOX ================= */
+function Inbox() {
+  const [chats, setChats] = useState<string[]>([]);
+  const [openChat, setOpenChat] = useState<string | null>(null);
+  const [newUser, setNewUser] = useState("");
+
+  useEffect(() => {
+    const q = collection(db, "chats");
+    return onSnapshot(q, (snap) => {
+      const list: string[] = [];
+      snap.forEach((d) => {
+        if (d.id.includes(CURRENT_USER)) list.push(d.id);
+      });
+      setChats(list);
+    });
+  }, []);
+
+  const startChat = async () => {
+    if (!newUser || newUser === CURRENT_USER) return;
+
+    const userSnap = await getDoc(doc(db, "users", newUser));
+    if (!userSnap.exists()) {
+      Alert.alert("User not found");
+      return;
+    }
+
+    const chatId = [CURRENT_USER, newUser].sort().join("_");
+    await setDoc(doc(db, "chats", chatId), { created: Date.now() }, { merge: true });
+    setOpenChat(chatId);
+    setNewUser("");
+  };
+
+  if (openChat)
+    return <Chat chatId={openChat} goBack={() => setOpenChat(null)} />;
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {/* USER INFO */}
-      <Text style={styles.name}>{profile?.Name}</Text>
-      <Text style={styles.balance}>Balance: Shs {profile?.net?.toFixed(2)}</Text>
+    <View style={styles.container}>
+      <Text style={styles.header}>Chats</Text>
 
-      {/* OPTIONAL EXTRA DATA */}
-      {profile?.phone && <Text style={styles.sub}>Phone: {profile.phone}</Text>}
-      {profile?.nin && <Text style={styles.sub}>NIN: {profile.nin}</Text>}
-
-      {/* TOP UP */}
-      <Text style={styles.section}>Top Up</Text>
-      <TextInput
-        style={styles.input}
-        keyboardType="numeric"
-        placeholder="Enter amount"
-        placeholderTextColor="#777"
-        value={topUpAmount}
-        onChangeText={setTopUpAmount}
+      <FlatList
+        data={chats}
+        keyExtractor={(i) => i}
+        renderItem={({ item }) => {
+          const other = item.replace(CURRENT_USER, "").replace("_", "");
+          return (
+            <TouchableOpacity style={styles.chatItem} onPress={() => setOpenChat(item)}>
+              <Text style={styles.chatText}>{other}</Text>
+            </TouchableOpacity>
+          );
+        }}
       />
-      <TouchableOpacity style={styles.btn} onPress={topUp}>
-        <Text style={styles.btnText}>Top Up</Text>
+
+      <TextInput
+        placeholder="Start chat with username"
+        placeholderTextColor="#777"
+        style={styles.input}
+        value={newUser}
+        onChangeText={setNewUser}
+      />
+      <TouchableOpacity style={styles.btn} onPress={startChat}>
+        <Text style={styles.btnText}>Start Chat</Text>
       </TouchableOpacity>
-
-      {/* TRANSACTIONS */}
-      <TouchableOpacity
-        style={[styles.btn, { backgroundColor: "#2196F3" }]}
-        onPress={() => setShowTx(!showTx)}
-      >
-        <Text style={styles.btnText}>
-          {showTx ? "Hide Transactions" : "Show Transactions"}
-        </Text>
-      </TouchableOpacity>
-
-      {showTx &&
-        (transactions.length ? (
-          <FlatList
-            data={transactions}
-            keyExtractor={(_, i) => i.toString()}
-            renderItem={({ item }) => (
-              <View style={styles.tx}>
-                <Text style={styles.txText}>To: {item.receiver}</Text>
-                <Text style={styles.txText}>Amount: Shs {item.amount}</Text>
-                <Text style={styles.txText}>{item.timestamp}</Text>
-                <Text style={styles.txText}>Proof: {item.proof}</Text>
-                <Text
-                  style={[
-                    styles.txText,
-                    { color: item.status === "Completed" ? "#4CAF50" : "#FFC107" },
-                  ]}
-                >
-                  {item.status}
-                </Text>
-              </View>
-            )}
-          />
-        ) : (
-          <Text style={styles.empty}>No transactions</Text>
-        ))}
-
-      <Text style={styles.label}>{label}</Text>
-    </ScrollView>
+    </View>
   );
 }
 
-/* ---------------- STYLES ---------------- */
+/* ================= CHAT ================= */
+function Chat({ chatId, goBack }: any) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [text, setText] = useState("");
+  const [amount, setAmount] = useState("");
+
+  const otherUser = chatId.replace(CURRENT_USER, "").replace("_", "");
+
+  useEffect(() => {
+    const q = query(
+      collection(db, "chats", chatId, "messages"),
+      orderBy("timestamp", "asc")
+    );
+    return onSnapshot(q, (snap) => {
+      const list: Message[] = [];
+      snap.forEach((d) => list.push(d.data() as Message));
+      setMessages(list);
+    });
+  }, []);
+
+  const sendText = async () => {
+    if (!text) return;
+    await addDoc(collection(db, "chats", chatId, "messages"), {
+      sender: CURRENT_USER,
+      type: "text",
+      text,
+      timestamp: Date.now(),
+    });
+    setText("");
+  };
+
+  const sendMoney = async () => {
+    const amt = Number(amount);
+    if (!amt || amt <= 0) return;
+
+    const senderRef = doc(db, "users", CURRENT_USER);
+    const receiverRef = doc(db, "users", otherUser);
+
+    const senderSnap = await getDoc(senderRef);
+    const receiverSnap = await getDoc(receiverRef);
+
+    if (!receiverSnap.exists()) {
+      Alert.alert("Receiver does not exist");
+      return;
+    }
+
+    const senderBal = senderSnap.data()?.balance || 0;
+    if (senderBal < amt) {
+      Alert.alert("Insufficient balance");
+      return;
+    }
+
+    await updateDoc(senderRef, { balance: senderBal - amt });
+    await updateDoc(receiverRef, {
+      balance: (receiverSnap.data()?.balance || 0) + amt,
+    });
+
+    await addDoc(collection(db, "chats", chatId, "messages"), {
+      sender: CURRENT_USER,
+      type: "money",
+      amount: amt,
+      timestamp: Date.now(),
+    });
+
+    setAmount("");
+  };
+
+  return (
+    <View style={styles.container}>
+      <TouchableOpacity onPress={goBack}>
+        <Text style={styles.back}>← Back</Text>
+      </TouchableOpacity>
+
+      <FlatList
+        data={messages}
+        keyExtractor={(_, i) => i.toString()}
+        renderItem={({ item }) => (
+          <View
+            style={[
+              styles.msgBubble,
+              item.sender === CURRENT_USER ? styles.right : styles.left,
+            ]}
+          >
+            {item.type === "text" ? (
+              <Text style={styles.msgText}>{item.text}</Text>
+            ) : (
+              <Text style={styles.money}>
+                💸 {item.sender === CURRENT_USER ? "Sent" : "Received"} Shs {item.amount}
+              </Text>
+            )}
+          </View>
+        )}
+      />
+
+      <TextInput
+        placeholder="Message"
+        placeholderTextColor="#777"
+        style={styles.input}
+        value={text}
+        onChangeText={setText}
+      />
+      <TouchableOpacity style={styles.btn} onPress={sendText}>
+        <Text style={styles.btnText}>Send</Text>
+      </TouchableOpacity>
+
+      <TextInput
+        placeholder="Amount"
+        placeholderTextColor="#777"
+        keyboardType="numeric"
+        style={styles.input}
+        value={amount}
+        onChangeText={setAmount}
+      />
+      <TouchableOpacity style={styles.btnAlt} onPress={sendMoney}>
+        <Text style={styles.btnText}>Send Money</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+/* ================= STYLES ================= */
 const styles = StyleSheet.create({
-  container: { padding: 15, backgroundColor: "#121212", flexGrow: 1 },
   center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#000" },
-  name: { fontSize: 24, fontWeight: "700", color: "#fff" },
-  balance: { fontSize: 20, color: "#fff", marginVertical: 5 },
-  sub: { color: "#aaa", marginBottom: 4 },
-  section: { color: "#fff", fontSize: 18, marginVertical: 10 },
+  container: { flex: 1, padding: 12, backgroundColor: "#000" },
+  header: { color: "#fff", fontSize: 22, marginBottom: 10 },
+  chatItem: { padding: 14, borderBottomWidth: 1, borderColor: "#222" },
+  chatText: { color: "#fff" },
   input: {
     backgroundColor: "#1e1e1e",
     color: "#fff",
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 10,
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 8,
   },
   btn: {
-    backgroundColor: "#FF5722",
-    padding: 14,
+    backgroundColor: "#25D366",
+    padding: 12,
     borderRadius: 20,
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 6,
+  },
+  btnAlt: {
+    backgroundColor: "#128C7E",
+    padding: 12,
+    borderRadius: 20,
+    alignItems: "center",
   },
   btnText: { color: "#fff", fontWeight: "700" },
-  tx: { backgroundColor: "#1e1e1e", padding: 10, borderRadius: 10, marginBottom: 10 },
-  txText: { color: "#fff", fontSize: 14 },
-  empty: { color: "#777", textAlign: "center", marginTop: 10 },
-  label: { color: "#bbb", textAlign: "center", marginTop: 10 },
+  back: { color: "#25D366", marginBottom: 6 },
+  msgBubble: {
+    padding: 10,
+    borderRadius: 10,
+    marginVertical: 4,
+    maxWidth: "75%",
+  },
+  left: { backgroundColor: "#1e1e1e", alignSelf: "flex-start" },
+  right: { backgroundColor: "#25D366", alignSelf: "flex-end" },
+  msgText: { color: "#fff" },
+  money: { color: "#fff", fontWeight: "700" },
 });
