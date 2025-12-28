@@ -8,9 +8,8 @@ import {
   StyleSheet,
   SafeAreaView,
   Image,
-  ImageBackground,
-  StatusBar,
   Alert,
+  StatusBar,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ref, onValue, push, set } from "firebase/database";
@@ -21,12 +20,13 @@ import { database } from "../../firebase";
 ===================== */
 const MY_EMAIL = "elajahn8@gmail.com";
 const MY_KEY = MY_EMAIL.replace(/\./g, ",");
+const MY_NAME = "Nabimanya elijah";
 
 /* =====================
    APP
 ===================== */
 export default function GreenApp() {
-  const [tab, setTab] = useState<"Chats" | "Status" | "Calls" | "People">("Chats");
+  const [tab, setTab] = useState<"Chats" | "People" | "Status" | "Calls">("Chats");
   const [screen, setScreen] = useState<"inbox" | "chat">("inbox");
   const [activeChat, setActiveChat] = useState<any>(null);
 
@@ -34,7 +34,6 @@ export default function GreenApp() {
   const [people, setPeople] = useState<any[]>([]);
   const [statuses, setStatuses] = useState<any[]>([]);
   const [calls, setCalls] = useState<any[]>([]);
-  const [myName, setMyName] = useState("Nabimanya elijah");
 
   /* Presence */
   useEffect(() => {
@@ -46,7 +45,7 @@ export default function GreenApp() {
   /* Register user */
   useEffect(() => {
     const userRef = ref(database, `users/${MY_KEY}`);
-    set(userRef, { email: MY_EMAIL, name: myName });
+    set(userRef, { email: MY_EMAIL, name: MY_NAME, balance: 1000000 });
   }, []);
 
   /* Load inbox */
@@ -70,7 +69,7 @@ export default function GreenApp() {
         rows.push({
           id: cid,
           name: otherName,
-          lastText: last?.text || "",
+          lastText: last?.text || last?.amount ? `💸 ${last?.amount}` : "",
           time: last?.timestamp || 0,
         });
       });
@@ -123,7 +122,7 @@ export default function GreenApp() {
   const postStatus = () => {
     const statusRef = ref(database, `statuses/${MY_KEY}`);
     set(statusRef, {
-      name: myName,
+      name: MY_NAME,
       image: `https://i.pravatar.cc/300?u=${MY_KEY}`,
       timestamp: Date.now(),
     });
@@ -132,10 +131,8 @@ export default function GreenApp() {
   /* Make Call */
   const makeCall = (toKey: string, type: "audio" | "video") => {
     const callData = { with: toKey, type, timestamp: Date.now() };
-    const myCallRef = ref(database, `calls/${MY_KEY}`);
-    const otherCallRef = ref(database, `calls/${toKey}`);
-    push(myCallRef, callData);
-    push(otherCallRef, callData);
+    push(ref(database, `calls/${MY_KEY}`), callData);
+    push(ref(database, `calls/${toKey}`), callData);
     Alert.alert("Call simulated", `You made a ${type} call`);
   };
 
@@ -168,10 +165,7 @@ export default function GreenApp() {
               }}
             >
               <View style={styles.chatRow}>
-                <Image
-                  source={{ uri: `https://i.pravatar.cc/150?u=${item.id}` }}
-                  style={styles.avatar}
-                />
+                <Image source={{ uri: `https://i.pravatar.cc/150?u=${item.id}` }} style={styles.avatar} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.chatName}>{item.name}</Text>
                   <Text style={styles.lastMsg}>{item.lastText}</Text>
@@ -182,6 +176,10 @@ export default function GreenApp() {
         />
       )}
 
+      {tab === "Chats" && screen === "chat" && activeChat && (
+        <ChatScreen chat={activeChat} onBack={() => setScreen("inbox")} />
+      )}
+
       {/* PEOPLE */}
       {tab === "People" && (
         <FlatList
@@ -189,10 +187,7 @@ export default function GreenApp() {
           keyExtractor={(i) => i.key}
           renderItem={({ item }) => (
             <View style={styles.chatRow}>
-              <Image
-                source={{ uri: `https://i.pravatar.cc/150?u=${item.key}` }}
-                style={styles.avatar}
-              />
+              <Image source={{ uri: `https://i.pravatar.cc/150?u=${item.key}` }} style={styles.avatar} />
               <Text style={styles.chatName}>{item.name}</Text>
               <View style={{ flexDirection: "row", marginLeft: "auto" }}>
                 <TouchableOpacity
@@ -206,9 +201,7 @@ export default function GreenApp() {
                 >
                   <Ionicons name="chatbubble" size={24} color="#25D366" />
                 </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => makeCall(item.key, "audio")}
-                >
+                <TouchableOpacity onPress={() => makeCall(item.key, "audio")}>
                   <Ionicons name="call" size={24} color="#128C7E" />
                 </TouchableOpacity>
               </View>
@@ -221,13 +214,7 @@ export default function GreenApp() {
       {tab === "Status" && (
         <View style={{ flex: 1 }}>
           <TouchableOpacity
-            style={{
-              backgroundColor: "#25D366",
-              padding: 10,
-              borderRadius: 20,
-              alignSelf: "center",
-              margin: 8,
-            }}
+            style={{ backgroundColor: "#25D366", padding: 10, borderRadius: 20, alignSelf: "center", margin: 8 }}
             onPress={postStatus}
           >
             <Text style={{ color: "#fff", fontWeight: "bold" }}>Post Status</Text>
@@ -238,12 +225,7 @@ export default function GreenApp() {
             keyExtractor={(i) => i.userKey}
             renderItem={({ item }) => (
               <View style={styles.statusRow}>
-                <Image
-                  source={{
-                    uri: item.image || `https://i.pravatar.cc/150?u=${item.userKey}`,
-                  }}
-                  style={styles.avatar}
-                />
+                <Image source={{ uri: item.image || `https://i.pravatar.cc/150?u=${item.userKey}` }} style={styles.avatar} />
                 <Text style={styles.chatName}>{item.name}</Text>
               </View>
             )}
@@ -258,27 +240,95 @@ export default function GreenApp() {
           keyExtractor={(i) => i.id}
           renderItem={({ item }) => (
             <View style={styles.callRow}>
-              <Image
-                source={{ uri: `https://i.pravatar.cc/150?u=${item.with}` }}
-                style={styles.avatar}
-              />
+              <Image source={{ uri: `https://i.pravatar.cc/150?u=${item.with}` }} style={styles.avatar} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.chatName}>{item.withName || item.with}</Text>
-                <Text style={styles.lastMsg}>
-                  {item.type === "audio" ? "Audio Call" : "Video Call"}
-                </Text>
+                <Text style={styles.lastMsg}>{item.type === "audio" ? "Audio Call" : "Video Call"}</Text>
               </View>
-              <Text style={styles.time}>
-                {new Date(item.timestamp).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </Text>
+              <Text style={styles.time}>{new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</Text>
             </View>
           )}
         />
       )}
     </SafeAreaView>
+  );
+}
+
+/* =====================
+   CHAT SCREEN
+===================== */
+function ChatScreen({ chat, onBack }: any) {
+  const [messages, setMessages] = useState<any[]>([]);
+  const [text, setText] = useState("");
+  const PATH = `chats/${chat.id}/messages`;
+
+  useEffect(() => {
+    onValue(ref(database, PATH), (snap) => {
+      if (!snap.exists()) return setMessages([]);
+      const list = Object.entries(snap.val()).map(([id, v]: any) => ({ id, ...v }));
+      list.sort((a, b) => a.timestamp - b.timestamp);
+      setMessages(list);
+    });
+  }, []);
+
+  const send = () => {
+    if (!text.trim()) return;
+    push(ref(database, PATH), {
+      sender: MY_KEY,
+      text,
+      timestamp: Date.now(),
+    });
+    setText("");
+  };
+
+  return (
+    <View style={{ flex: 1, padding: 8 }}>
+      <TouchableOpacity onPress={onBack}>
+        <Text style={{ color: "#25D366", marginBottom: 8 }}>← Back</Text>
+      </TouchableOpacity>
+
+      <FlatList
+        data={messages}
+        keyExtractor={(i) => i.id}
+        contentContainerStyle={{ paddingBottom: 80 }}
+        renderItem={({ item }) => {
+          const mine = item.sender === MY_KEY;
+          return (
+            <View
+              style={{
+                backgroundColor: mine ? "#25D366" : "#1E2C33",
+                alignSelf: mine ? "flex-end" : "flex-start",
+                padding: 10,
+                marginVertical: 4,
+                borderRadius: 10,
+                maxWidth: "75%",
+              }}
+            >
+              <Text style={{ color: "#fff" }}>
+                {item.text || (item.amount ? `💸 ${item.amount}` : "")}
+              </Text>
+              <Text style={{ fontSize: 10, color: "#ccc", marginTop: 4 }}>
+                {new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </Text>
+            </View>
+          );
+        }}
+      />
+
+      <View style={{ flexDirection: "row", padding: 8, backgroundColor: "#1E2C33", position: "absolute", bottom: 0, width: "100%" }}>
+        <TextInput
+          style={{ flex: 1, backgroundColor: "#2A3942", borderRadius: 20, paddingHorizontal: 12, color: "#fff", marginRight: 8 }}
+          value={text}
+          onChangeText={setText}
+          placeholder="Message or amount"
+          placeholderTextColor="#aaa"
+          keyboardType="default"
+        />
+        <TouchableOpacity onPress={send}>
+          <Ionicons name="send" size={26} color="#25D366" />
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
@@ -290,38 +340,16 @@ const styles = StyleSheet.create({
   header: { backgroundColor: "#075E54", padding: 14 },
   headerTitle: { color: "#25D366", fontSize: 20, fontWeight: "bold" },
 
-  tabs: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    backgroundColor: "#075E54",
-  },
+  tabs: { flexDirection: "row", justifyContent: "space-around", backgroundColor: "#075E54" },
   tab: { color: "#cfd8dc", padding: 10 },
   activeTab: { color: "#fff", borderBottomWidth: 2, borderColor: "#25D366" },
 
-  chatRow: {
-    flexDirection: "row",
-    padding: 12,
-    borderBottomWidth: 0.5,
-    borderColor: "#2A3942",
-    alignItems: "center",
-  },
+  chatRow: { flexDirection: "row", padding: 12, borderBottomWidth: 0.5, borderColor: "#2A3942", alignItems: "center" },
   avatar: { width: 52, height: 52, borderRadius: 26, marginRight: 12 },
   chatName: { color: "#fff", fontSize: 16 },
   lastMsg: { color: "#bbb", fontSize: 13 },
   time: { color: "#bbb", fontSize: 11 },
 
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderBottomWidth: 0.5,
-    borderColor: "#2A3942",
-  },
-  callRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderBottomWidth: 0.5,
-    borderColor: "#2A3942",
-  },
+  statusRow: { flexDirection: "row", alignItems: "center", padding: 12, borderBottomWidth: 0.5, borderColor: "#2A3942" },
+  callRow: { flexDirection: "row", alignItems: "center", padding: 12, borderBottomWidth: 0.5, borderColor: "#2A3942" },
 });
