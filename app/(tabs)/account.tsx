@@ -42,6 +42,7 @@ type User = {
   name: string;
   balance: number;
   id: string;
+  pin?: string;
 };
 
 /* =====================
@@ -51,18 +52,22 @@ export default function MoneyApp() {
   const [ready, setReady] = useState(false);
   const [balance, setBalance] = useState(0);
   const [amount, setAmount] = useState("");
-  const [receiver, setReceiver] = useState("");
   const [phone, setPhone] = useState("");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-
-  /* PIN */
-  const [pinModal, setPinModal] = useState(false);
   const [pinInput, setPinInput] = useState("");
+  const [pinModal, setPinModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<null | (() => void)>(null);
+  const [hasPin, setHasPin] = useState(false);
+
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+
+  const userRef = doc(db, "acc", CURRENT_USER_KEY);
+  const transactionsRef = collection(userRef, "transactions");
 
   /* =====================
-     INIT + FIX INFINITE LOADING
+     INIT + FIRESTORE LISTENERS
   ===================== */
   useEffect(() => {
     let unsubTx: any;
@@ -70,43 +75,41 @@ export default function MoneyApp() {
 
     const init = async () => {
       try {
-        const ref = doc(db, "acc", CURRENT_USER_KEY);
-        const snap = await getDoc(ref);
+        const snap = await getDoc(userRef);
 
         if (!snap.exists()) {
-          await setDoc(ref, {
+          await setDoc(userRef, {
             name: CURRENT_USER_NAME,
             balance: 0,
-            pin: "1234",
+            pin: "",
           });
           setBalance(0);
+          setHasPin(false);
         } else {
-          setBalance(snap.data()?.balance || 0);
+          const data = snap.data();
+          setBalance(data?.balance || 0);
+          setHasPin(Boolean(data?.pin));
         }
 
+        // Listen for transactions in acc/elijah/transactions
         unsubTx = onSnapshot(
-          query(collection(db, "transactions"), orderBy("timestamp", "desc")),
+          query(transactionsRef, orderBy("timestamp", "desc")),
           (snap) => {
             const txs: Transaction[] = [];
             snap.forEach((d) => {
-              const data = d.data() as Transaction;
-              if (
-                data.sender === CURRENT_USER_NAME ||
-                data.receiver === CURRENT_USER_NAME
-              ) {
-                txs.push(data);
-              }
+              txs.push(d.data() as Transaction);
             });
             setTransactions(txs);
           }
         );
 
+        // Listen for other users
         unsubUsers = onSnapshot(collection(db, "acc"), (snap) => {
           const list: User[] = [];
           snap.forEach((d) =>
             list.push({ ...(d.data() as any), id: d.id })
           );
-          setUsers(list);
+          setUsers(list.filter((u) => u.id !== CURRENT_USER_KEY));
         });
 
         setReady(true);
@@ -117,6 +120,7 @@ export default function MoneyApp() {
     };
 
     init();
+
     return () => {
       unsubTx && unsubTx();
       unsubUsers && unsubUsers();
@@ -127,25 +131,21 @@ export default function MoneyApp() {
      HELPERS
   ===================== */
   const detectNetwork = (phone: string) => {
-    if (
-      phone.startsWith("077") ||
-      phone.startsWith("078") ||
-      phone.startsWith("076")
-    )
+    if (phone.startsWith("077") || phone.startsWith("078") || phone.startsWith("076"))
       return "MTN Mobile Money";
-
-    if (
-      phone.startsWith("070") ||
-      phone.startsWith("075") ||
-      phone.startsWith("074")
-    )
+    if (phone.startsWith("070") || phone.startsWith("075") || phone.startsWith("074"))
       return "Airtel Money";
-
     return null;
   };
 
+  const showConfirmation = (text: string) => {
+    setConfirmText(text);
+    setConfirmVisible(true);
+    setTimeout(() => setConfirmVisible(false), 2500);
+  };
+
   const confirmPin = async () => {
-    const snap = await getDoc(doc(db, "acc", CURRENT_USER_KEY));
+    const snap = await getDoc(userRef);
     const savedPin = snap.data()?.pin;
 
     if (pinInput !== savedPin) {
@@ -156,6 +156,18 @@ export default function MoneyApp() {
     setPinModal(false);
     setPinInput("");
     pendingAction && pendingAction();
+    setPendingAction(null);
+  };
+
+  const savePin = async () => {
+    if (pinInput.length < 4) {
+      Alert.alert("PIN must be at least 4 digits");
+      return;
+    }
+    await updateDoc(userRef, { pin: pinInput });
+    setHasPin(true);
+    Alert.alert("PIN saved successfully");
+    setPinInput("");
   };
 
   /* =====================
@@ -165,79 +177,91 @@ export default function MoneyApp() {
     const amt = Number(amount);
     if (!amt || amt <= 0) return Alert.alert("Enter valid amount");
 
-    const ref = doc(db, "acc", CURRENT_USER_KEY);
-    const snap = await getDoc(ref);
+    const snap = await getDoc(userRef);
     const oldBalance = snap.data()?.balance || 0;
 
-    await updateDoc(ref, { balance: oldBalance + amt });
+    await updateDoc(userRef, { balance: oldBalance + amt });
 
-    await addDoc(collection(db, "transactions"), {
+    await addDoc(transactionsRef, {
       sender: "Top-up",
       receiver: CURRENT_USER_NAME,
       amount: amt,
       timestamp: Date.now(),
     });
 
+    setBalance(oldBalance + amt);
     setAmount("");
+    showConfirmation(
+      `Top-up successful: +${amt.toLocaleString()} UGX. New Balance: ${(oldBalance + amt).toLocaleString()} UGX`
+    );
   };
 
   const sendMoney = async (toUser: string) => {
     const amt = Number(amount);
     if (!amt || amt <= 0) return Alert.alert("Invalid amount");
-    if (amt > balance) return Alert.alert("Insufficient balance");
 
-    const senderRef = doc(db, "acc", CURRENT_USER_KEY);
-    const senderSnap = await getDoc(senderRef);
-    const senderBal = senderSnap.data()?.balance || 0;
+    const snap = await getDoc(userRef);
+    const senderBal = snap.data()?.balance || 0;
+    if (amt > senderBal) return Alert.alert("Insufficient balance");
 
     const receiverKey = toUser.toLowerCase();
     const receiverRef = doc(db, "acc", receiverKey);
     let receiverSnap = await getDoc(receiverRef);
 
     if (!receiverSnap.exists()) {
-      await setDoc(receiverRef, { name: toUser, balance: 0 });
+      await setDoc(receiverRef, { name: toUser, balance: 0, pin: "" });
       receiverSnap = await getDoc(receiverRef);
     }
 
     const receiverBal = receiverSnap.data()?.balance || 0;
 
-    await updateDoc(senderRef, { balance: senderBal - amt });
+    await updateDoc(userRef, { balance: senderBal - amt });
     await updateDoc(receiverRef, { balance: receiverBal + amt });
 
-    await addDoc(collection(db, "transactions"), {
+    await addDoc(transactionsRef, {
       sender: CURRENT_USER_NAME,
       receiver: toUser,
       amount: amt,
       timestamp: Date.now(),
     });
 
+    setBalance(senderBal - amt);
     setAmount("");
+
+    showConfirmation(
+      `Sent ${amt.toLocaleString()} UGX to ${toUser}. New Balance: ${(senderBal - amt).toLocaleString()} UGX`
+    );
   };
 
   const sendToMobileMoney = async () => {
     const amt = Number(amount);
     if (!amt || amt <= 0) return Alert.alert("Invalid amount");
-    if (amt > balance) return Alert.alert("Insufficient balance");
+
+    const snap = await getDoc(userRef);
+    const oldBalance = snap.data()?.balance || 0;
+    if (amt > oldBalance) return Alert.alert("Insufficient balance");
+
     if (phone.length < 10) return Alert.alert("Invalid phone");
 
     const network = detectNetwork(phone);
     if (!network) return Alert.alert("Unsupported network");
 
-    const ref = doc(db, "acc", CURRENT_USER_KEY);
-    const snap = await getDoc(ref);
-    const oldBalance = snap.data()?.balance || 0;
+    await updateDoc(userRef, { balance: oldBalance - amt });
 
-    await updateDoc(ref, { balance: oldBalance - amt });
-
-    await addDoc(collection(db, "transactions"), {
+    await addDoc(transactionsRef, {
       sender: CURRENT_USER_NAME,
       receiver: `${network} (${phone})`,
       amount: amt,
       timestamp: Date.now(),
     });
 
+    setBalance(oldBalance - amt);
     setAmount("");
     setPhone("");
+
+    showConfirmation(
+      `Sent ${amt.toLocaleString()} UGX to ${network} (${phone}). New Balance: ${(oldBalance - amt).toLocaleString()} UGX`
+    );
   };
 
   if (!ready)
@@ -249,9 +273,26 @@ export default function MoneyApp() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.header}>
-        Balance: {balance.toLocaleString()} UGX
-      </Text>
+      <Text style={styles.header}>Balance: {balance.toLocaleString()} UGX</Text>
+
+      {/* PIN INPUT */}
+      {!hasPin && (
+        <>
+          <TextInput
+            style={styles.input}
+            placeholder="Set your 4-digit PIN"
+            placeholderTextColor="#aaa"
+            secureTextEntry
+            keyboardType="numeric"
+            maxLength={4}
+            value={pinInput}
+            onChangeText={setPinInput}
+          />
+          <TouchableOpacity style={styles.btn} onPress={savePin}>
+            <Text style={styles.btnText}>Save PIN</Text>
+          </TouchableOpacity>
+        </>
+      )}
 
       {/* MOBILE MONEY */}
       <Text style={styles.subHeader}>Mobile Money</Text>
@@ -284,7 +325,7 @@ export default function MoneyApp() {
       {/* USERS */}
       <Text style={styles.subHeader}>Send to Users</Text>
       <FlatList
-        data={users.filter((u) => u.id !== CURRENT_USER_KEY)}
+        data={users}
         keyExtractor={(i) => i.id}
         renderItem={({ item }) => (
           <TouchableOpacity
@@ -343,6 +384,13 @@ export default function MoneyApp() {
               <Text style={{ color: "#f55", marginTop: 8 }}>Cancel</Text>
             </TouchableOpacity>
           </View>
+        </View>
+      )}
+
+      {/* CONFIRMATION OVERLAY */}
+      {confirmVisible && (
+        <View style={styles.confirmOverlay}>
+          <Text style={styles.confirmText}>{confirmText}</Text>
         </View>
       )}
     </SafeAreaView>
@@ -414,4 +462,17 @@ const styles = StyleSheet.create({
     fontSize: 20,
     marginBottom: 12,
   },
+
+  confirmOverlay: {
+    position: "absolute",
+    bottom: 50,
+    left: 20,
+    right: 20,
+    backgroundColor: "#25D366",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    zIndex: 10,
+  },
+  confirmText: { color: "#fff", fontWeight: "bold", textAlign: "center" },
 });
