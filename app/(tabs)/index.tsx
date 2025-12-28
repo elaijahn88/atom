@@ -143,13 +143,13 @@ export default function WhatsAppLikeApp() {
 
       {tab === "Status" && (
         <View style={styles.center}>
-          <Text style={styles.placeholder}>Status coming soon</Text>
+          <Text style={styles.placeholder}>☆☆☆☆☆</Text>
         </View>
       )}
 
       {tab === "Calls" && (
         <View style={styles.center}>
-          <Text style={styles.placeholder}>Calls coming soon</Text>
+          <Text style={styles.placeholder}>♡♡♡♡</Text>
         </View>
       )}
     </SafeAreaView>
