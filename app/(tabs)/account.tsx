@@ -10,7 +10,6 @@ import {
   Alert,
 } from "react-native";
 import {
-  getFirestore,
   doc,
   getDoc,
   setDoc,
@@ -20,11 +19,12 @@ import {
   query,
   orderBy,
   onSnapshot,
+  runTransaction,
 } from "firebase/firestore";
 import { db } from "../../firebase";
 
-/* ================= CONFIG ================
-const CURRENT_USER = "Nabimanya elijah"; // 👈 CHANGE USER HERE
+/* ================= CONFIG ================= */
+const CURRENT_USER = "elijah"; // 🔑 Must match document ID in acc collection
 
 /* ================= TYPES ================= */
 type Message = {
@@ -42,25 +42,31 @@ export default function WhatsAppMoneyApp() {
   // Ensure user exists
   useEffect(() => {
     const init = async () => {
-      const ref = doc(db, "users", CURRENT_USER);
-      const snap = await getDoc(ref);
-      if (!snap.exists()) {
-        await setDoc(ref, {
-          username: CURRENT_USER,
-          balance: 0,
-        });
+      try {
+        const ref = doc(db, "acc", CURRENT_USER);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          await setDoc(ref, {
+            name: "Nabimanya elijah",
+            balance: 0,
+          });
+        }
+      } catch (e) {
+        console.error("Init error:", e);
+      } finally {
+        setReady(true);
       }
-      setReady(true);
     };
     init();
   }, []);
 
-  if (!ready)
+  if (!ready) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#25D366" />
       </View>
     );
+  }
 
   return <Inbox />;
 }
@@ -85,20 +91,22 @@ function Inbox() {
   const startChat = async () => {
     if (!newUser || newUser === CURRENT_USER) return;
 
-    const userSnap = await getDoc(doc(db, "users", newUser));
+    const cleanUser = newUser.trim().toLowerCase();
+    const userSnap = await getDoc(doc(db, "acc", cleanUser));
     if (!userSnap.exists()) {
       Alert.alert("User not found");
       return;
     }
 
-    const chatId = [CURRENT_USER, newUser].sort().join("_");
+    const chatId = [CURRENT_USER, cleanUser].sort().join("_");
     await setDoc(doc(db, "chats", chatId), { created: Date.now() }, { merge: true });
     setOpenChat(chatId);
     setNewUser("");
   };
 
-  if (openChat)
+  if (openChat) {
     return <Chat chatId={openChat} goBack={() => setOpenChat(null)} />;
+  }
 
   return (
     <View style={styles.container}>
@@ -132,7 +140,7 @@ function Inbox() {
 }
 
 /* ================= CHAT ================= */
-function Chat({ chatId, goBack }: any) {
+function Chat({ chatId, goBack }: { chatId: string; goBack: () => void }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const [amount, setAmount] = useState("");
@@ -144,21 +152,24 @@ function Chat({ chatId, goBack }: any) {
       collection(db, "chats", chatId, "messages"),
       orderBy("timestamp", "asc")
     );
+
     return onSnapshot(q, (snap) => {
       const list: Message[] = [];
       snap.forEach((d) => list.push(d.data() as Message));
       setMessages(list);
     });
-  }, []);
+  }, [chatId]);
 
   const sendText = async () => {
-    if (!text) return;
+    if (!text.trim()) return;
+
     await addDoc(collection(db, "chats", chatId, "messages"), {
       sender: CURRENT_USER,
       type: "text",
       text,
       timestamp: Date.now(),
     });
+
     setText("");
   };
 
@@ -166,36 +177,36 @@ function Chat({ chatId, goBack }: any) {
     const amt = Number(amount);
     if (!amt || amt <= 0) return;
 
-    const senderRef = doc(db, "users", CURRENT_USER);
-    const receiverRef = doc(db, "users", otherUser);
+    const senderRef = doc(db, "acc", CURRENT_USER);
+    const receiverRef = doc(db, "acc", otherUser);
 
-    const senderSnap = await getDoc(senderRef);
-    const receiverSnap = await getDoc(receiverRef);
+    try {
+      await runTransaction(db, async (tx) => {
+        const senderSnap = await tx.get(senderRef);
+        const receiverSnap = await tx.get(receiverRef);
 
-    if (!receiverSnap.exists()) {
-      Alert.alert("Receiver does not exist");
-      return;
+        if (!receiverSnap.exists()) throw "Receiver does not exist";
+
+        const senderBal = senderSnap.data()?.balance || 0;
+        if (senderBal < amt) throw "Insufficient balance";
+
+        tx.update(senderRef, { balance: senderBal - amt });
+        tx.update(receiverRef, {
+          balance: (receiverSnap.data()?.balance || 0) + amt,
+        });
+      });
+
+      await addDoc(collection(db, "chats", chatId, "messages"), {
+        sender: CURRENT_USER,
+        type: "money",
+        amount: amt,
+        timestamp: Date.now(),
+      });
+
+      setAmount("");
+    } catch (e: any) {
+      Alert.alert("Error", e.toString());
     }
-
-    const senderBal = senderSnap.data()?.balance || 0;
-    if (senderBal < amt) {
-      Alert.alert("Insufficient balance");
-      return;
-    }
-
-    await updateDoc(senderRef, { balance: senderBal - amt });
-    await updateDoc(receiverRef, {
-      balance: (receiverSnap.data()?.balance || 0) + amt,
-    });
-
-    await addDoc(collection(db, "chats", chatId, "messages"), {
-      sender: CURRENT_USER,
-      type: "money",
-      amount: amt,
-      timestamp: Date.now(),
-    });
-
-    setAmount("");
   };
 
   return (
@@ -218,7 +229,7 @@ function Chat({ chatId, goBack }: any) {
               <Text style={styles.msgText}>{item.text}</Text>
             ) : (
               <Text style={styles.money}>
-                💸 {item.sender === CURRENT_USER ? "Sent" : "Received"} Shs {item.amount}
+                💸 {item.sender === CURRENT_USER ? "Sent" : "Received"} UGX {item.amount}
               </Text>
             )}
           </View>
@@ -232,6 +243,7 @@ function Chat({ chatId, goBack }: any) {
         value={text}
         onChangeText={setText}
       />
+
       <TouchableOpacity style={styles.btn} onPress={sendText}>
         <Text style={styles.btnText}>Send</Text>
       </TouchableOpacity>
@@ -244,6 +256,7 @@ function Chat({ chatId, goBack }: any) {
         value={amount}
         onChangeText={setAmount}
       />
+
       <TouchableOpacity style={styles.btnAlt} onPress={sendMoney}>
         <Text style={styles.btnText}>Send Money</Text>
       </TouchableOpacity>
