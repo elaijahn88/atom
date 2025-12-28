@@ -26,7 +26,7 @@ import {
    CONFIG
 ===================== */
 const CURRENT_USER_KEY = "elijah"; // doc id in collection "acc"
-const CURRENT_USER_NAME = "Nabimanya Elijah";
+const CURRENT_USER_NAME = "Nabimanya elijah";
 
 /* =====================
    TYPES
