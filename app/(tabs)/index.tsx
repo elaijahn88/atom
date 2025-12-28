@@ -10,6 +10,7 @@ import {
   Image,
   ImageBackground,
   StatusBar,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ref, onValue, push, set } from "firebase/database";
@@ -24,11 +25,16 @@ const MY_KEY = MY_EMAIL.replace(/\./g, ",");
 /* =====================
    APP
 ===================== */
-export default function WhatsAppLikeApp() {
-  const [tab, setTab] = useState<"Chats" | "Status" | "Calls">("Chats");
+export default function GreenApp() {
+  const [tab, setTab] = useState<"Chats" | "Status" | "Calls" | "People">("Chats");
   const [screen, setScreen] = useState<"inbox" | "chat">("inbox");
   const [activeChat, setActiveChat] = useState<any>(null);
+
   const [inbox, setInbox] = useState<any[]>([]);
+  const [people, setPeople] = useState<any[]>([]);
+  const [statuses, setStatuses] = useState<any[]>([]);
+  const [calls, setCalls] = useState<any[]>([]);
+  const [myName, setMyName] = useState("Nabimanya elijah");
 
   /* Presence */
   useEffect(() => {
@@ -39,7 +45,8 @@ export default function WhatsAppLikeApp() {
 
   /* Register user */
   useEffect(() => {
-    set(ref(database, `users/${MY_KEY}`), { email: MY_EMAIL });
+    const userRef = ref(database, `users/${MY_KEY}`);
+    set(userRef, { email: MY_EMAIL, name: myName });
   }, []);
 
   /* Load inbox */
@@ -47,53 +54,108 @@ export default function WhatsAppLikeApp() {
     const chatsRef = ref(database, "chats");
     onValue(chatsRef, (snap) => {
       if (!snap.exists()) return;
-
       const rows: any[] = [];
-
       Object.entries(snap.val()).forEach(([cid, chat]: any) => {
         if (!cid.includes(MY_KEY)) return;
-
-        const other = cid.replace(`${MY_KEY}_`, "").replace(`_${MY_KEY}`, "");
+        const otherKey = cid.replace(`${MY_KEY}_`, "").replace(`_${MY_KEY}`, "");
         const msgs = chat.messages || {};
         const last = Object.values(msgs).pop() as any;
 
+        const otherUserRef = ref(database, `users/${otherKey}`);
+        let otherName = otherKey;
+        onValue(otherUserRef, (s) => {
+          if (s.exists()) otherName = s.val().name;
+        });
+
         rows.push({
           id: cid,
-          name: other,
+          name: otherName,
           lastText: last?.text || "",
           time: last?.timestamp || 0,
-          unread: Object.values(msgs).filter(
-            (m: any) => m.sender !== MY_KEY && !m.seen
-          ).length,
         });
       });
-
       rows.sort((a, b) => b.time - a.time);
       setInbox(rows);
     });
   }, []);
 
+  /* Load people */
+  useEffect(() => {
+    const usersRef = ref(database, "users");
+    onValue(usersRef, (snap) => {
+      if (!snap.exists()) return;
+      const list: any[] = [];
+      Object.entries(snap.val()).forEach(([key, val]: any) => {
+        if (key !== MY_KEY) list.push({ key, ...val });
+      });
+      setPeople(list);
+    });
+  }, []);
+
+  /* Load statuses */
+  useEffect(() => {
+    const statusRef = ref(database, "statuses");
+    onValue(statusRef, (snap) => {
+      if (!snap.exists()) return setStatuses([]);
+      const list = Object.entries(snap.val()).map(([k, v]: any) => ({
+        userKey: k,
+        ...v,
+      }));
+      setStatuses(list);
+    });
+  }, []);
+
+  /* Load calls */
+  useEffect(() => {
+    const callsRef = ref(database, `calls/${MY_KEY}`);
+    onValue(callsRef, (snap) => {
+      if (!snap.exists()) return setCalls([]);
+      const list = Object.entries(snap.val()).map(([k, v]: any) => ({
+        id: k,
+        ...v,
+      }));
+      list.sort((a, b) => b.timestamp - a.timestamp);
+      setCalls(list);
+    });
+  }, []);
+
+  /* Post Status */
+  const postStatus = () => {
+    const statusRef = ref(database, `statuses/${MY_KEY}`);
+    set(statusRef, {
+      name: myName,
+      image: `https://i.pravatar.cc/300?u=${MY_KEY}`,
+      timestamp: Date.now(),
+    });
+  };
+
+  /* Make Call */
+  const makeCall = (toKey: string, type: "audio" | "video") => {
+    const callData = { with: toKey, type, timestamp: Date.now() };
+    const myCallRef = ref(database, `calls/${MY_KEY}`);
+    const otherCallRef = ref(database, `calls/${toKey}`);
+    push(myCallRef, callData);
+    push(otherCallRef, callData);
+    Alert.alert("Call simulated", `You made a ${type} call`);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor="#075E54" barStyle="light-content" />
 
-      {/* HEADER */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>WhatsApp</Text>
+        <Text style={styles.headerTitle}>Green</Text>
       </View>
 
-      {/* TABS */}
       <View style={styles.tabs}>
-        {["Chats", "Status", "Calls"].map((t) => (
+        {["Chats", "People", "Status", "Calls"].map((t) => (
           <TouchableOpacity key={t} onPress={() => setTab(t as any)}>
-            <Text style={[styles.tab, tab === t && styles.activeTab]}>
-              {t}
-            </Text>
+            <Text style={[styles.tab, tab === t && styles.activeTab]}>{t}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* SCREENS */}
+      {/* CHATS */}
       {tab === "Chats" && screen === "inbox" && (
         <FlatList
           data={inbox}
@@ -112,24 +174,7 @@ export default function WhatsAppLikeApp() {
                 />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.chatName}>{item.name}</Text>
-                  <Text style={styles.lastMsg} numberOfLines={1}>
-                    {item.lastText}
-                  </Text>
-                </View>
-                <View style={{ alignItems: "flex-end" }}>
-                  <Text style={styles.time}>
-                    {item.time
-                      ? new Date(item.time).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : ""}
-                  </Text>
-                  {item.unread > 0 && (
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>{item.unread}</Text>
-                    </View>
-                  )}
+                  <Text style={styles.lastMsg}>{item.lastText}</Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -137,158 +182,103 @@ export default function WhatsAppLikeApp() {
         />
       )}
 
-      {tab === "Chats" && screen === "chat" && (
-        <ChatScreen chat={activeChat} onBack={() => setScreen("inbox")} />
+      {/* PEOPLE */}
+      {tab === "People" && (
+        <FlatList
+          data={people}
+          keyExtractor={(i) => i.key}
+          renderItem={({ item }) => (
+            <View style={styles.chatRow}>
+              <Image
+                source={{ uri: `https://i.pravatar.cc/150?u=${item.key}` }}
+                style={styles.avatar}
+              />
+              <Text style={styles.chatName}>{item.name}</Text>
+              <View style={{ flexDirection: "row", marginLeft: "auto" }}>
+                <TouchableOpacity
+                  style={{ marginRight: 8 }}
+                  onPress={() => {
+                    const chatId = [MY_KEY, item.key].sort().join("_");
+                    set(ref(database, `chats/${chatId}`), { messages: {} });
+                    setScreen("chat");
+                    setActiveChat({ id: chatId, name: item.name });
+                  }}
+                >
+                  <Ionicons name="chatbubble" size={24} color="#25D366" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => makeCall(item.key, "audio")}
+                >
+                  <Ionicons name="call" size={24} color="#128C7E" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        />
       )}
 
+      {/* STATUS */}
       {tab === "Status" && (
-        <View style={styles.center}>
-          <Text style={styles.placeholder}>☆☆☆☆☆</Text>
+        <View style={{ flex: 1 }}>
+          <TouchableOpacity
+            style={{
+              backgroundColor: "#25D366",
+              padding: 10,
+              borderRadius: 20,
+              alignSelf: "center",
+              margin: 8,
+            }}
+            onPress={postStatus}
+          >
+            <Text style={{ color: "#fff", fontWeight: "bold" }}>Post Status</Text>
+          </TouchableOpacity>
+
+          <FlatList
+            data={statuses}
+            keyExtractor={(i) => i.userKey}
+            renderItem={({ item }) => (
+              <View style={styles.statusRow}>
+                <Image
+                  source={{
+                    uri: item.image || `https://i.pravatar.cc/150?u=${item.userKey}`,
+                  }}
+                  style={styles.avatar}
+                />
+                <Text style={styles.chatName}>{item.name}</Text>
+              </View>
+            )}
+          />
         </View>
       )}
 
+      {/* CALLS */}
       {tab === "Calls" && (
-        <View style={styles.center}>
-          <Text style={styles.placeholder}>♡♡♡♡</Text>
-        </View>
+        <FlatList
+          data={calls}
+          keyExtractor={(i) => i.id}
+          renderItem={({ item }) => (
+            <View style={styles.callRow}>
+              <Image
+                source={{ uri: `https://i.pravatar.cc/150?u=${item.with}` }}
+                style={styles.avatar}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.chatName}>{item.withName || item.with}</Text>
+                <Text style={styles.lastMsg}>
+                  {item.type === "audio" ? "Audio Call" : "Video Call"}
+                </Text>
+              </View>
+              <Text style={styles.time}>
+                {new Date(item.timestamp).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </Text>
+            </View>
+          )}
+        />
       )}
     </SafeAreaView>
-  );
-}
-
-/* =====================
-   CHAT SCREEN
-===================== */
-function ChatScreen({ chat, onBack }: any) {
-  const PATH = `chats/${chat.id}/messages`;
-
-  const [messages, setMessages] = useState<any[]>([]);
-  const [text, setText] = useState("");
-  const [typing, setTyping] = useState(false);
-  const flat = useRef<FlatList>(null);
-
-  useEffect(() => {
-    onValue(ref(database, PATH), (snap) => {
-      if (!snap.exists()) return setMessages([]);
-      const list = Object.entries(snap.val()).map(([id, v]: any) => ({
-        id,
-        ...v,
-      }));
-      list.sort((a, b) => a.timestamp - b.timestamp);
-      setMessages(list);
-      setTimeout(() => flat.current?.scrollToEnd({ animated: true }), 50);
-    });
-  }, []);
-
-  /* Seen logic */
-  useEffect(() => {
-    messages.forEach((m) => {
-      if (m.sender !== MY_KEY && !m.seen) {
-        set(ref(database, `${PATH}/${m.id}/seen`), true);
-      }
-    });
-  }, [messages]);
-
-  /* Typing */
-  useEffect(() => {
-    const tRef = ref(database, `typing/${chat.id}`);
-    onValue(tRef, (snap) => {
-      if (!snap.exists()) return setTyping(false);
-      const data = snap.val();
-      setTyping(
-        Object.keys(data).some((k) => k !== MY_KEY && data[k])
-      );
-    });
-  }, []);
-
-  const send = () => {
-    if (!text.trim()) return;
-
-    push(ref(database, PATH), {
-      sender: MY_KEY,
-      text,
-      timestamp: Date.now(),
-      delivered: true,
-      seen: false,
-    });
-
-    set(ref(database, `typing/${chat.id}/${MY_KEY}`), false);
-    setText("");
-  };
-
-  return (
-    <View style={{ flex: 1 }}>
-      <View style={styles.chatHeader}>
-        <TouchableOpacity onPress={onBack}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.chatTitle}>{chat.name}</Text>
-      </View>
-
-      <ImageBackground
-        source={{
-          uri: "https://images.unsplash.com/photo-1503264116251-35a269479413",
-        }}
-        style={{ flex: 1 }}
-      >
-        <FlatList
-          ref={flat}
-          data={messages}
-          keyExtractor={(i) => i.id}
-          contentContainerStyle={{ padding: 10, paddingBottom: 80 }}
-          renderItem={({ item }) => {
-            const mine = item.sender === MY_KEY;
-            return (
-              <View
-                style={[
-                  styles.bubble,
-                  mine ? styles.mine : styles.theirs,
-                ]}
-              >
-                <Text style={styles.msg}>{item.text}</Text>
-                <View style={styles.msgMeta}>
-                  <Text style={styles.msgTime}>
-                    {new Date(item.timestamp).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </Text>
-                  {mine && (
-                    <Ionicons
-                      name={
-                        item.seen
-                          ? "checkmark-done"
-                          : "checkmark"
-                      }
-                      size={14}
-                      color={item.seen ? "#34B7F1" : "#ccc"}
-                    />
-                  )}
-                </View>
-              </View>
-            );
-          }}
-        />
-
-        {typing && <Text style={styles.typing}>typing…</Text>}
-
-        <View style={styles.inputBar}>
-          <TextInput
-            style={styles.input}
-            value={text}
-            onChangeText={(v) => {
-              setText(v);
-              set(ref(database, `typing/${chat.id}/${MY_KEY}`), v.length > 0);
-            }}
-            placeholder="Message"
-            placeholderTextColor="#aaa"
-          />
-          <TouchableOpacity onPress={send}>
-            <Ionicons name="send" size={26} color="#25D366" />
-          </TouchableOpacity>
-        </View>
-      </ImageBackground>
-    </View>
   );
 }
 
@@ -298,7 +288,7 @@ function ChatScreen({ chat, onBack }: any) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#121B22" },
   header: { backgroundColor: "#075E54", padding: 14 },
-  headerTitle: { color: "#fff", fontSize: 20, fontWeight: "bold" },
+  headerTitle: { color: "#25D366", fontSize: 20, fontWeight: "bold" },
 
   tabs: {
     flexDirection: "row",
@@ -306,11 +296,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#075E54",
   },
   tab: { color: "#cfd8dc", padding: 10 },
-  activeTab: {
-    color: "#fff",
-    borderBottomWidth: 2,
-    borderColor: "#25D366",
-  },
+  activeTab: { color: "#fff", borderBottomWidth: 2, borderColor: "#25D366" },
 
   chatRow: {
     flexDirection: "row",
@@ -324,66 +310,18 @@ const styles = StyleSheet.create({
   lastMsg: { color: "#bbb", fontSize: 13 },
   time: { color: "#bbb", fontSize: 11 },
 
-  badge: {
-    backgroundColor: "#25D366",
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 4,
-  },
-  badgeText: { color: "#fff", fontSize: 12 },
-
-  chatHeader: {
+  statusRow: {
     flexDirection: "row",
     alignItems: "center",
     padding: 12,
-    backgroundColor: "#075E54",
+    borderBottomWidth: 0.5,
+    borderColor: "#2A3942",
   },
-  chatTitle: { color: "#fff", fontSize: 16, marginLeft: 12 },
-
-  bubble: {
-    padding: 10,
-    marginVertical: 4,
-    borderRadius: 8,
-    maxWidth: "80%",
-  },
-  mine: { backgroundColor: "#056162", alignSelf: "flex-end" },
-  theirs: { backgroundColor: "#1E2C33", alignSelf: "flex-start" },
-  msg: { color: "#fff" },
-
-  msgMeta: {
+  callRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-end",
-    gap: 4,
+    padding: 12,
+    borderBottomWidth: 0.5,
+    borderColor: "#2A3942",
   },
-  msgTime: { fontSize: 10, color: "#ccc", marginRight: 4 },
-
-  typing: {
-    color: "#9fd3c7",
-    paddingLeft: 14,
-    paddingBottom: 6,
-  },
-
-  inputBar: {
-    flexDirection: "row",
-    padding: 8,
-    backgroundColor: "#1E2C33",
-    position: "absolute",
-    bottom: 0,
-    width: "100%",
-  },
-  input: {
-    flex: 1,
-    backgroundColor: "#2A3942",
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    color: "#fff",
-    marginRight: 8,
-  },
-
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  placeholder: { color: "#bbb" },
 });
