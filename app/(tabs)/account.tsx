@@ -25,7 +25,7 @@ import {
 /* =====================
    CONFIG
 ===================== */
-const CURRENT_USER_KEY = "elijah"; // doc id in collection "acc"
+const CURRENT_USER_KEY = "elijah";
 const CURRENT_USER_NAME = "Nabimanya elijah";
 
 /* =====================
@@ -52,121 +52,192 @@ export default function MoneyApp() {
   const [balance, setBalance] = useState(0);
   const [amount, setAmount] = useState("");
   const [receiver, setReceiver] = useState("");
+  const [phone, setPhone] = useState("");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [users, setUsers] = useState<User[]>([]);
 
-  /* Initialize account, transactions, and user list */
+  /* PIN */
+  const [pinModal, setPinModal] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [pendingAction, setPendingAction] = useState<null | (() => void)>(null);
+
+  /* =====================
+     INIT + FIX INFINITE LOADING
+  ===================== */
   useEffect(() => {
+    let unsubTx: any;
+    let unsubUsers: any;
+
     const init = async () => {
-      const ref = doc(db, "acc", CURRENT_USER_KEY);
-      const snap = await getDoc(ref);
-      if (!snap.exists()) {
-        await setDoc(ref, { name: CURRENT_USER_NAME, balance: 0 });
-        setBalance(0);
-      } else {
-        setBalance(snap.data()?.balance || 0);
-      }
+      try {
+        const ref = doc(db, "acc", CURRENT_USER_KEY);
+        const snap = await getDoc(ref);
 
-      // Listen for transactions
-      const txQuery = query(
-        collection(db, "transactions"),
-        orderBy("timestamp", "desc")
-      );
-      onSnapshot(txQuery, (snap) => {
-        const txs: Transaction[] = [];
-        snap.forEach((d) => {
-          const data = d.data() as Transaction;
-          if (data.sender === CURRENT_USER_NAME || data.receiver === CURRENT_USER_NAME) {
-            txs.push(data);
+        if (!snap.exists()) {
+          await setDoc(ref, {
+            name: CURRENT_USER_NAME,
+            balance: 0,
+            pin: "1234",
+          });
+          setBalance(0);
+        } else {
+          setBalance(snap.data()?.balance || 0);
+        }
+
+        unsubTx = onSnapshot(
+          query(collection(db, "transactions"), orderBy("timestamp", "desc")),
+          (snap) => {
+            const txs: Transaction[] = [];
+            snap.forEach((d) => {
+              const data = d.data() as Transaction;
+              if (
+                data.sender === CURRENT_USER_NAME ||
+                data.receiver === CURRENT_USER_NAME
+              ) {
+                txs.push(data);
+              }
+            });
+            setTransactions(txs);
           }
-        });
-        setTransactions(txs);
-      });
+        );
 
-      // Listen for all users
-      const usersRef = collection(db, "acc");
-      onSnapshot(usersRef, (snap) => {
-        const list: User[] = [];
-        snap.forEach((d) => {
-          const data = d.data() as any;
-          list.push({ ...data, id: d.id });
+        unsubUsers = onSnapshot(collection(db, "acc"), (snap) => {
+          const list: User[] = [];
+          snap.forEach((d) =>
+            list.push({ ...(d.data() as any), id: d.id })
+          );
+          setUsers(list);
         });
-        setUsers(list);
-      });
 
-      setReady(true);
+        setReady(true);
+      } catch {
+        Alert.alert("Error", "Failed to load account");
+        setReady(true);
+      }
     };
+
     init();
+    return () => {
+      unsubTx && unsubTx();
+      unsubUsers && unsubUsers();
+    };
   }, []);
 
-  /* Send money (auto-create receiver if needed) */
-  const sendMoney = async (toUser?: string) => {
-    const receiverName = toUser || receiver;
-    const amt = Number(amount);
-    if (!amt || amt <= 0) return Alert.alert("Enter a valid amount");
-    if (!receiverName) return Alert.alert("Enter receiver name");
-    if (amt > balance) return Alert.alert("Insufficient balance");
+  /* =====================
+     HELPERS
+  ===================== */
+  const detectNetwork = (phone: string) => {
+    if (
+      phone.startsWith("077") ||
+      phone.startsWith("078") ||
+      phone.startsWith("076")
+    )
+      return "MTN Mobile Money";
 
-    try {
-      const senderRef = doc(db, "acc", CURRENT_USER_KEY);
-      const senderSnap = await getDoc(senderRef);
-      const senderBal = senderSnap.data()?.balance || 0;
+    if (
+      phone.startsWith("070") ||
+      phone.startsWith("075") ||
+      phone.startsWith("074")
+    )
+      return "Airtel Money";
 
-      const receiverKey = receiverName.toLowerCase();
-      const receiverRef = doc(db, "acc", receiverKey);
-      let receiverSnap = await getDoc(receiverRef);
-
-      // Auto-create receiver if they don't exist
-      if (!receiverSnap.exists()) {
-        await setDoc(receiverRef, { name: receiverName, balance: 0 });
-        receiverSnap = await getDoc(receiverRef);
-      }
-      const receiverBal = receiverSnap.data()?.balance || 0;
-
-      // Update balances
-      await updateDoc(senderRef, { balance: senderBal - amt });
-      await updateDoc(receiverRef, { balance: receiverBal + amt });
-
-      // Record transaction
-      await addDoc(collection(db, "transactions"), {
-        sender: CURRENT_USER_NAME,
-        receiver: receiverName,
-        amount: amt,
-        timestamp: Date.now(),
-      });
-
-      setAmount("");
-      setReceiver("");
-      Alert.alert("Success", `Sent ${amt.toLocaleString()} UGX to ${receiverName}`);
-    } catch (err) {
-      Alert.alert("Error", "Transaction failed");
-    }
+    return null;
   };
 
-  /* Top-up / Deposit money */
+  const confirmPin = async () => {
+    const snap = await getDoc(doc(db, "acc", CURRENT_USER_KEY));
+    const savedPin = snap.data()?.pin;
+
+    if (pinInput !== savedPin) {
+      Alert.alert("Wrong PIN");
+      return;
+    }
+
+    setPinModal(false);
+    setPinInput("");
+    pendingAction && pendingAction();
+  };
+
+  /* =====================
+     ACTIONS
+  ===================== */
   const topUp = async () => {
     const amt = Number(amount);
-    if (!amt || amt <= 0) return Alert.alert("Enter a valid amount");
+    if (!amt || amt <= 0) return Alert.alert("Enter valid amount");
 
-    try {
-      const userRef = doc(db, "acc", CURRENT_USER_KEY);
-      const snap = await getDoc(userRef);
-      const oldBalance = snap.data()?.balance || 0;
+    const ref = doc(db, "acc", CURRENT_USER_KEY);
+    const snap = await getDoc(ref);
+    const oldBalance = snap.data()?.balance || 0;
 
-      await updateDoc(userRef, { balance: oldBalance + amt });
+    await updateDoc(ref, { balance: oldBalance + amt });
 
-      await addDoc(collection(db, "transactions"), {
-        sender: "Top-up",
-        receiver: CURRENT_USER_NAME,
-        amount: amt,
-        timestamp: Date.now(),
-      });
+    await addDoc(collection(db, "transactions"), {
+      sender: "Top-up",
+      receiver: CURRENT_USER_NAME,
+      amount: amt,
+      timestamp: Date.now(),
+    });
 
-      setAmount("");
-      Alert.alert("Success", `Added ${amt.toLocaleString()} UGX to your account`);
-    } catch (err) {
-      Alert.alert("Error", "Top-up failed");
+    setAmount("");
+  };
+
+  const sendMoney = async (toUser: string) => {
+    const amt = Number(amount);
+    if (!amt || amt <= 0) return Alert.alert("Invalid amount");
+    if (amt > balance) return Alert.alert("Insufficient balance");
+
+    const senderRef = doc(db, "acc", CURRENT_USER_KEY);
+    const senderSnap = await getDoc(senderRef);
+    const senderBal = senderSnap.data()?.balance || 0;
+
+    const receiverKey = toUser.toLowerCase();
+    const receiverRef = doc(db, "acc", receiverKey);
+    let receiverSnap = await getDoc(receiverRef);
+
+    if (!receiverSnap.exists()) {
+      await setDoc(receiverRef, { name: toUser, balance: 0 });
+      receiverSnap = await getDoc(receiverRef);
     }
+
+    const receiverBal = receiverSnap.data()?.balance || 0;
+
+    await updateDoc(senderRef, { balance: senderBal - amt });
+    await updateDoc(receiverRef, { balance: receiverBal + amt });
+
+    await addDoc(collection(db, "transactions"), {
+      sender: CURRENT_USER_NAME,
+      receiver: toUser,
+      amount: amt,
+      timestamp: Date.now(),
+    });
+
+    setAmount("");
+  };
+
+  const sendToMobileMoney = async () => {
+    const amt = Number(amount);
+    if (!amt || amt <= 0) return Alert.alert("Invalid amount");
+    if (amt > balance) return Alert.alert("Insufficient balance");
+    if (phone.length < 10) return Alert.alert("Invalid phone");
+
+    const network = detectNetwork(phone);
+    if (!network) return Alert.alert("Unsupported network");
+
+    const ref = doc(db, "acc", CURRENT_USER_KEY);
+    const snap = await getDoc(ref);
+    const oldBalance = snap.data()?.balance || 0;
+
+    await updateDoc(ref, { balance: oldBalance - amt });
+
+    await addDoc(collection(db, "transactions"), {
+      sender: CURRENT_USER_NAME,
+      receiver: `${network} (${phone})`,
+      amount: amt,
+      timestamp: Date.now(),
+    });
+
+    setAmount("");
+    setPhone("");
   };
 
   if (!ready)
@@ -178,37 +249,61 @@ export default function MoneyApp() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.header}>Balance: {balance.toLocaleString()} UGX</Text>
+      <Text style={styles.header}>
+        Balance: {balance.toLocaleString()} UGX
+      </Text>
 
+      {/* MOBILE MONEY */}
+      <Text style={styles.subHeader}>Mobile Money</Text>
       <TextInput
+        style={styles.input}
+        placeholder="Phone number"
+        placeholderTextColor="#aaa"
+        keyboardType="phone-pad"
+        value={phone}
+        onChangeText={setPhone}
+      />
+      <TextInput
+        style={styles.input}
         placeholder="Amount"
         placeholderTextColor="#aaa"
-        style={styles.input}
         keyboardType="numeric"
         value={amount}
         onChangeText={setAmount}
       />
-
-      <TouchableOpacity style={styles.btn} onPress={topUp}>
-        <Text style={styles.btnText}>Top-up / Deposit</Text>
+      <TouchableOpacity
+        style={styles.btn}
+        onPress={() => {
+          setPendingAction(() => sendToMobileMoney);
+          setPinModal(true);
+        }}
+      >
+        <Text style={styles.btnText}>Send to Mobile Money</Text>
       </TouchableOpacity>
 
-      <Text style={styles.subHeader}>Send Money to Users:</Text>
+      {/* USERS */}
+      <Text style={styles.subHeader}>Send to Users</Text>
       <FlatList
         data={users.filter((u) => u.id !== CURRENT_USER_KEY)}
         keyExtractor={(i) => i.id}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.userRow}
-            onPress={() => sendMoney(item.name)}
+            onPress={() => {
+              setPendingAction(() => () => sendMoney(item.name));
+              setPinModal(true);
+            }}
           >
             <Text style={styles.userName}>{item.name}</Text>
-            <Text style={styles.userBalance}>{item.balance.toLocaleString()} UGX</Text>
+            <Text style={styles.userBalance}>
+              {item.balance.toLocaleString()} UGX
+            </Text>
           </TouchableOpacity>
         )}
       />
 
-      <Text style={styles.txHeader}>Transactions</Text>
+      {/* TRANSACTIONS */}
+      <Text style={styles.subHeader}>Transactions</Text>
       <FlatList
         data={transactions}
         keyExtractor={(_, i) => i.toString()}
@@ -218,7 +313,7 @@ export default function MoneyApp() {
               {item.sender === CURRENT_USER_NAME
                 ? `Sent ${item.amount.toLocaleString()} UGX to ${item.receiver}`
                 : item.sender === "Top-up"
-                ? `Top-up: ${item.amount.toLocaleString()} UGX`
+                ? `Top-up ${item.amount.toLocaleString()} UGX`
                 : `Received ${item.amount.toLocaleString()} UGX from ${item.sender}`}
             </Text>
             <Text style={styles.txTime}>
@@ -227,6 +322,29 @@ export default function MoneyApp() {
           </View>
         )}
       />
+
+      {/* PIN MODAL */}
+      {pinModal && (
+        <View style={styles.pinOverlay}>
+          <View style={styles.pinBox}>
+            <Text style={styles.pinTitle}>Enter PIN</Text>
+            <TextInput
+              style={styles.pinInput}
+              secureTextEntry
+              keyboardType="numeric"
+              maxLength={4}
+              value={pinInput}
+              onChangeText={setPinInput}
+            />
+            <TouchableOpacity style={styles.btn} onPress={confirmPin}>
+              <Text style={styles.btnText}>Confirm</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setPinModal(false)}>
+              <Text style={{ color: "#f55", marginTop: 8 }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -237,7 +355,7 @@ export default function MoneyApp() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#121B22", padding: 12 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: { color: "#25D366", fontSize: 22, fontWeight: "bold", marginBottom: 12 },
+  header: { color: "#25D366", fontSize: 22, fontWeight: "bold" },
   subHeader: { color: "#fff", fontSize: 18, marginVertical: 8 },
   input: {
     backgroundColor: "#1E2C33",
@@ -251,25 +369,49 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 20,
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  btnText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  btnText: { color: "#fff", fontWeight: "bold" },
   userRow: {
+    backgroundColor: "#1E2C33",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 4,
     flexDirection: "row",
     justifyContent: "space-between",
-    padding: 12,
-    backgroundColor: "#1E2C33",
-    marginBottom: 4,
-    borderRadius: 8,
   },
-  userName: { color: "#fff", fontSize: 16 },
+  userName: { color: "#fff" },
   userBalance: { color: "#25D366", fontWeight: "bold" },
-  txHeader: { color: "#fff", fontSize: 18, marginVertical: 8 },
-  txRow: {
-    padding: 10,
-    borderBottomWidth: 0.5,
-    borderColor: "#2A3942",
-  },
+  txRow: { borderBottomWidth: 0.5, borderColor: "#2A3942", padding: 8 },
   txText: { color: "#fff" },
-  txTime: { color: "#bbb", fontSize: 11, marginTop: 2 },
+  txTime: { color: "#aaa", fontSize: 11 },
+
+  pinOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  pinBox: {
+    backgroundColor: "#1E2C33",
+    width: "80%",
+    padding: 20,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  pinTitle: { color: "#fff", fontSize: 18, marginBottom: 10 },
+  pinInput: {
+    backgroundColor: "#121B22",
+    color: "#fff",
+    width: "100%",
+    padding: 12,
+    borderRadius: 10,
+    textAlign: "center",
+    fontSize: 20,
+    marginBottom: 12,
+  },
 });
