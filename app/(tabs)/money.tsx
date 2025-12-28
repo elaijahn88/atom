@@ -10,7 +10,6 @@ import {
   Alert,
   ActivityIndicator,
   StyleSheet,
-  KeyboardAvoidingView,
 } from "react-native";
 import { db } from "../../firebase";
 import { doc, getDoc, updateDoc, collection, getDocs } from "firebase/firestore";
@@ -25,7 +24,7 @@ const userDocRef = doc(db, "acc", USER_DOC_ID);
 // MAIN APP
 // ================================================================
 export default function App() {
-  const [screen, setScreen] = useState("credits"); // Start directly at credits screen
+  const [screen, setScreen] = useState("credits"); // Start at credits screen
 
   return (
     <View style={{ flex: 1 }}>
@@ -42,9 +41,8 @@ export default function App() {
 // CREDIT & SAVINGS SERVICES
 // ================================================================
 function CreditSavingsServices({ USER_DOC_ID, onSwitchScreen }) {
-  const [profile, setProfile] = useState(null);
-  const [services, setServices] = useState([]);
-  const [transactions, setTransactions] = useState([]);
+  const [profile, setProfile] = useState<any>(null);
+  const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -58,10 +56,9 @@ function CreditSavingsServices({ USER_DOC_ID, onSwitchScreen }) {
         if (!mounted) return;
 
         setProfile(data);
-        setTransactions(data.transactions || []);
 
         const serviceSnap = await getDocs(collection(db, "services"));
-        setServices(serviceSnap.docs.map((d) => ({ id: d.id, ...(d.data()) })));
+        setServices(serviceSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
       } catch (err) {
         console.error(err);
       } finally {
@@ -72,17 +69,29 @@ function CreditSavingsServices({ USER_DOC_ID, onSwitchScreen }) {
     return () => (mounted = false);
   }, []);
 
+  const payService = async (serviceId: string) => {
+    if (!profile) return;
+    const service = services.find((s) => s.id === serviceId);
+    if (!service) return;
+    const balance = profile.net || 0;
+    if (balance < service.balance) {
+      Alert.alert("Insufficient Funds", "Cannot pay for this service");
+      return;
+    }
+    await updateDoc(userDocRef, { net: balance - service.balance });
+    Alert.alert("Paid", `UGX ${service.balance} paid for ${service.name}`);
+    setProfile({ ...profile, net: balance - service.balance });
+  };
+
   if (loading)
-    return (
-      <ActivityIndicator style={{ flex: 1, backgroundColor: "#1B2430" }} size="large" color="#00BFFF" />
-    );
+    return <ActivityIndicator style={{ flex: 1, backgroundColor: "#1B2430" }} size="large" color="#00BFFF" />;
 
   return (
-    <View style={[styles.container, { paddingTop: 36, backgroundColor: "#1B2430" }]}>
+    <View style={[styles.container, { backgroundColor: "#1B2430", paddingTop: 36 }]}>
       <Text style={[styles.header, { color: "#fff" }]}>Welcome {profile?.Name}</Text>
-      <Text style={{ color: "#fff", textAlign: "center" }}>Balance: {profile?.net}</Text>
+      <Text style={{ color: "#fff", textAlign: "center", marginBottom: 16 }}>Balance: UGX {profile?.net?.toLocaleString()}</Text>
 
-      <View style={{ flexDirection: "row", justifyContent: "space-around", marginVertical: 12 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-around", marginBottom: 16 }}>
         <TouchableOpacity style={styles.navBtn} onPress={() => Alert.alert("New Service")}>
           <Text style={styles.navBtnText}>New Service</Text>
         </TouchableOpacity>
@@ -103,9 +112,9 @@ function CreditSavingsServices({ USER_DOC_ID, onSwitchScreen }) {
           <View style={[styles.serviceCard, { backgroundColor: "#2C3E50" }]}>
             <Text style={{ color: "#fff", fontWeight: "700" }}>{item.name}</Text>
             <Text style={{ color: "#fff" }}>{item.description}</Text>
-            <Text style={{ color: "#fff" }}>Balance: {item.balance}</Text>
-            <TouchableOpacity style={styles.payBtn} onPress={() => Alert.alert("Pay Service")}>
-              <Text style={{ color: "#fff" }}>Pay</Text>
+            <Text style={{ color: "#fff" }}>Cost: UGX {item.balance}</Text>
+            <TouchableOpacity style={styles.payBtn} onPress={() => payService(item.id)}>
+              <Text style={{ color: "#fff", fontWeight: "700" }}>Pay</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -118,8 +127,8 @@ function CreditSavingsServices({ USER_DOC_ID, onSwitchScreen }) {
 // SMS MESSAGING MODULE
 // ================================================================
 function SMSMessaging({ USER_DOC_ID, onSwitchScreen }) {
-  const [inbox, setInbox] = useState([]);
-  const [outbox, setOutbox] = useState([]);
+  const [inbox, setInbox] = useState<any[]>([]);
+  const [outbox, setOutbox] = useState<any[]>([]);
   const [smsInput, setSmsInput] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -159,12 +168,10 @@ function SMSMessaging({ USER_DOC_ID, onSwitchScreen }) {
   };
 
   if (loading)
-    return (
-      <ActivityIndicator style={{ flex: 1, backgroundColor: "#1B2430" }} size="large" color="#00BFFF" />
-    );
+    return <ActivityIndicator style={{ flex: 1, backgroundColor: "#1B2430" }} size="large" color="#00BFFF" />;
 
   return (
-    <View style={[styles.container, { paddingTop: 36, backgroundColor: "#1B2430" }]}>
+    <View style={[styles.container, { backgroundColor: "#1B2430", paddingTop: 36 }]}>
       <Text style={[styles.header, { color: "#fff" }]}>SMS Messaging</Text>
       <View style={{ flexDirection: "row", marginVertical: 12 }}>
         <TextInput
@@ -205,8 +212,8 @@ function SMSMessaging({ USER_DOC_ID, onSwitchScreen }) {
 // LOAN SCREEN
 // ================================================================
 function LoanScreen({ USER_DOC_ID, onSwitchScreen }) {
-  const [profile, setProfile] = useState(null);
-  const [loans, setLoans] = useState([]);
+  const [profile, setProfile] = useState<any>(null);
+  const [loans, setLoans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loanAmount, setLoanAmount] = useState("");
   const [loanPurpose, setLoanPurpose] = useState("");
@@ -241,12 +248,10 @@ function LoanScreen({ USER_DOC_ID, onSwitchScreen }) {
   };
 
   if (loading)
-    return (
-      <ActivityIndicator style={{ flex: 1, backgroundColor: "#1B2430" }} size="large" color="#00BFFF" />
-    );
+    return <ActivityIndicator style={{ flex: 1, backgroundColor: "#1B2430" }} size="large" color="#00BFFF" />;
 
   return (
-    <View style={[styles.container, { paddingTop: 36, backgroundColor: "#1B2430" }]}>
+    <View style={[styles.container, { backgroundColor: "#1B2430", paddingTop: 36 }]}>
       <Text style={[styles.header, { color: "#fff" }]}>Loan Applications</Text>
 
       <TouchableOpacity style={styles.navBtn} onPress={() => setModalVisible(true)}>
@@ -291,8 +296,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 16 },
   header: { fontSize: 24, fontWeight: "800", marginBottom: 12, textAlign: "center" },
   input: { borderWidth: 1, borderColor: "#555", borderRadius: 12, padding: 12, marginBottom: 12, color: "#fff", backgroundColor: "#2C3E50" },
-  btn: { backgroundColor: "#25D366", padding: 14, borderRadius: 12, alignItems: "center", marginTop: 12 },
-  btnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   navBtn: { backgroundColor: "#007AFF", padding: 10, borderRadius: 12, alignItems: "center", marginVertical: 4 },
   navBtnText: { color: "#fff", fontWeight: "700" },
   serviceCard: { padding: 12, borderRadius: 12, marginBottom: 8 },
