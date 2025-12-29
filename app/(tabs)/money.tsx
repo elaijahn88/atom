@@ -26,7 +26,7 @@ const USER_ID = "elijah";
 const userRef = doc(db, "acc", USER_ID);
 
 /* =====================================================
-   INITIAL DATA (AUTO-CREATE)
+   DEFAULT DATA
 ===================================================== */
 const DEFAULT_USER = {
   Name: "Elijah",
@@ -48,7 +48,8 @@ const DEFAULT_SERVICES = [
    MAIN APP
 ===================================================== */
 export default function DigitalBankingApp() {
-  const [screen, setScreen] = useState<"home" | "loans" | "admin">("home");
+  const [screen, setScreen] =
+    useState<"home" | "loans" | "admin">("home");
 
   return (
     <View style={{ flex: 1 }}>
@@ -72,33 +73,34 @@ function Home({ setScreen }: any) {
 
     const init = async () => {
       try {
-        /* -------- USER DOC -------- */
         const snap = await getDoc(userRef);
+
         if (!snap.exists()) {
           await setDoc(userRef, DEFAULT_USER);
-          if (mounted) setUser(DEFAULT_USER);
+          mounted && setUser(DEFAULT_USER);
         } else {
-          if (mounted) setUser(snap.data());
+          mounted && setUser(snap.data());
         }
 
-        /* -------- SERVICES -------- */
-        const sRef = collection(db, "services");
-        const sSnap = await getDocs(sRef);
+        const sSnap = await getDocs(collection(db, "services"));
 
         if (sSnap.empty) {
-          for (const s of DEFAULT_SERVICES) {
-            await setDoc(doc(db, "services", s.id), s);
-          }
-          if (mounted) setServices(DEFAULT_SERVICES);
+          await Promise.all(
+            DEFAULT_SERVICES.map(s =>
+              setDoc(doc(db, "services", s.id), s)
+            )
+          );
+          mounted && setServices(DEFAULT_SERVICES);
         } else {
-          if (mounted)
-            setServices(sSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+          mounted &&
+            setServices(
+              sSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+            );
         }
       } catch (e) {
-        console.error(e);
         Alert.alert("Initialization failed");
       } finally {
-        if (mounted) setLoading(false);
+        mounted && setLoading(false);
       }
     };
 
@@ -115,21 +117,21 @@ function Home({ setScreen }: any) {
       </View>
     );
 
+  if (!user) return null;
+
   const useCredit = async () => {
     const amount = 50000;
+
     if (user.activeLoan + amount > user.loanLimit) {
       Alert.alert("Credit limit reached");
       return;
     }
 
-    const updated = {
-      ...user,
-      net: user.net + amount,
-      activeLoan: user.activeLoan + amount,
-    };
+    const net = user.net + amount;
+    const activeLoan = user.activeLoan + amount;
 
-    await updateDoc(userRef, updated);
-    setUser(updated);
+    await updateDoc(userRef, { net, activeLoan });
+    setUser({ ...user, net, activeLoan });
   };
 
   const payService = async (s: any) => {
@@ -138,8 +140,9 @@ function Home({ setScreen }: any) {
       return;
     }
 
-    await updateDoc(userRef, { net: user.net - s.balance });
-    setUser({ ...user, net: user.net - s.balance });
+    const net = user.net - s.balance;
+    await updateDoc(userRef, { net });
+    setUser({ ...user, net });
   };
 
   return (
@@ -181,23 +184,30 @@ function Loans({ setScreen }: any) {
   const [amount, setAmount] = useState("");
 
   useEffect(() => {
-    getDoc(userRef).then(s => setLoans(s.data()?.loans || []));
+    getDoc(userRef).then(s =>
+      setLoans(s.data()?.loans || [])
+    );
   }, []);
 
   const applyLoan = async () => {
     const amt = Number(amount);
-    if (!amt) return;
+
+    if (isNaN(amt) || amt <= 0) {
+      Alert.alert("Invalid amount");
+      return;
+    }
 
     const loan = {
-      id: "loan_" + Date.now(),
+      id: `loan_${Date.now()}`,
       amount: amt,
-      balance: amt * 1.2,
+      balance: Math.round(amt * 1.2),
       status: "Pending",
     };
 
     const updated = [loan, ...loans];
     setLoans(updated);
     await updateDoc(userRef, { loans: updated });
+    setAmount("");
   };
 
   return (
@@ -218,8 +228,8 @@ function Loans({ setScreen }: any) {
 
       {loans.map(l => (
         <View key={l.id} style={styles.card}>
-          <Text>UGX {l.balance}</Text>
-          <Text>Status: {l.status}</Text>
+          <Text style={styles.cardText}>UGX {l.balance}</Text>
+          <Text style={styles.cardText}>Status: {l.status}</Text>
         </View>
       ))}
 
@@ -235,15 +245,18 @@ function AdminPanel({ setScreen }: any) {
   const [loans, setLoans] = useState<any[]>([]);
 
   useEffect(() => {
-    getDoc(userRef).then(s => setLoans(s.data()?.loans || []));
+    getDoc(userRef).then(s =>
+      setLoans(s.data()?.loans || [])
+    );
   }, []);
 
   const approve = async (loan: any) => {
-    loan.status = "Approved";
-    await updateDoc(userRef, {
-      loans: loans.map(l => (l.id === loan.id ? loan : l)),
-    });
-    setLoans([...loans]);
+    const updatedLoans = loans.map(l =>
+      l.id === loan.id ? { ...l, status: "Approved" } : l
+    );
+
+    await updateDoc(userRef, { loans: updatedLoans });
+    setLoans(updatedLoans);
   };
 
   return (
@@ -258,7 +271,9 @@ function AdminPanel({ setScreen }: any) {
             style={styles.greenBtn}
             onPress={() => approve(l)}
           >
-            <Text style={styles.btnText}>Approve {l.amount}</Text>
+            <Text style={styles.btnText}>
+              Approve UGX {l.amount}
+            </Text>
           </TouchableOpacity>
         ))}
 
@@ -273,15 +288,17 @@ function AdminPanel({ setScreen }: any) {
 function Nav({ setScreen }: any) {
   return (
     <View style={{ marginTop: 20 }}>
-      <TouchableOpacity style={styles.navBtn} onPress={() => setScreen("home")}>
-        <Text style={styles.btnText}>Home</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.navBtn} onPress={() => setScreen("loans")}>
-        <Text style={styles.btnText}>Loans</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.navBtn} onPress={() => setScreen("admin")}>
-        <Text style={styles.btnText}>Admin</Text>
-      </TouchableOpacity>
+      {["home", "loans", "admin"].map(s => (
+        <TouchableOpacity
+          key={s}
+          style={styles.navBtn}
+          onPress={() => setScreen(s)}
+        >
+          <Text style={styles.btnText}>
+            {s.toUpperCase()}
+          </Text>
+        </TouchableOpacity>
+      ))}
     </View>
   );
 }
@@ -291,13 +308,13 @@ function Nav({ setScreen }: any) {
 ===================================================== */
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: "#1B2430" },
-  center: { flex: 1, justifyContent: "center" },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: { color: "#fff", fontSize: 22, fontWeight: "800", marginBottom: 10 },
   info: { color: "#ccc", marginBottom: 6 },
   card: { backgroundColor: "#2C3E50", padding: 12, borderRadius: 12, marginBottom: 8 },
   cardTitle: { color: "#fff", fontWeight: "700" },
   cardText: { color: "#ccc" },
-  input: { backgroundColor: "#2C3E50", color: "#fff", padding: 12, borderRadius: 10 },
+  input: { backgroundColor: "#2C3E50", color: "#fff", padding: 12, borderRadius: 10, marginBottom: 10 },
   greenBtn: { backgroundColor: "#25D366", padding: 12, borderRadius: 10, marginTop: 6 },
   purpleBtn: { backgroundColor: "#9B59B6", padding: 12, borderRadius: 10, marginBottom: 10 },
   navBtn: { backgroundColor: "#007AFF", padding: 12, borderRadius: 10, marginVertical: 4 },
