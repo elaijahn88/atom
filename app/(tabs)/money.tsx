@@ -5,324 +5,294 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Alert,
   StyleSheet,
+  Alert,
   ActivityIndicator,
-  SafeAreaView,
-  StatusBar,
 } from "react-native";
-import {
-  doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-  collection,
-  getDocs,
-} from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 
-/* =====================================================
-   CONSTANTS
-===================================================== */
-const USER_ID = "elijah";
-const userRef = doc(db, "acc", USER_ID);
+const CreditLoanScreen: React.FC = () => {
+  const [loanAmount, setLoanAmount] = useState("");
+  const [duration, setDuration] = useState("");
+  const [interest] = useState(10);
 
-/* =====================================================
-   DEFAULT DATA
-===================================================== */
-const DEFAULT_USER = {
-  Name: "Elijah",
-  net: 100000,
-  activeLoan: 0,
-  loanLimit: 300000,
-  creditScore: 600,
-  loans: [],
-  createdAt: Date.now(),
-};
+  const [balance, setBalance] = useState(0);
+  const [loanBalance, setLoanBalance] = useState(0);
+  const [monthlyPay, setMonthlyPay] = useState(0);
+  const [loanStatus, setLoanStatus] = useState("");
 
-const DEFAULT_SERVICES = [
-  { id: "airtime", name: "Airtime", balance: 5000 },
-  { id: "power", name: "Power Bill", balance: 20000 },
-  { id: "water", name: "Water Bill", balance: 15000 },
-];
-
-/* =====================================================
-   MAIN APP
-===================================================== */
-export default function DigitalBankingApp() {
-  const [screen, setScreen] =
-    useState<"home" | "loans" | "admin">("home");
-
-  return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#1B2430" }}>
-      <StatusBar barStyle="light-content" backgroundColor="#1B2430" />
-
-      {screen === "home" && <Home setScreen={setScreen} />}
-      {screen === "loans" && <Loans setScreen={setScreen} />}
-      {screen === "admin" && <AdminPanel setScreen={setScreen} />}
-    </SafeAreaView>
-  );
-}
-
-/* =====================================================
-   HOME
-===================================================== */
-function Home({ setScreen }: any) {
-  const [user, setUser] = useState<any>(null);
-  const [services, setServices] = useState<any[]>([]);
+  const [pin, setPin] = useState("");
+  const [showPin, setShowPin] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const accRef = doc(db, "acc", "elijah");
+
   useEffect(() => {
-    let mounted = true;
-
-    const init = async () => {
+    const loadAccount = async () => {
       try {
-        const snap = await getDoc(userRef);
+        const snap = await getDoc(accRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          setBalance(data.balance || 0);
+          setLoanBalance(data.loan || 0);
+          setLoanStatus(data.loanStatus || "");
 
-        if (!snap.exists()) {
-          await setDoc(userRef, DEFAULT_USER);
-          mounted && setUser(DEFAULT_USER);
+          if (data.loan && data.loanDuration) {
+            setMonthlyPay(data.loan / data.loanDuration);
+          }
         } else {
-          mounted && setUser(snap.data());
+          await setDoc(accRef, {
+            balance: 0,
+            loan: 0,
+            loanStatus: "cleared",
+          });
         }
-
-        const sSnap = await getDocs(collection(db, "services"));
-
-        if (sSnap.empty) {
-          await Promise.all(
-            DEFAULT_SERVICES.map(s =>
-              setDoc(doc(db, "services", s.id), s)
-            )
-          );
-          mounted && setServices(DEFAULT_SERVICES);
-        } else {
-          mounted &&
-            setServices(
-              sSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-            );
-        }
-      } catch (e) {
-        Alert.alert("Initialization failed");
+      } catch {
+        Alert.alert("Error", "Failed to load account");
       } finally {
-        mounted && setLoading(false);
+        setLoading(false);
       }
     };
 
-    init();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  if (loading)
-    return (
-      <View style={[styles.center, { backgroundColor: "#1B2430" }]}>
-        <ActivityIndicator size="large" color="#9B59B6" />
-      </View>
-    );
-
-  const useCredit = async () => {
-    const amount = 50000;
-
-    if (user.activeLoan + amount > user.loanLimit) {
-      Alert.alert("Credit limit reached");
-      return;
-    }
-
-    const net = user.net + amount;
-    const activeLoan = user.activeLoan + amount;
-
-    await updateDoc(userRef, { net, activeLoan });
-    setUser({ ...user, net, activeLoan });
-  };
-
-  const payService = async (s: any) => {
-    if (user.net < s.balance) {
-      Alert.alert("Insufficient balance");
-      return;
-    }
-
-    const net = user.net - s.balance;
-    await updateDoc(userRef, { net });
-    setUser({ ...user, net });
-  };
-
-  return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={{ paddingBottom: 40 }}
-      showsVerticalScrollIndicator={false}
-    >
-      <Text style={styles.header}>Welcome {user.Name}</Text>
-      <Text style={styles.sub}>Digital Wallet</Text>
-
-      <View style={styles.card}>
-        <Text style={styles.cardText}>Balance</Text>
-        <Text style={styles.big}>UGX {user.net}</Text>
-        <Text style={styles.cardText}>
-          Credit Used: {user.activeLoan}/{user.loanLimit}
-        </Text>
-        <Text style={styles.cardText}>
-          Credit Score: {user.creditScore}
-        </Text>
-      </View>
-
-      <TouchableOpacity style={styles.purpleBtn} onPress={useCredit}>
-        <Text style={styles.btnText}>Use Credit (50,000)</Text>
-      </TouchableOpacity>
-
-      {services.map(s => (
-        <View key={s.id} style={styles.card}>
-          <Text style={styles.cardTitle}>{s.name}</Text>
-          <Text style={styles.cardText}>UGX {s.balance}</Text>
-          <TouchableOpacity
-            style={styles.greenBtn}
-            onPress={() => payService(s)}
-          >
-            <Text style={styles.btnText}>Pay</Text>
-          </TouchableOpacity>
-        </View>
-      ))}
-
-      <Nav setScreen={setScreen} />
-    </ScrollView>
-  );
-}
-
-/* =====================================================
-   LOANS
-===================================================== */
-function Loans({ setScreen }: any) {
-  const [loans, setLoans] = useState<any[]>([]);
-  const [amount, setAmount] = useState("");
-
-  useEffect(() => {
-    getDoc(userRef).then(s =>
-      setLoans(s.data()?.loans || [])
-    );
+    loadAccount();
   }, []);
 
   const applyLoan = async () => {
-    const amt = Number(amount);
-    if (!amt || amt <= 0) return Alert.alert("Invalid amount");
+    if (loanStatus === "active") {
+      Alert.alert("Loan Active", "You already have an active loan");
+      return;
+    }
 
-    const loan = {
-      id: `loan_${Date.now()}`,
-      amount: amt,
-      balance: Math.round(amt * 1.2),
-      status: "Pending",
-    };
+    if (pin.length !== 4) {
+      Alert.alert("PIN Required", "Enter your 4-digit PIN");
+      return;
+    }
 
-    const updated = [loan, ...loans];
-    setLoans(updated);
-    await updateDoc(userRef, { loans: updated });
-    setAmount("");
+    const amount = parseFloat(loanAmount);
+    const months = parseInt(duration);
+
+    if (!amount || !months) {
+      Alert.alert("Invalid Input", "Enter valid amount and duration");
+      return;
+    }
+
+    const totalLoan = amount + amount * (interest / 100);
+    const monthly = totalLoan / months;
+
+    try {
+      setLoading(true);
+
+      await updateDoc(accRef, {
+        balance: balance + amount,
+        loan: totalLoan,
+        loanDuration: months,
+        loanInterest: interest,
+        loanStatus: "active",
+        updatedAt: new Date(),
+      });
+
+      setBalance(balance + amount);
+      setLoanBalance(totalLoan);
+      setMonthlyPay(monthly);
+      setLoanStatus("active");
+
+      setLoanAmount("");
+      setDuration("");
+      setPin("");
+      setShowPin(false);
+
+      Alert.alert("Loan Approved", "Loan credited successfully");
+    } catch {
+      Alert.alert("Error", "Loan processing failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const repayMonthly = async () => {
+    if (balance < monthlyPay) {
+      Alert.alert("Insufficient Balance", "Top up to repay");
+      return;
+    }
+
+    const newLoan = loanBalance - monthlyPay;
+
+    try {
+      await updateDoc(accRef, {
+        balance: balance - monthlyPay,
+        loan: newLoan,
+        loanStatus: newLoan <= 0 ? "cleared" : "active",
+        updatedAt: new Date(),
+      });
+
+      setBalance(balance - monthlyPay);
+      setLoanBalance(newLoan);
+
+      if (newLoan <= 0) {
+        setLoanStatus("cleared");
+        Alert.alert("Success", "Loan fully paid");
+      } else {
+        Alert.alert("Success", "Monthly payment successful");
+      }
+    } catch {
+      Alert.alert("Error", "Repayment failed");
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
-      <Text style={styles.header}>Apply Loan</Text>
+    <ScrollView contentContainerStyle={styles.container}>
+      <Text style={styles.title}>Credit & Loan Service</Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Enter amount"
-        placeholderTextColor="#aaa"
-        keyboardType="numeric"
-        value={amount}
-        onChangeText={setAmount}
-      />
+      <View style={styles.card}>
+        <Text style={styles.balance}>Current Balance</Text>
+        <Text style={styles.balanceAmount}>UGX {balance.toFixed(0)}</Text>
+      </View>
 
-      <TouchableOpacity style={styles.greenBtn} onPress={applyLoan}>
-        <Text style={styles.btnText}>Apply Loan</Text>
-      </TouchableOpacity>
+      {loanStatus === "active" && (
+        <View style={styles.card}>
+          <Text style={styles.subTitle}>Active Loan</Text>
+          <Text>Loan Balance: UGX {loanBalance.toFixed(0)}</Text>
+          <Text>Monthly Pay: UGX {monthlyPay.toFixed(0)}</Text>
 
-      {loans.map(l => (
-        <View key={l.id} style={styles.card}>
-          <Text style={styles.cardTitle}>UGX {l.balance}</Text>
-          <Text style={styles.cardText}>Status: {l.status}</Text>
+          <TouchableOpacity style={styles.button} onPress={repayMonthly}>
+            <Text style={styles.buttonText}>Pay Monthly Installment</Text>
+          </TouchableOpacity>
         </View>
-      ))}
+      )}
 
-      <Nav setScreen={setScreen} />
+      <View style={styles.card}>
+        <Text style={styles.label}>Loan Amount (UGX)</Text>
+        <TextInput
+          style={styles.input}
+          keyboardType="numeric"
+          value={loanAmount}
+          onChangeText={setLoanAmount}
+          placeholder="500000"
+        />
+
+        <Text style={styles.label}>Duration (Months)</Text>
+        <TextInput
+          style={styles.input}
+          keyboardType="numeric"
+          value={duration}
+          onChangeText={setDuration}
+          placeholder="6"
+        />
+
+        <Text style={styles.label}>Interest Rate</Text>
+        <Text style={styles.interest}>{interest}%</Text>
+
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => setShowPin(true)}
+        >
+          <Text style={styles.buttonText}>Apply Loan</Text>
+        </TouchableOpacity>
+      </View>
+
+      {showPin && (
+        <View style={styles.pinCard}>
+          <Text style={styles.label}>Enter PIN</Text>
+          <TextInput
+            style={styles.input}
+            keyboardType="numeric"
+            secureTextEntry
+            maxLength={4}
+            value={pin}
+            onChangeText={setPin}
+          />
+
+          <TouchableOpacity style={styles.button} onPress={applyLoan}>
+            <Text style={styles.buttonText}>Confirm Loan</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </ScrollView>
   );
-}
+};
 
-/* =====================================================
-   ADMIN
-===================================================== */
-function AdminPanel({ setScreen }: any) {
-  const [loans, setLoans] = useState<any[]>([]);
+export default CreditLoanScreen;
 
-  useEffect(() => {
-    getDoc(userRef).then(s =>
-      setLoans(s.data()?.loans || [])
-    );
-  }, []);
-
-  const approve = async (loan: any) => {
-    const updated = loans.map(l =>
-      l.id === loan.id ? { ...l, status: "Approved" } : l
-    );
-    await updateDoc(userRef, { loans: updated });
-    setLoans(updated);
-  };
-
-  return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.header}>Admin Panel</Text>
-
-      {loans.filter(l => l.status === "Pending").map(l => (
-        <TouchableOpacity
-          key={l.id}
-          style={styles.greenBtn}
-          onPress={() => approve(l)}
-        >
-          <Text style={styles.btnText}>
-            Approve UGX {l.amount}
-          </Text>
-        </TouchableOpacity>
-      ))}
-
-      <Nav setScreen={setScreen} />
-    </ScrollView>
-  );
-}
-
-/* =====================================================
-   NAV
-===================================================== */
-function Nav({ setScreen }: any) {
-  return (
-    <View style={{ marginTop: 20 }}>
-      {["home", "loans", "admin"].map(s => (
-        <TouchableOpacity
-          key={s}
-          style={styles.navBtn}
-          onPress={() => setScreen(s)}
-        >
-          <Text style={styles.btnText}>{s.toUpperCase()}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-}
-
-/* =====================================================
-   STYLES
-===================================================== */
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: "#1B2430" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: { color: "#fff", fontSize: 22, fontWeight: "800", marginBottom: 10 },
-  sub: { color: "#9B59B6", marginBottom: 14 },
-  card: { backgroundColor: "#34495E", padding: 16, borderRadius: 14, marginBottom: 12 },
-  cardTitle: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  cardText: { color: "#ccc", marginTop: 4 },
-  big: { color: "#25D366", fontSize: 22, fontWeight: "800", marginVertical: 4 },
-  input: { backgroundColor: "#34495E", color: "#fff", padding: 14, borderRadius: 12, marginBottom: 12 },
-  greenBtn: { backgroundColor: "#25D366", padding: 14, borderRadius: 12, marginTop: 8 },
-  purpleBtn: { backgroundColor: "#9B59B6", padding: 14, borderRadius: 12, marginBottom: 12 },
-  navBtn: { backgroundColor: "#007AFF", padding: 14, borderRadius: 12, marginVertical: 6 },
-  btnText: { color: "#fff", fontWeight: "700", textAlign: "center" },
+  container: {
+    padding: 20,
+    backgroundColor: "#f5f6fa",
+  },
+  loader: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    elevation: 3,
+  },
+  balance: {
+    fontSize: 14,
+    color: "#555",
+  },
+  balanceAmount: {
+    fontSize: 22,
+    fontWeight: "bold",
+    marginTop: 6,
+  },
+  subTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 8,
+  },
+  label: {
+    fontSize: 14,
+    marginBottom: 6,
+    color: "#555",
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 14,
+  },
+  interest: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 16,
+  },
+  button: {
+    backgroundColor: "#2ecc71",
+    padding: 14,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  buttonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  pinCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    elevation: 4,
+  },
 });
