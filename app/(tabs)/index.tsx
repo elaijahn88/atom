@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -8,11 +8,11 @@ import {
   StyleSheet,
   SafeAreaView,
   Image,
-  Alert,
   StatusBar,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { ref, onValue, push, set } from "firebase/database";
+import { ref, set, push, onValue } from "firebase/database";
 import { database } from "../../firebase";
 
 /* =====================
@@ -21,6 +21,15 @@ import { database } from "../../firebase";
 const MY_EMAIL = "elajahn8@gmail.com";
 const MY_KEY = MY_EMAIL.replace(/\./g, ",");
 const MY_NAME = "Nabimanya elijah";
+
+/* =====================
+   MOCK USERS
+===================== */
+const USERS = Array.from({ length: 10 }).map((_, i) => {
+  const email = `user${i + 1}@gmail.com`;
+  const key = email.replace(/\./g, ",");
+  return { email, key, name: `User ${i + 1}`, balance: 50000 + i * 1000 };
+});
 
 /* =====================
    APP
@@ -35,24 +44,34 @@ export default function GreenApp() {
   const [statuses, setStatuses] = useState<any[]>([]);
   const [calls, setCalls] = useState<any[]>([]);
 
-  /* Presence */
+  /* =====================
+     PRESENCE & REGISTER USERS
+  ====================== */
   useEffect(() => {
+    // Set current user presence
     const p = ref(database, `presence/${MY_KEY}`);
     set(p, { online: true, lastSeen: Date.now() });
+
+    // Register current user
+    const userRef = ref(database, `users/${MY_KEY}`);
+    set(userRef, { email: MY_EMAIL, name: MY_NAME, balance: 1000000 });
+
+    // Register other mock users
+    USERS.forEach((u) => {
+      const userRef = ref(database, `users/${u.key}`);
+      set(userRef, u);
+    });
+
     return () => set(p, { online: false, lastSeen: Date.now() });
   }, []);
 
-  /* Register user */
-  useEffect(() => {
-    const userRef = ref(database, `users/${MY_KEY}`);
-    set(userRef, { email: MY_EMAIL, name: MY_NAME, balance: 1000000 });
-  }, []);
-
-  /* Load inbox */
+  /* =====================
+     LOAD INBOX (CHATS)
+  ====================== */
   useEffect(() => {
     const chatsRef = ref(database, "chats");
     onValue(chatsRef, (snap) => {
-      if (!snap.exists()) return;
+      if (!snap.exists()) return setInbox([]);
       const rows: any[] = [];
       Object.entries(snap.val()).forEach(([cid, chat]: any) => {
         if (!cid.includes(MY_KEY)) return;
@@ -69,7 +88,7 @@ export default function GreenApp() {
         rows.push({
           id: cid,
           name: otherName,
-          lastText: last?.text || last?.amount ? `💸 ${last?.amount}` : "",
+          lastText: last?.text || "",
           time: last?.timestamp || 0,
         });
       });
@@ -78,20 +97,14 @@ export default function GreenApp() {
     });
   }, []);
 
-  /* Load people */
-  useEffect(() => {
-    const usersRef = ref(database, "users");
-    onValue(usersRef, (snap) => {
-      if (!snap.exists()) return;
-      const list: any[] = [];
-      Object.entries(snap.val()).forEach(([key, val]: any) => {
-        if (key !== MY_KEY) list.push({ key, ...val });
-      });
-      setPeople(list);
-    });
-  }, []);
+  /* =====================
+     LOAD PEOPLE
+  ====================== */
+  useEffect(() => setPeople(USERS.filter((u) => u.key !== MY_KEY)), []);
 
-  /* Load statuses */
+  /* =====================
+     LOAD STATUSES
+  ====================== */
   useEffect(() => {
     const statusRef = ref(database, "statuses");
     onValue(statusRef, (snap) => {
@@ -100,11 +113,14 @@ export default function GreenApp() {
         userKey: k,
         ...v,
       }));
+      list.sort((a, b) => b.timestamp - a.timestamp);
       setStatuses(list);
     });
   }, []);
 
-  /* Load calls */
+  /* =====================
+     LOAD CALLS
+  ====================== */
   useEffect(() => {
     const callsRef = ref(database, `calls/${MY_KEY}`);
     onValue(callsRef, (snap) => {
@@ -118,7 +134,9 @@ export default function GreenApp() {
     });
   }, []);
 
-  /* Post Status */
+  /* =====================
+     POST STATUS
+  ====================== */
   const postStatus = () => {
     const statusRef = ref(database, `statuses/${MY_KEY}`);
     set(statusRef, {
@@ -128,7 +146,9 @@ export default function GreenApp() {
     });
   };
 
-  /* Make Call */
+  /* =====================
+     MAKE CALL
+  ====================== */
   const makeCall = (toKey: string, type: "audio" | "video") => {
     const callData = { with: toKey, type, timestamp: Date.now() };
     push(ref(database, `calls/${MY_KEY}`), callData);
@@ -136,6 +156,9 @@ export default function GreenApp() {
     Alert.alert("Call simulated", `You made a ${type} call`);
   };
 
+  /* =====================
+     RENDER
+  ====================== */
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor="#075E54" barStyle="light-content" />
@@ -152,7 +175,9 @@ export default function GreenApp() {
         ))}
       </View>
 
-      {/* CHATS */}
+      {/* =====================
+         CHATS
+      ====================== */}
       {tab === "Chats" && screen === "inbox" && (
         <FlatList
           data={inbox}
@@ -165,7 +190,10 @@ export default function GreenApp() {
               }}
             >
               <View style={styles.chatRow}>
-                <Image source={{ uri: `https://i.pravatar.cc/150?u=${item.id}` }} style={styles.avatar} />
+                <Image
+                  source={{ uri: `https://i.pravatar.cc/150?u=${item.id}` }}
+                  style={styles.avatar}
+                />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.chatName}>{item.name}</Text>
                   <Text style={styles.lastMsg}>{item.lastText}</Text>
@@ -180,14 +208,19 @@ export default function GreenApp() {
         <ChatScreen chat={activeChat} onBack={() => setScreen("inbox")} />
       )}
 
-      {/* PEOPLE */}
+      {/* =====================
+         PEOPLE
+      ====================== */}
       {tab === "People" && (
         <FlatList
           data={people}
           keyExtractor={(i) => i.key}
           renderItem={({ item }) => (
             <View style={styles.chatRow}>
-              <Image source={{ uri: `https://i.pravatar.cc/150?u=${item.key}` }} style={styles.avatar} />
+              <Image
+                source={{ uri: `https://i.pravatar.cc/150?u=${item.key}` }}
+                style={styles.avatar}
+              />
               <Text style={styles.chatName}>{item.name}</Text>
               <View style={{ flexDirection: "row", marginLeft: "auto" }}>
                 <TouchableOpacity
@@ -210,11 +243,19 @@ export default function GreenApp() {
         />
       )}
 
-      {/* STATUS */}
+      {/* =====================
+         STATUS
+      ====================== */}
       {tab === "Status" && (
         <View style={{ flex: 1 }}>
           <TouchableOpacity
-            style={{ backgroundColor: "#25D366", padding: 10, borderRadius: 20, alignSelf: "center", margin: 8 }}
+            style={{
+              backgroundColor: "#25D366",
+              padding: 10,
+              borderRadius: 20,
+              alignSelf: "center",
+              margin: 8,
+            }}
             onPress={postStatus}
           >
             <Text style={{ color: "#fff", fontWeight: "bold" }}>Post Status</Text>
@@ -225,27 +266,45 @@ export default function GreenApp() {
             keyExtractor={(i) => i.userKey}
             renderItem={({ item }) => (
               <View style={styles.statusRow}>
-                <Image source={{ uri: item.image || `https://i.pravatar.cc/150?u=${item.userKey}` }} style={styles.avatar} />
+                <Image
+                  source={{
+                    uri: item.image || `https://i.pravatar.cc/150?u=${item.userKey}`,
+                  }}
+                  style={styles.avatar}
+                />
                 <Text style={styles.chatName}>{item.name}</Text>
               </View>
             )}
+            onEndReachedThreshold={0.5}
           />
         </View>
       )}
 
-      {/* CALLS */}
+      {/* =====================
+         CALLS
+      ====================== */}
       {tab === "Calls" && (
         <FlatList
           data={calls}
           keyExtractor={(i) => i.id}
           renderItem={({ item }) => (
             <View style={styles.callRow}>
-              <Image source={{ uri: `https://i.pravatar.cc/150?u=${item.with}` }} style={styles.avatar} />
+              <Image
+                source={{ uri: `https://i.pravatar.cc/150?u=${item.with}` }}
+                style={styles.avatar}
+              />
               <View style={{ flex: 1 }}>
                 <Text style={styles.chatName}>{item.withName || item.with}</Text>
-                <Text style={styles.lastMsg}>{item.type === "audio" ? "Audio Call" : "Video Call"}</Text>
+                <Text style={styles.lastMsg}>
+                  {item.type === "audio" ? "Audio Call" : "Video Call"}
+                </Text>
               </View>
-              <Text style={styles.time}>{new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</Text>
+              <Text style={styles.time}>
+                {new Date(item.timestamp).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </Text>
             </View>
           )}
         />
@@ -255,15 +314,17 @@ export default function GreenApp() {
 }
 
 /* =====================
-   CHAT SCREEN
+   CHAT SCREEN WITH AUTO-REPLY SAVED IN DB
 ===================== */
 function ChatScreen({ chat, onBack }: any) {
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState("");
   const PATH = `chats/${chat.id}/messages`;
 
+  // Load messages
   useEffect(() => {
-    onValue(ref(database, PATH), (snap) => {
+    const messagesRef = ref(database, PATH);
+    onValue(messagesRef, (snap) => {
       if (!snap.exists()) return setMessages([]);
       const list = Object.entries(snap.val()).map(([id, v]: any) => ({ id, ...v }));
       list.sort((a, b) => a.timestamp - b.timestamp);
@@ -271,14 +332,25 @@ function ChatScreen({ chat, onBack }: any) {
     });
   }, []);
 
+  // Send message and auto-reply
   const send = () => {
     if (!text.trim()) return;
-    push(ref(database, PATH), {
-      sender: MY_KEY,
-      text,
-      timestamp: Date.now(),
-    });
+
+    // Push your message
+    const msgRef = push(ref(database, PATH));
+    const newMessage = { sender: MY_KEY, text, timestamp: Date.now() };
+    set(msgRef, newMessage);
     setText("");
+
+    // Push auto-reply in DB
+    setTimeout(() => {
+      const autoMsgRef = push(ref(database, PATH));
+      set(autoMsgRef, {
+        sender: "auto_reply",
+        text: `Auto-reply: You said "${newMessage.text}"`,
+        timestamp: Date.now(),
+      });
+    }, 1000);
   };
 
   return (
@@ -304,25 +376,42 @@ function ChatScreen({ chat, onBack }: any) {
                 maxWidth: "75%",
               }}
             >
-              <Text style={{ color: "#fff" }}>
-                {item.text || (item.amount ? `💸 ${item.amount}` : "")}
-              </Text>
+              <Text style={{ color: "#fff" }}>{item.text}</Text>
               <Text style={{ fontSize: 10, color: "#ccc", marginTop: 4 }}>
-                {new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                {new Date(item.timestamp).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
               </Text>
             </View>
           );
         }}
+        onEndReachedThreshold={0.5}
       />
 
-      <View style={{ flexDirection: "row", padding: 8, backgroundColor: "#1E2C33", position: "absolute", bottom: 0, width: "100%" }}>
+      <View
+        style={{
+          flexDirection: "row",
+          padding: 8,
+          backgroundColor: "#1E2C33",
+          position: "absolute",
+          bottom: 0,
+          width: "100%",
+        }}
+      >
         <TextInput
-          style={{ flex: 1, backgroundColor: "#2A3942", borderRadius: 20, paddingHorizontal: 12, color: "#fff", marginRight: 8 }}
+          style={{
+            flex: 1,
+            backgroundColor: "#2A3942",
+            borderRadius: 20,
+            paddingHorizontal: 12,
+            color: "#fff",
+            marginRight: 8,
+          }}
           value={text}
           onChangeText={setText}
-          placeholder="Message or amount"
+          placeholder="Message"
           placeholderTextColor="#aaa"
-          keyboardType="default"
         />
         <TouchableOpacity onPress={send}>
           <Ionicons name="send" size={26} color="#25D366" />
