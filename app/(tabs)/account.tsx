@@ -91,24 +91,20 @@ export default function MoneyApp() {
           setHasPin(Boolean(data?.pin));
         }
 
-        // Listen for transactions in acc/elijah/transactions
+        // Listen for transactions
         unsubTx = onSnapshot(
           query(transactionsRef, orderBy("timestamp", "desc")),
           (snap) => {
             const txs: Transaction[] = [];
-            snap.forEach((d) => {
-              txs.push(d.data() as Transaction);
-            });
+            snap.forEach((d) => txs.push(d.data() as Transaction));
             setTransactions(txs);
           }
         );
 
-        // Listen for other users
+        // Listen for users
         unsubUsers = onSnapshot(collection(db, "acc"), (snap) => {
           const list: User[] = [];
-          snap.forEach((d) =>
-            list.push({ ...(d.data() as any), id: d.id })
-          );
+          snap.forEach((d) => list.push({ ...(d.data() as any), id: d.id }));
           setUsers(list.filter((u) => u.id !== CURRENT_USER_KEY));
         });
 
@@ -144,30 +140,43 @@ export default function MoneyApp() {
     setTimeout(() => setConfirmVisible(false), 2500);
   };
 
-  const confirmPin = async () => {
-    const snap = await getDoc(userRef);
-    const savedPin = snap.data()?.pin;
-
-    if (pinInput !== savedPin) {
-      Alert.alert("Wrong PIN");
-      return;
-    }
-
-    setPinModal(false);
-    setPinInput("");
-    pendingAction && pendingAction();
-    setPendingAction(null);
-  };
-
+  /* =====================
+     PIN FUNCTIONS
+  ===================== */
   const savePin = async () => {
     if (pinInput.length < 4) {
-      Alert.alert("PIN must be at least 4 digits");
+      Alert.alert("PIN must be 4 digits");
       return;
     }
-    await updateDoc(userRef, { pin: pinInput });
-    setHasPin(true);
-    Alert.alert("PIN saved successfully");
-    setPinInput("");
+    try {
+      await updateDoc(userRef, { pin: pinInput });
+      setHasPin(true);
+      setPinInput("");
+      Alert.alert("PIN saved successfully");
+    } catch {
+      Alert.alert("Error", "Failed to save PIN");
+    }
+  };
+
+  const confirmPin = async () => {
+    try {
+      const snap = await getDoc(userRef);
+      const savedPin = snap.data()?.pin;
+
+      if (pinInput !== savedPin) {
+        Alert.alert("Wrong PIN");
+        return;
+      }
+
+      setPinModal(false);
+      setPinInput("");
+      if (pendingAction) {
+        pendingAction();
+        setPendingAction(null);
+      }
+    } catch {
+      Alert.alert("Error", "Failed to verify PIN");
+    }
   };
 
   /* =====================
@@ -181,7 +190,6 @@ export default function MoneyApp() {
     const oldBalance = snap.data()?.balance || 0;
 
     await updateDoc(userRef, { balance: oldBalance + amt });
-
     await addDoc(transactionsRef, {
       sender: "Top-up",
       receiver: CURRENT_USER_NAME,
@@ -227,7 +235,6 @@ export default function MoneyApp() {
 
     setBalance(senderBal - amt);
     setAmount("");
-
     showConfirmation(
       `Sent ${amt.toLocaleString()} UGX to ${toUser}. New Balance: ${(senderBal - amt).toLocaleString()} UGX`
     );
@@ -247,7 +254,6 @@ export default function MoneyApp() {
     if (!network) return Alert.alert("Unsupported network");
 
     await updateDoc(userRef, { balance: oldBalance - amt });
-
     await addDoc(transactionsRef, {
       sender: CURRENT_USER_NAME,
       receiver: `${network} (${phone})`,
@@ -264,6 +270,9 @@ export default function MoneyApp() {
     );
   };
 
+  /* =====================
+     RENDER
+  ===================== */
   if (!ready)
     return (
       <View style={styles.center}>
