@@ -150,7 +150,7 @@ const CreditLoanScreen: React.FC = () => {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Credit & Loan Service</Text>
+      <Text style={styles.title}>G</Text>
 
       <View style={styles.card}>
         <Text style={styles.balance}>Current Balance</Text>
