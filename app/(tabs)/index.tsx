@@ -19,6 +19,7 @@ import {
   database,
   ref,
   push,
+  set,
   onValue,
 } from "../../firebase";
 
@@ -58,8 +59,10 @@ export default function GreenApp() {
     const submit = async () => {
       try {
         if (isLogin) {
+          // Login directly
           await signInWithEmailAndPassword(auth, email, password);
         } else {
+          // Signup directly
           await createUserWithEmailAndPassword(auth, email, password);
         }
       } catch (e: any) {
