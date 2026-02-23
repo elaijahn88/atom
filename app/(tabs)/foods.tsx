@@ -1,4 +1,13 @@
 import React, { useState } from "react";
+import {
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  Alert,
+} from "react-native";
 
 interface FoodItem {
   id: number;
@@ -8,7 +17,9 @@ interface FoodItem {
   restaurant: string;
 }
 
-const App: React.FC = () => {
+type CartItem = FoodItem & { quantity: number };
+
+const App = () => {
   const menu: FoodItem[] = [
     { id: 1, name: "Classic Burger", price: 5, image: "https://i.imgur.com/8q3Z6xU.png", restaurant: "Burger Palace" },
     { id: 2, name: "Cheese Fries", price: 3, image: "https://i.imgur.com/rE9RjEx.png", restaurant: "Burger Palace" },
@@ -18,27 +29,32 @@ const App: React.FC = () => {
     { id: 6, name: "Tuna Roll", price: 14, image: "https://i.imgur.com/KGxI7Ej.png", restaurant: "Sushi House" },
   ];
 
-  const [cart, setCart] = useState<(FoodItem & { quantity: number })[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [showCart, setShowCart] = useState(false);
 
   const addToCart = (item: FoodItem) => {
-    const existing = cart.find(c => c.id === item.id);
-    if (existing) {
-      setCart(cart.map(c => (c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c)));
-    } else {
-      setCart([...cart, { ...item, quantity: 1 }]);
-    }
+    setCart(prev => {
+      const existing = prev.find(c => c.id === item.id);
+      if (existing) {
+        return prev.map(c =>
+          c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c
+        );
+      }
+      return [...prev, { ...item, quantity: 1 }];
+    });
   };
 
   const removeFromCart = (id: number) => {
-    setCart(cart.filter(c => c.id !== id));
+    setCart(prev => prev.filter(c => c.id !== id));
   };
 
   const changeQuantity = (id: number, delta: number) => {
-    setCart(
-      cart
-        .map(c => (c.id === id ? { ...c, quantity: Math.max(c.quantity + delta, 1) } : c))
-        .filter(c => c.quantity > 0)
+    setCart(prev =>
+      prev.map(c =>
+        c.id === id
+          ? { ...c, quantity: Math.max(c.quantity + delta, 1) }
+          : c
+      )
     );
   };
 
@@ -46,103 +62,158 @@ const App: React.FC = () => {
 
   const checkout = () => {
     if (cart.length === 0) {
-      alert("Cart is empty!");
+      Alert.alert("Cart is empty!");
       return;
     }
-    alert(`🎉 Order placed at Star Foods! Total: $${total}`);
+    Alert.alert("Order placed!", `Total: $${total}`);
     setCart([]);
     setShowCart(false);
   };
 
   return (
-    <div style={{ fontFamily: "Arial, sans-serif", maxWidth: 500, margin: "0 auto", paddingBottom: 80 }}>
-      <h1 style={{ textAlign: "center", color: "#FF6347", margin: 20 }}>⭐ Star Foods</h1>
+    <View style={styles.container}>
+      <Text style={styles.title}>Star Foods</Text>
 
-      {/* Scrollable feed */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <ScrollView>
         {menu.map(item => (
-          <div
+          <TouchableOpacity
             key={item.id}
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: 15,
-              overflow: "hidden",
-              boxShadow: "0 3px 6px rgba(0,0,0,0.1)",
-              cursor: "pointer",
-              transition: "transform 0.2s",
-            }}
-            onClick={() => addToCart(item)}
+            style={styles.card}
+            onPress={() => addToCart(item)}
           >
-            {item.image && <img src={item.image} alt={item.name} style={{ width: "100%", height: 180, objectFit: "cover" }} />}
-            <div style={{ padding: 10 }}>
-              <h3 style={{ margin: 0 }}>{item.name}</h3>
-              <p style={{ margin: "5px 0", color: "#555" }}>{item.restaurant}</p>
-              <p style={{ margin: 0, fontWeight: "bold" }}>${item.price}</p>
-            </div>
-          </div>
+            {item.image && (
+              <Image source={{ uri: item.image }} style={styles.image} />
+            )}
+            <View style={{ padding: 10 }}>
+              <Text style={styles.name}>{item.name}</Text>
+              <Text style={styles.restaurant}>{item.restaurant}</Text>
+              <Text style={styles.price}>${item.price}</Text>
+            </View>
+          </TouchableOpacity>
         ))}
-      </div>
+      </ScrollView>
 
       {/* Floating Cart Button */}
-      <button
-        onClick={() => setShowCart(!showCart)}
-        style={{
-          position: "fixed",
-          bottom: 20,
-          right: 20,
-          backgroundColor: "#32CD32",
-          color: "white",
-          border: "none",
-          borderRadius: 50,
-          width: 60,
-          height: 60,
-          fontSize: 18,
-          cursor: "pointer",
-          boxShadow: "0 4px 8px rgba(0,0,0,0.3)",
-        }}
+      <TouchableOpacity
+        style={styles.cartButton}
+        onPress={() => setShowCart(!showCart)}
       >
-        🛒 {cart.length > 0 && <span style={{ fontSize: 14 }}>{cart.length}</span>}
-      </button>
+        <Text style={{ color: "white" }}>🛒 {cart.length}</Text>
+      </TouchableOpacity>
 
-      {/* Cart Modal */}
+      {/* Cart Panel */}
       {showCart && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 100,
-            right: 20,
-            width: 300,
-            maxHeight: 400,
-            overflowY: "auto",
-            backgroundColor: "#fff",
-            borderRadius: 10,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-            padding: 10,
-            zIndex: 1000,
-          }}
-        >
-          <h3>Your Cart</h3>
-          {cart.length === 0 && <p>Cart is empty</p>}
+        <View style={styles.cartPanel}>
+          <Text style={{ fontWeight: "bold", fontSize: 16 }}>Your Cart</Text>
+
+          {cart.length === 0 && <Text>Cart is empty</Text>}
+
           {cart.map(item => (
-            <div key={item.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-              <div>
-                {item.name} x {item.quantity}
-                <div style={{ marginTop: 5 }}>
-                  <button onClick={() => changeQuantity(item.id, -1)} style={{ marginRight: 5 }}>−</button>
-                  <button onClick={() => changeQuantity(item.id, 1)}>+</button>
-                </div>
-              </div>
-              <button onClick={() => removeFromCart(item.id)} style={{ backgroundColor: "#ccc", border: "none", borderRadius: 5, padding: "2px 6px", cursor: "pointer" }}>Remove</button>
-            </div>
+            <View key={item.id} style={styles.cartItem}>
+              <View>
+                <Text>
+                  {item.name} x {item.quantity}
+                </Text>
+                <View style={{ flexDirection: "row", marginTop: 5 }}>
+                  <TouchableOpacity
+                    onPress={() => changeQuantity(item.id, -1)}
+                  >
+                    <Text style={styles.qtyBtn}>−</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => changeQuantity(item.id, 1)}
+                  >
+                    <Text style={styles.qtyBtn}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <TouchableOpacity onPress={() => removeFromCart(item.id)}>
+                <Text style={{ color: "red" }}>Remove</Text>
+              </TouchableOpacity>
+            </View>
           ))}
-          <h4>Total: ${total}</h4>
-          <button onClick={checkout} style={{ width: "100%", padding: 10, backgroundColor: "#FF6347", color: "white", border: "none", borderRadius: 5, cursor: "pointer" }}>
-            Checkout
-          </button>
-        </div>
+
+          <Text style={{ fontWeight: "bold", marginTop: 10 }}>
+            Total: ${total}
+          </Text>
+
+          <TouchableOpacity style={styles.checkoutBtn} onPress={checkout}>
+            <Text style={{ color: "white" }}>Checkout</Text>
+          </TouchableOpacity>
+        </View>
       )}
-    </div>
+    </View>
   );
 };
 
 export default App;
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 15,
+    backgroundColor: "#fff",
+  },
+  title: {
+    fontSize: 24,
+    textAlign: "center",
+    marginBottom: 15,
+    color: "#FF6347",
+  },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    marginBottom: 15,
+    elevation: 3,
+  },
+  image: {
+    width: "100%",
+    height: 150,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
+  name: {
+    fontWeight: "bold",
+  },
+  restaurant: {
+    color: "#777",
+  },
+  price: {
+    fontWeight: "bold",
+  },
+  cartButton: {
+    position: "absolute",
+    bottom: 20,
+    right: 20,
+    backgroundColor: "#32CD32",
+    padding: 15,
+    borderRadius: 30,
+  },
+  cartPanel: {
+    position: "absolute",
+    bottom: 80,
+    right: 10,
+    left: 10,
+    backgroundColor: "#fff",
+    padding: 15,
+    borderRadius: 12,
+    elevation: 5,
+  },
+  cartItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginVertical: 8,
+  },
+  qtyBtn: {
+    fontSize: 18,
+    marginHorizontal: 8,
+  },
+  checkoutBtn: {
+    marginTop: 10,
+    backgroundColor: "#FF6347",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+});
