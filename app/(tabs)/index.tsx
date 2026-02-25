@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,10 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
+  ActivityIndicator,
+  Animated,
+  RefreshControl,
+  Switch,
 } from "react-native";
 
 interface FoodItem {
@@ -27,55 +31,46 @@ interface Order {
 
 const App = () => {
   const menu: FoodItem[] = [
-    // 🍔 Meals
     {
       id: 1,
       name: "Classic Burger",
       price: 6,
-      image:
-        "https://images.unsplash.com/photo-1550547660-d9450f859349",
+      image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800",
       category: "meal",
     },
     {
       id: 2,
       name: "Pepperoni Pizza",
       price: 10,
-      image:
-        "https://images.unsplash.com/photo-1548365328-9f547fb0953f",
+      image: "https://images.unsplash.com/photo-1601924638867-3ec2c1c2f8d6?w=800",
       category: "meal",
     },
     {
       id: 3,
       name: "Grilled Chicken",
       price: 9,
-      image:
-        "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d",
+      image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800",
       category: "meal",
     },
-
-    // ☕ Chai
     {
       id: 4,
       name: "African Milk Tea",
       price: 2,
-      image:
-        "https://images.unsplash.com/photo-1517701604599-bb29b565090c",
+      image: "https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=800",
       category: "chai",
     },
     {
       id: 5,
       name: "Masala Chai",
       price: 3,
-      image:
-        "https://images.unsplash.com/photo-1589308078054-8323d10d5c1e",
+      image: "https://images.unsplash.com/photo-1542444459-db63c5d4d8d5?w=800",
       category: "chai",
     },
     {
       id: 6,
       name: "Black Tea",
       price: 1.5,
-      image:
-        "https://images.unsplash.com/photo-1509042239860-f550ce710b93",
+      image: "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800",
       category: "chai",
     },
   ];
@@ -84,8 +79,17 @@ const App = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [showCart, setShowCart] = useState(false);
   const [showAgentPanel, setShowAgentPanel] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+
+  const cartScale = useRef(new Animated.Value(1)).current;
 
   const addToCart = (item: FoodItem) => {
+    Animated.sequence([
+      Animated.timing(cartScale, { toValue: 1.2, duration: 150, useNativeDriver: true }),
+      Animated.timing(cartScale, { toValue: 1, duration: 150, useNativeDriver: true }),
+    ]).start();
+
     setCart(prev => {
       const existing = prev.find(c => c.id === item.id);
       if (existing) {
@@ -107,13 +111,11 @@ const App = () => {
 
     const orderId = "ORD-" + Math.floor(Math.random() * 100000);
 
-    const newOrder: Order = {
-      id: orderId,
-      items: cart,
-      total,
-    };
+    setOrders(prev => [
+      { id: orderId, items: cart, total },
+      ...prev,
+    ]);
 
-    setOrders(prev => [newOrder, ...prev]);
     setCart([]);
     setShowCart(false);
 
@@ -123,38 +125,50 @@ const App = () => {
     );
   };
 
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>⭐ Star Foods</Text>
+  const onRefresh = () => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 1000);
+  };
 
-      <ScrollView>
+  const theme = darkMode
+    ? { background: "#121212", text: "#fff", card: "#1E1E1E" }
+    : { background: "#F8F9FA", text: "#000", card: "#fff" };
+
+  return (
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: "#FF6347" }]}>
+           cocks 
+        </Text>
+        <Switch value={darkMode} onValueChange={setDarkMode} />
+      </View>
+
+      <ScrollView
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {menu.map(item => (
-          <TouchableOpacity
+          <FoodCard
             key={item.id}
-            style={styles.card}
-            onPress={() => addToCart(item)}
-          >
-            <Image source={{ uri: item.image }} style={styles.image} />
-            <View style={styles.cardContent}>
-              <Text style={styles.name}>{item.name}</Text>
-              <Text style={styles.price}>${item.price}</Text>
-              <Text style={styles.category}>
-                {item.category === "meal" ? "🍽 Meal" : "☕ Chai"}
-              </Text>
-            </View>
-          </TouchableOpacity>
+            item={item}
+            addToCart={addToCart}
+            theme={theme}
+          />
         ))}
       </ScrollView>
 
       {/* Cart Button */}
-      <TouchableOpacity
-        style={styles.cartButton}
-        onPress={() => setShowCart(!showCart)}
-      >
-        <Text style={{ color: "white", fontWeight: "bold" }}>
-          🛒 {cart.length}
-        </Text>
-      </TouchableOpacity>
+      <Animated.View style={{ transform: [{ scale: cartScale }] }}>
+        <TouchableOpacity
+          style={styles.cartButton}
+          onPress={() => setShowCart(!showCart)}
+        >
+          <Text style={{ color: "white", fontWeight: "bold" }}>
+            🛒 {cart.length}
+          </Text>
+        </TouchableOpacity>
+      </Animated.View>
 
       {/* Agent Button */}
       <TouchableOpacity
@@ -166,16 +180,18 @@ const App = () => {
 
       {/* Cart Panel */}
       {showCart && (
-        <View style={styles.panel}>
-          <Text style={styles.panelTitle}>Your Cart</Text>
+        <View style={[styles.panel, { backgroundColor: theme.card }]}>
+          <Text style={[styles.panelTitle, { color: theme.text }]}>
+            Your Cart
+          </Text>
 
           {cart.map(item => (
-            <Text key={item.id}>
+            <Text key={item.id} style={{ color: theme.text }}>
               {item.name} x {item.quantity}
             </Text>
           ))}
 
-          <Text style={{ fontWeight: "bold", marginTop: 10 }}>
+          <Text style={{ fontWeight: "bold", marginTop: 10, color: theme.text }}>
             Total: ${total}
           </Text>
 
@@ -185,23 +201,22 @@ const App = () => {
         </View>
       )}
 
-      {/* Agent Panel (Simulated Notification Inbox) */}
+      {/* Agent Panel */}
       {showAgentPanel && (
-        <View style={styles.panel}>
-          <Text style={styles.panelTitle}>Agent Orders 📦</Text>
+        <View style={[styles.panel, { backgroundColor: theme.card }]}>
+          <Text style={[styles.panelTitle, { color: theme.text }]}>
+            Agent Orders 📦
+          </Text>
 
-          {orders.length === 0 && <Text>No orders yet</Text>}
+          {orders.length === 0 && (
+            <Text style={{ color: theme.text }}>No orders yet</Text>
+          )}
 
           {orders.map(order => (
             <View key={order.id} style={{ marginBottom: 10 }}>
-              <Text style={{ fontWeight: "bold" }}>
+              <Text style={{ fontWeight: "bold", color: theme.text }}>
                 {order.id} - ${order.total}
               </Text>
-              {order.items.map(item => (
-                <Text key={item.id}>
-                  • {item.name} x {item.quantity}
-                </Text>
-              ))}
             </View>
           ))}
         </View>
@@ -210,47 +225,80 @@ const App = () => {
   );
 };
 
+const FoodCard = ({ item, addToCart, theme }: any) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [loading, setLoading] = useState(true);
+
+  return (
+    <TouchableOpacity
+      style={[styles.card, { backgroundColor: theme.card }]}
+      onPress={() => addToCart(item)}
+    >
+      <View>
+        {loading && (
+          <ActivityIndicator
+            size="large"
+            color="#FF6347"
+            style={styles.loader}
+          />
+        )}
+
+        <Animated.Image
+          source={{ uri: item.image }}
+          style={[styles.image, { opacity: fadeAnim }]}
+          resizeMode="cover"
+          onLoad={() => {
+            setLoading(false);
+            Animated.timing(fadeAnim, {
+              toValue: 1,
+              duration: 500,
+              useNativeDriver: true,
+            }).start();
+          }}
+        />
+      </View>
+
+      <View style={styles.cardContent}>
+        <Text style={[styles.name, { color: theme.text }]}>
+          {item.name}
+        </Text>
+        <Text style={styles.price}>${item.price}</Text>
+        <Text style={{ color: theme.text }}>
+          {item.category === "meal" ? "🍽 Meal" : "☕ Chai"}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
 export default App;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F8F9FA",
-    padding: 15,
+  container: { flex: 1, padding: 15 },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   title: {
     fontSize: 26,
-    textAlign: "center",
-    marginBottom: 15,
     fontWeight: "bold",
-    color: "#FF6347",
+    marginBottom: 10,
   },
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 15,
-    marginBottom: 15,
-    elevation: 4,
+    borderRadius: 20,
+    marginBottom: 18,
+    elevation: 6,
     overflow: "hidden",
   },
-  image: {
-    width: "100%",
-    height: 170,
-  },
-  cardContent: {
-    padding: 12,
-  },
-  name: {
-    fontSize: 16,
-    fontWeight: "bold",
-  },
+  image: { width: "100%", height: 180 },
+  loader: { position: "absolute", top: 70, alignSelf: "center" },
+  cardContent: { padding: 14 },
+  name: { fontSize: 17, fontWeight: "bold" },
   price: {
-    color: "#32CD32",
+    color: "#2ecc71",
     fontWeight: "bold",
-    marginTop: 4,
-  },
-  category: {
-    marginTop: 4,
-    color: "#777",
+    marginTop: 5,
   },
   cartButton: {
     position: "absolute",
@@ -273,11 +321,9 @@ const styles = StyleSheet.create({
     bottom: 140,
     left: 10,
     right: 10,
-    backgroundColor: "#fff",
     padding: 15,
     borderRadius: 15,
     elevation: 6,
-    maxHeight: 350,
   },
   panelTitle: {
     fontWeight: "bold",
