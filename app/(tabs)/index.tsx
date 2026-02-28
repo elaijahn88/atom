@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Animated,
   RefreshControl,
-  Switch,
 } from "react-native";
 
 interface FoodItem {
@@ -80,7 +79,6 @@ const App = () => {
   const [showCart, setShowCart] = useState(false);
   const [showAgentPanel, setShowAgentPanel] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
 
   const cartScale = useRef(new Animated.Value(1)).current;
 
@@ -130,35 +128,22 @@ const App = () => {
     setTimeout(() => setRefreshing(false), 1000);
   };
 
-  const theme = darkMode
-    ? { background: "#121212", text: "#fff", card: "#1E1E1E" }
-    : { background: "#F8F9FA", text: "#000", card: "#fff" };
-
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
+    <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: "#FF6347" }]}>
-           cocks 
-        </Text>
-        <Switch value={darkMode} onValueChange={setDarkMode} />
+        <Text style={styles.title}>cocks</Text>
       </View>
 
       <ScrollView
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FF6347" />
         }
       >
         {menu.map(item => (
-          <FoodCard
-            key={item.id}
-            item={item}
-            addToCart={addToCart}
-            theme={theme}
-          />
+          <FoodCard key={item.id} item={item} addToCart={addToCart} />
         ))}
       </ScrollView>
 
-      {/* Cart Button */}
       <Animated.View style={{ transform: [{ scale: cartScale }] }}>
         <TouchableOpacity
           style={styles.cartButton}
@@ -170,7 +155,6 @@ const App = () => {
         </TouchableOpacity>
       </Animated.View>
 
-      {/* Agent Button */}
       <TouchableOpacity
         style={styles.agentButton}
         onPress={() => setShowAgentPanel(!showAgentPanel)}
@@ -178,20 +162,17 @@ const App = () => {
         <Text style={{ color: "white" }}>📩 Agent</Text>
       </TouchableOpacity>
 
-      {/* Cart Panel */}
       {showCart && (
-        <View style={[styles.panel, { backgroundColor: theme.card }]}>
-          <Text style={[styles.panelTitle, { color: theme.text }]}>
-            Your Cart
-          </Text>
+        <View style={styles.panel}>
+          <Text style={styles.panelTitle}>Your Cart</Text>
 
           {cart.map(item => (
-            <Text key={item.id} style={{ color: theme.text }}>
+            <Text key={item.id} style={{ color: "#fff" }}>
               {item.name} x {item.quantity}
             </Text>
           ))}
 
-          <Text style={{ fontWeight: "bold", marginTop: 10, color: theme.text }}>
+          <Text style={styles.totalText}>
             Total: ${total}
           </Text>
 
@@ -201,20 +182,17 @@ const App = () => {
         </View>
       )}
 
-      {/* Agent Panel */}
       {showAgentPanel && (
-        <View style={[styles.panel, { backgroundColor: theme.card }]}>
-          <Text style={[styles.panelTitle, { color: theme.text }]}>
-            Agent Orders 📦
-          </Text>
+        <View style={styles.panel}>
+          <Text style={styles.panelTitle}>Agent Orders 📦</Text>
 
           {orders.length === 0 && (
-            <Text style={{ color: theme.text }}>No orders yet</Text>
+            <Text style={{ color: "#aaa" }}>No orders yet</Text>
           )}
 
           {orders.map(order => (
             <View key={order.id} style={{ marginBottom: 10 }}>
-              <Text style={{ fontWeight: "bold", color: theme.text }}>
+              <Text style={{ fontWeight: "bold", color: "#fff" }}>
                 {order.id} - ${order.total}
               </Text>
             </View>
@@ -225,13 +203,13 @@ const App = () => {
   );
 };
 
-const FoodCard = ({ item, addToCart, theme }: any) => {
+const FoodCard = ({ item, addToCart }: any) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const [loading, setLoading] = useState(true);
 
   return (
     <TouchableOpacity
-      style={[styles.card, { backgroundColor: theme.card }]}
+      style={styles.card}
       onPress={() => addToCart(item)}
     >
       <View>
@@ -259,11 +237,9 @@ const FoodCard = ({ item, addToCart, theme }: any) => {
       </View>
 
       <View style={styles.cardContent}>
-        <Text style={[styles.name, { color: theme.text }]}>
-          {item.name}
-        </Text>
+        <Text style={styles.name}>{item.name}</Text>
         <Text style={styles.price}>${item.price}</Text>
-        <Text style={{ color: theme.text }}>
+        <Text style={{ color: "#aaa" }}>
           {item.category === "meal" ? "🍽 Meal" : "☕ Chai"}
         </Text>
       </View>
@@ -274,27 +250,29 @@ const FoodCard = ({ item, addToCart, theme }: any) => {
 export default App;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 15 },
+  container: {
+    flex: 1,
+    padding: 15,
+    backgroundColor: "#121212",
+  },
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    marginBottom: 10,
   },
   title: {
     fontSize: 26,
     fontWeight: "bold",
-    marginBottom: 10,
+    color: "#FF6347",
   },
   card: {
+    backgroundColor: "#1E1E1E",
     borderRadius: 20,
     marginBottom: 18,
-    elevation: 6,
     overflow: "hidden",
   },
   image: { width: "100%", height: 180 },
   loader: { position: "absolute", top: 70, alignSelf: "center" },
   cardContent: { padding: 14 },
-  name: { fontSize: 17, fontWeight: "bold" },
+  name: { fontSize: 17, fontWeight: "bold", color: "#fff" },
   price: {
     color: "#2ecc71",
     fontWeight: "bold",
@@ -323,12 +301,18 @@ const styles = StyleSheet.create({
     right: 10,
     padding: 15,
     borderRadius: 15,
-    elevation: 6,
+    backgroundColor: "#1E1E1E",
   },
   panelTitle: {
     fontWeight: "bold",
     fontSize: 16,
     marginBottom: 10,
+    color: "#fff",
+  },
+  totalText: {
+    fontWeight: "bold",
+    marginTop: 10,
+    color: "#fff",
   },
   checkoutBtn: {
     marginTop: 10,
