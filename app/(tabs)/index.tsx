@@ -131,7 +131,7 @@ const App = () => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>cocks</Text>
+        <Text style={styles.title}>coco</Text>
       </View>
 
       <ScrollView
