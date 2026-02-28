@@ -41,7 +41,7 @@ const App = () => {
       id: 2,
       name: "Pepperoni Pizza",
       price: 10,
-      image: "https://images.unsplash.com/photo-1601924638867-3ec2c1c2f8d6?w=800",
+      image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800",
       category: "meal",
     },
     {
@@ -62,7 +62,7 @@ const App = () => {
       id: 5,
       name: "Masala Chai",
       price: 3,
-      image: "https://images.unsplash.com/photo-1542444459-db63c5d4d8d5?w=800",
+      image: "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800",
       category: "chai",
     },
     {
