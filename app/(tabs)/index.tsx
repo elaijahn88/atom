@@ -2,7 +2,6 @@ import React, { useState, useRef } from "react";
 import {
   View,
   Text,
-  Image,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
@@ -34,48 +33,55 @@ const App = () => {
       id: 1,
       name: "Classic Burger",
       price: 6,
-      image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800",
+      image:
+        "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800",
       category: "meal",
     },
     {
       id: 2,
       name: "Pepperoni Pizza",
       price: 10,
-      image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800",
+      image:
+        "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800",
       category: "meal",
     },
     {
       id: 3,
       name: "Grilled Chicken",
       price: 9,
-      image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800",
+      image:
+        "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800",
       category: "meal",
     },
     {
       id: 4,
       name: "African Milk Tea",
       price: 2,
-      image: "https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=800",
+      image:
+        "https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=800",
       category: "chai",
     },
     {
       id: 5,
       name: "Masala Chai",
       price: 3,
-      image: "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800",
+      image:
+        "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800",
       category: "chai",
     },
     {
       id: 6,
       name: "Black Tea",
       price: 1.5,
-      image: "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800",
+      image:
+        "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800",
       category: "chai",
     },
   ];
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [walletBalance, setWalletBalance] = useState(50);
   const [showCart, setShowCart] = useState(false);
   const [showAgentPanel, setShowAgentPanel] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -84,14 +90,22 @@ const App = () => {
 
   const addToCart = (item: FoodItem) => {
     Animated.sequence([
-      Animated.timing(cartScale, { toValue: 1.2, duration: 150, useNativeDriver: true }),
-      Animated.timing(cartScale, { toValue: 1, duration: 150, useNativeDriver: true }),
+      Animated.timing(cartScale, {
+        toValue: 1.2,
+        duration: 150,
+        useNativeDriver: true,
+      }),
+      Animated.timing(cartScale, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }),
     ]).start();
 
-    setCart(prev => {
-      const existing = prev.find(c => c.id === item.id);
+    setCart((prev) => {
+      const existing = prev.find((c) => c.id === item.id);
       if (existing) {
-        return prev.map(c =>
+        return prev.map((c) =>
           c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c
         );
       }
@@ -99,7 +113,10 @@ const App = () => {
     });
   };
 
-  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const total = cart.reduce(
+    (sum, item) => sum + item.price * item.quantity,
+    0
+  );
 
   const checkout = () => {
     if (cart.length === 0) {
@@ -107,19 +124,24 @@ const App = () => {
       return;
     }
 
+    if (walletBalance < total) {
+      Alert.alert("Insufficient Balance ❌", "Please top up your wallet.");
+      return;
+    }
+
     const orderId = "ORD-" + Math.floor(Math.random() * 100000);
 
-    setOrders(prev => [
-      { id: orderId, items: cart, total },
-      ...prev,
-    ]);
+    setOrders((prev) => [{ id: orderId, items: cart, total }, ...prev]);
 
+    setWalletBalance((prev) => prev - total);
     setCart([]);
     setShowCart(false);
 
     Alert.alert(
-      "Order Placed!",
-      `Order ID: ${orderId}\nTotal: $${total}\n\nAgent Notified ✅`
+      "Payment Successful ✅",
+      `Order ID: ${orderId}\nPaid: $${total.toFixed(
+        2
+      )}\nRemaining Balance: $${(walletBalance - total).toFixed(2)}`
     );
   };
 
@@ -130,16 +152,31 @@ const App = () => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>coco</Text>
+      <Text style={styles.title}>coco</Text>
+
+      {/* Wallet Section */}
+      <View style={styles.walletContainer}>
+        <Text style={styles.walletText}>
+          💰 Wallet: ${walletBalance.toFixed(2)}
+        </Text>
+        <TouchableOpacity
+          style={styles.topUpBtn}
+          onPress={() => setWalletBalance((prev) => prev + 20)}
+        >
+          <Text style={{ color: "#fff" }}>+ Top Up</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FF6347" />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#FF6347"
+          />
         }
       >
-        {menu.map(item => (
+        {menu.map((item) => (
           <FoodCard key={item.id} item={item} addToCart={addToCart} />
         ))}
       </ScrollView>
@@ -166,14 +203,14 @@ const App = () => {
         <View style={styles.panel}>
           <Text style={styles.panelTitle}>Your Cart</Text>
 
-          {cart.map(item => (
+          {cart.map((item) => (
             <Text key={item.id} style={{ color: "#fff" }}>
               {item.name} x {item.quantity}
             </Text>
           ))}
 
           <Text style={styles.totalText}>
-            Total: ${total}
+            Total: ${total.toFixed(2)}
           </Text>
 
           <TouchableOpacity style={styles.checkoutBtn} onPress={checkout}>
@@ -190,10 +227,10 @@ const App = () => {
             <Text style={{ color: "#aaa" }}>No orders yet</Text>
           )}
 
-          {orders.map(order => (
+          {orders.map((order) => (
             <View key={order.id} style={{ marginBottom: 10 }}>
               <Text style={{ fontWeight: "bold", color: "#fff" }}>
-                {order.id} - ${order.total}
+                {order.id} - ${order.total.toFixed(2)}
               </Text>
             </View>
           ))}
@@ -255,13 +292,31 @@ const styles = StyleSheet.create({
     padding: 15,
     backgroundColor: "#121212",
   },
-  header: {
-    marginBottom: 10,
-  },
   title: {
     fontSize: 26,
     fontWeight: "bold",
     color: "#FF6347",
+    marginBottom: 10,
+  },
+  walletContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#1E1E1E",
+    padding: 12,
+    borderRadius: 15,
+    marginBottom: 15,
+  },
+  walletText: {
+    color: "#32CD32",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  topUpBtn: {
+    backgroundColor: "#FF6347",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
   },
   card: {
     backgroundColor: "#1E1E1E",
