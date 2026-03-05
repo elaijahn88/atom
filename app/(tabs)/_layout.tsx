@@ -40,14 +40,14 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Food',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="takeoutbag.and.cup.and.straw.fill" color={color} />,
         }}
       />
       <Tabs.Screen
         name="phones"
         options={{
           title: 'Iphones',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="cart.fill" color={color} />,
         }}
       />
       <Tabs.Screen
