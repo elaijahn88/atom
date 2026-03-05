@@ -41,7 +41,6 @@ const MyStore = () => {
 
   const userId = "demoUser123";
 
-  // 🔄 Real-time wallet listener
   useEffect(() => {
     const walletRef = doc(db, "users", userId);
     const unsub = onSnapshot(walletRef, (snap) => {
@@ -59,56 +58,25 @@ const MyStore = () => {
   };
 
   const addToCart = (item: any) => {
-    setCart((prev) =>
-      prev.find((p) => p.id === item.id) ? prev : [...prev, item]
-    );
+    setCart((prev) => (prev.find((p) => p.id === item.id) ? prev : [...prev, item]));
     showToast();
   };
 
   const getCartTotal = () =>
     cart.reduce((sum, item) => sum + Number(item.price), 0);
 
-  // 💰 TOP UP FUNCTION
-  const handleTopUp = async (amount: number) => {
-    try {
-      const userRef = doc(db, "users", userId);
-
-      await updateDoc(userRef, {
-        walletBalance: increment(amount),
-      });
-
-      await addDoc(collection(db, "transactions"), {
-        userId,
-        type: "TOP_UP",
-        amount,
-        currency: "UGX",
-        createdAt: serverTimestamp(),
-      });
-
-      Alert.alert("Success", `UGX ${amount.toLocaleString()} added to wallet`);
-    } catch (error) {
-      Alert.alert("Error", "Top up failed");
-    }
-  };
-
-  // 💳 PAYMENT FUNCTION
   const handlePayment = async () => {
     const total = getCartTotal();
     try {
       const userRef = doc(db, "users", userId);
       const snap = await getDoc(userRef);
-
-      if (!snap.exists())
-        return Alert.alert("Error", "Wallet not found");
+      if (!snap.exists()) return Alert.alert("Error", "Wallet not found");
 
       const balance = snap.data()?.walletBalance || 0;
-
       if (balance < total)
         return Alert.alert("Insufficient Balance", "Please top up your wallet");
 
-      await updateDoc(userRef, {
-        walletBalance: increment(-total),
-      });
+      await updateDoc(userRef, { walletBalance: increment(-total) });
 
       await addDoc(collection(db, "orders"), {
         userId,
@@ -116,14 +84,6 @@ const MyStore = () => {
         total,
         currency: "UGX",
         status: "PAID",
-        createdAt: serverTimestamp(),
-      });
-
-      await addDoc(collection(db, "transactions"), {
-        userId,
-        type: "PAYMENT",
-        amount: total,
-        currency: "UGX",
         createdAt: serverTimestamp(),
       });
 
@@ -140,7 +100,6 @@ const MyStore = () => {
       <Image source={{ uri: item.image }} style={styles.image} />
       <Text style={styles.title}>{item.name}</Text>
       <Text style={styles.price}>{item.price.toLocaleString()} UGX</Text>
-
       <TouchableOpacity
         style={styles.addButton}
         onPress={() => addToCart(item)}
@@ -157,26 +116,11 @@ const MyStore = () => {
 
   return (
     <View style={styles.container}>
-      {/* WALLET BAR */}
       <View style={styles.walletBar}>
         <Ionicons name="wallet" size={24} color="#00ffcc" />
         <Text style={styles.walletText}>
           Wallet: UGX {wallet.toLocaleString()}
         </Text>
-
-        <TouchableOpacity
-          style={styles.topUpButton}
-          onPress={() =>
-            Alert.alert("Top Up Wallet", "Select amount", [
-              { text: "10,000 UGX", onPress: () => handleTopUp(10000) },
-              { text: "50,000 UGX", onPress: () => handleTopUp(50000) },
-              { text: "100,000 UGX", onPress: () => handleTopUp(100000) },
-              { text: "Cancel", style: "cancel" },
-            ])
-          }
-        >
-          <Ionicons name="add-circle" size={20} color="#000" />
-        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -193,7 +137,6 @@ const MyStore = () => {
           <Text style={styles.cartText}>
             Total: {getCartTotal().toLocaleString()} UGX
           </Text>
-
           <TouchableOpacity style={styles.payButton} onPress={handlePayment}>
             <Text style={{ color: "#000", fontWeight: "bold" }}>
               Pay Now
@@ -202,7 +145,6 @@ const MyStore = () => {
         </View>
       )}
 
-      {/* TOAST */}
       <Animated.View
         style={{
           position: "absolute",
@@ -224,5 +166,101 @@ const MyStore = () => {
     </View>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#0f0f0f",
+    padding: 10,
+  },
+
+  walletBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#1e1e1e",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+
+  walletText: {
+    color: "#00ffcc",
+    fontWeight: "bold",
+    marginLeft: 6,
+    fontSize: 16,
+  },
+
+  card: {
+    backgroundColor: "#1c1c1c",
+    borderRadius: 16,
+    margin: 6,
+    padding: 12,
+    width: cardWidth,
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+  },
+
+  image: {
+    width: "100%",
+    height: 140,
+    borderRadius: 12,
+  },
+
+  title: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginVertical: 6,
+    color: "#ffffff",
+  },
+
+  price: {
+    fontSize: 14,
+    color: "#bbbbbb",
+    marginBottom: 6,
+  },
+
+  addButton: {
+    backgroundColor: "#00c853",
+    flexDirection: "row",
+    justifyContent: "center",
+    padding: 10,
+    borderRadius: 12,
+  },
+
+  addText: {
+    color: "#000",
+    marginLeft: 6,
+    fontWeight: "bold",
+  },
+
+  cartBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#1e1e1e",
+    padding: 14,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderTopColor: "#2a2a2a",
+  },
+
+  cartText: {
+    color: "#ffffff",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+
+  payButton: {
+    backgroundColor: "#00c853",
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 12,
+    justifyContent: "center",
+  },
+});
 
 export default MyStore;
