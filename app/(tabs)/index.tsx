@@ -11,7 +11,7 @@ import {
   TextInput,
 } from "react-native";
 
-import { database, ref, push, onValue, auth } from "../firebase";
+import { database, ref, push, onValue, auth } from "../../firebase";
 import { set, update } from "firebase/database";
 import {
   signInWithEmailAndPassword,
