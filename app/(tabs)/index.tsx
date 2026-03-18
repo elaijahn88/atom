@@ -275,14 +275,14 @@ const App = () => {
           setShowProfile(true);
         }}
       >
-        <Text style={{ color: "#fff" }}>👤</Text>
+        <Text style={{ color: "#fff" }}></Text>
       </TouchableOpacity>
 
       <Text style={styles.title}>
          {userName || "User"}
       </Text>
 
-      <Text style={{ color: "#aaa" }}>📞 {contact}</Text>
+      <Text style={{ color: "#aaa" }}>{contact}</Text>
 
       <Text style={styles.walletText}>
          ${walletBalance}
