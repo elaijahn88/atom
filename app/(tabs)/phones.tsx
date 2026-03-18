@@ -9,7 +9,7 @@ import {
   Animated,
   Dimensions,
   Alert,
-  TextInput,
+  ActivityIndicator,
 } from "react-native";
 
 import { Ionicons } from "@expo/vector-icons";
@@ -23,68 +23,77 @@ import {
   addDoc,
   serverTimestamp,
   onSnapshot,
-  setDoc,
 } from "firebase/firestore";
 
 import { db, auth } from "../../firebase";
-
-import {
-  signInWithPhoneNumber,
-  signInWithCredential,
-  PhoneAuthProvider,
-  onAuthStateChanged,
-  signOut,
-} from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 
 const numColumns = 2;
 const screenWidth = Dimensions.get("window").width;
 const cardWidth = screenWidth / numColumns - 20;
 
+// ✅ SAFE IMAGE LINKS (Unsplash)
 const demoProducts = [
   {
-    id: 12,
-    name: "iPhone 12",
-    price: 3500000,
-    image: "https://xlijah.com/pics/phones/iphone/12.jpg",
-  },
-  {
-    id: 13,
-    name: "iPhone 13",
-    price: 4500000,
-    image: "https://xlijah.com/pics/phones/iphone/13.jpg",
-  },
-  {
-    id: 14,
-    name: "iPhone 14",
-    price: 5500000,
-    image: "https://xlijah.com/pics/phones/iphone/14.jpg",
-  },
-  {
-    id: 15,
+    id: 1,
     name: "iPhone 15",
     price: 6500000,
-    image: "https://xlijah.com/pics/phones/iphone/15.jpg",
+    image: "https://images.unsplash.com/photo-1695048133142-1a20484d2569",
+    category: "Phones",
+  },
+  {
+    id: 2,
+    name: "Samsung S23",
+    price: 4200000,
+    image: "https://images.unsplash.com/photo-1610945265064-0e34e5519bbf",
+    category: "Phones",
+  },
+  {
+    id: 3,
+    name: "MacBook Pro",
+    price: 9500000,
+    image: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8",
+    category: "Laptops",
+  },
+  {
+    id: 4,
+    name: "Dell XPS",
+    price: 5200000,
+    image: "https://images.unsplash.com/photo-1587614382346-acd977736f90",
+    category: "Laptops",
+  },
+  {
+    id: 5,
+    name: "Nike Air Max",
+    price: 350000,
+    image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff",
+    category: "Shoes",
+  },
+  {
+    id: 6,
+    name: "Adidas Ultraboost",
+    price: 400000,
+    image: "https://images.unsplash.com/photo-1600185365483-26d7a4cc7519",
+    category: "Shoes",
   },
 ];
 
 const MyStore = () => {
   const [user, setUser] = useState<any>(null);
-  const [phone, setPhone] = useState("");
-  const [confirmation, setConfirmation] = useState<any>(null);
-  const [code, setCode] = useState("");
-
   const [cart, setCart] = useState<any[]>([]);
   const [wallet, setWallet] = useState<number>(0);
 
+  const [products, setProducts] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const toastAnim = useRef(new Animated.Value(0)).current;
 
-  // 🔐 AUTH
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return unsub;
   }, []);
 
-  // 💰 WALLET LISTENER
   useEffect(() => {
     if (!user) return;
 
@@ -99,36 +108,38 @@ const MyStore = () => {
     return unsub;
   }, [user]);
 
-  const showToast = () => {
-    Animated.sequence([
-      Animated.timing(toastAnim, {
-        toValue: 1,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-      Animated.delay(1200),
-      Animated.timing(toastAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
+  useEffect(() => {
+    loadMoreProducts();
+  }, []);
+
+  const loadMoreProducts = () => {
+    if (loadingMore) return;
+
+    setLoadingMore(true);
+
+    setTimeout(() => {
+      const newItems = demoProducts.map((item, index) => ({
+        ...item,
+        id: item.id + page * 100 + index,
+      }));
+
+      setProducts((prev) => [...prev, ...newItems]);
+      setPage((prev) => prev + 1);
+      setLoadingMore(false);
+    }, 800);
   };
 
   const addToCart = (item: any) => {
     setCart((prev) =>
-      prev.find((p) => p.id === item.id)
-        ? prev
-        : [...prev, item]
+      prev.find((p) => p.id === item.id) ? prev : [...prev, item]
     );
-    showToast();
   };
 
   const getCartTotal = () =>
     cart.reduce((sum, item) => sum + Number(item.price), 0);
 
   const handlePayment = async () => {
-    if (!user) return;
+    if (!user) return Alert.alert("Login required");
 
     const total = getCartTotal();
 
@@ -136,14 +147,12 @@ const MyStore = () => {
       const userRef = doc(db, "users", user.uid);
       const snap = await getDoc(userRef);
 
-      if (!snap.exists()) {
-        return Alert.alert("Error", "Wallet not found");
-      }
+      if (!snap.exists()) return Alert.alert("Wallet not found");
 
       const balance = snap.data()?.walletBalance || 0;
 
       if (balance < total) {
-        return Alert.alert("Insufficient Balance", "Top up from agent");
+        return Alert.alert("Insufficient Balance");
       }
 
       await updateDoc(userRef, {
@@ -154,117 +163,26 @@ const MyStore = () => {
         userId: user.uid,
         items: cart,
         total,
-        currency: "UGX",
-        status: "pending",
         createdAt: serverTimestamp(),
       });
 
       Alert.alert("Success", `UGX ${total.toLocaleString()} paid`);
       setCart([]);
-      showToast();
     } catch {
-      Alert.alert("Error", "Payment failed");
+      Alert.alert("Payment failed");
     }
   };
-
-  // 🔐 LOGIN (PHONE)
-  const login = async () => {
-    try {
-      // 🔥 TEST MODE
-      if (phone === "+256700000000") {
-        const credential = PhoneAuthProvider.credential(
-          "test-verification-id",
-          "123456"
-        );
-
-        const result = await signInWithCredential(auth, credential);
-
-        await setDoc(
-          doc(db, "users", result.user.uid),
-          { walletBalance: 0 },
-          { merge: true }
-        );
-
-        return;
-      }
-
-      const confirmationResult = await signInWithPhoneNumber(
-        auth,
-        phone
-      );
-
-      setConfirmation(confirmationResult);
-
-      Alert.alert("Code Sent", "Enter the verification code");
-    } catch {
-      Alert.alert("Error", "Failed to send code");
-    }
-  };
-
-  const confirmCode = async () => {
-    try {
-      const result = await confirmation.confirm(code);
-
-      await setDoc(
-        doc(db, "users", result.user.uid),
-        { walletBalance: 0 },
-        { merge: true }
-      );
-    } catch {
-      Alert.alert("Error", "Invalid code");
-    }
-  };
-
-  // 🔐 LOGIN SCREEN
-  if (!user) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Phone Login</Text>
-
-        {!confirmation ? (
-          <>
-            <TextInput
-              placeholder="Phone (+256...)"
-              style={styles.input}
-              onChangeText={setPhone}
-            />
-
-            <TouchableOpacity
-              style={styles.payButton}
-              onPress={login}
-            >
-              <Text style={{ color: "#000" }}>
-                Send Code
-              </Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <TextInput
-              placeholder="Enter Code"
-              style={styles.input}
-              onChangeText={setCode}
-            />
-
-            <TouchableOpacity
-              style={styles.payButton}
-              onPress={confirmCode}
-            >
-              <Text style={{ color: "#000" }}>
-                Verify
-              </Text>
-            </TouchableOpacity>
-          </>
-        )}
-      </View>
-    );
-  }
 
   const renderItem = ({ item }: any) => (
     <View style={styles.card}>
-      <Image source={{ uri: item.image }} style={styles.image} />
+      <Image
+        source={{ uri: item.image }}
+        style={styles.image}
+        resizeMode="cover"
+      />
 
       <Text style={styles.title}>{item.name}</Text>
+      <Text style={styles.category}>{item.category}</Text>
 
       <Text style={styles.price}>
         {item.price.toLocaleString()} UGX
@@ -280,6 +198,16 @@ const MyStore = () => {
     </View>
   );
 
+  if (!user) {
+    return (
+      <View style={styles.container}>
+        <Text style={{ color: "#fff" }}>
+          Please login from your main app
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.walletBar}>
@@ -290,10 +218,15 @@ const MyStore = () => {
       </View>
 
       <FlatList
-        data={demoProducts}
+        data={products}
         renderItem={renderItem}
         keyExtractor={(i) => i.id.toString()}
         numColumns={numColumns}
+        onEndReached={loadMoreProducts}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          loadingMore ? <ActivityIndicator color="#00ffcc" /> : null
+        }
       />
 
       {cart.length > 0 && (
@@ -302,10 +235,7 @@ const MyStore = () => {
             Total: {getCartTotal().toLocaleString()} UGX
           </Text>
 
-          <TouchableOpacity
-            style={styles.payButton}
-            onPress={handlePayment}
-          >
+          <TouchableOpacity style={styles.payButton} onPress={handlePayment}>
             <Text style={{ color: "#000" }}>Pay</Text>
           </TouchableOpacity>
         </View>
@@ -324,30 +254,15 @@ const MyStore = () => {
 export default MyStore;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#0f0f0f",
-    padding: 10,
-  },
-  title: {
-    color: "#fff",
-    fontSize: 18,
-  },
-  input: {
-    backgroundColor: "#1e1e1e",
-    color: "#fff",
-    marginBottom: 10,
-    padding: 10,
-  },
+  container: { flex: 1, backgroundColor: "#0f0f0f", padding: 10 },
+  title: { color: "#fff", fontSize: 16 },
+  category: { color: "#00ffcc", fontSize: 12 },
   walletBar: {
     flexDirection: "row",
     justifyContent: "center",
     padding: 10,
   },
-  walletText: {
-    color: "#00ffcc",
-    marginLeft: 10,
-  },
+  walletText: { color: "#00ffcc", marginLeft: 10 },
   card: {
     backgroundColor: "#1c1c1c",
     margin: 6,
@@ -355,13 +270,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     width: cardWidth,
   },
-  image: {
-    width: "100%",
-    height: 120,
-  },
-  price: {
-    color: "#bbb",
-  },
+  image: { width: "100%", height: 120 },
+  price: { color: "#bbb" },
   addButton: {
     backgroundColor: "#00c853",
     flexDirection: "row",
@@ -369,9 +279,7 @@ const styles = StyleSheet.create({
     padding: 8,
     marginTop: 5,
   },
-  addText: {
-    marginLeft: 5,
-  },
+  addText: { marginLeft: 5 },
   cartBar: {
     position: "absolute",
     bottom: 0,
@@ -380,11 +288,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     padding: 10,
   },
-  cartText: {
-    color: "#fff",
-  },
-  payButton: {
-    backgroundColor: "#00c853",
-    padding: 10,
-  },
+  cartText: { color: "#fff" },
+  payButton: { backgroundColor: "#00c853", padding: 10 },
 });
