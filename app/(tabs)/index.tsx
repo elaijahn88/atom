@@ -41,8 +41,20 @@ interface Order {
 
 const App = () => {
   const [user, setUser] = useState<any>(null);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+
+  const [userName, setUserName] = useState("");
+  const [contact, setContact] = useState("");
+
+  const [editName, setEditName] = useState("");
+  const [editContact, setEditContact] = useState("");
+
+  const [showProfile, setShowProfile] = useState(false);
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -88,29 +100,32 @@ const App = () => {
     },
   ];
 
-  // 🔐 AUTH LISTENER
+  // AUTH
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
     });
-
     return unsub;
   }, []);
 
-  // 🔥 LOAD WALLET
+  // LOAD USER DATA
   useEffect(() => {
     if (!user) return;
 
-    const balanceRef = ref(database, `users/${user.uid}/balance`);
+    const userRef = ref(database, `users/${user.uid}`);
 
-    const unsub = onValue(balanceRef, (snap) => {
-      setWalletBalance(snap.val() || 0);
+    const unsub = onValue(userRef, (snap) => {
+      const data = snap.val();
+
+      if (data?.name) setUserName(data.name);
+      if (data?.contact) setContact(data.contact);
+      if (data?.balance) setWalletBalance(data.balance);
     });
 
     return () => unsub();
   }, [user]);
 
-  // 🔥 LOAD ORDERS
+  // LOAD ORDERS
   useEffect(() => {
     if (!user) return;
 
@@ -173,10 +188,8 @@ const App = () => {
       return Alert.alert("Insufficient balance");
     }
 
-    const orderId = "ORD-" + Math.floor(Math.random() * 100000);
-
     const newOrder = {
-      id: orderId,
+      id: "ORD-" + Math.floor(Math.random() * 100000),
       items: cart,
       total,
       userId: user.uid,
@@ -186,10 +199,9 @@ const App = () => {
 
     push(ref(database, "orders"), newOrder);
 
-    set(
-      ref(database, `users/${user.uid}/balance`),
-      walletBalance - total
-    );
+    update(ref(database, `users/${user.uid}`), {
+      balance: walletBalance - total,
+    });
 
     setCart([]);
     setShowCart(false);
@@ -197,7 +209,7 @@ const App = () => {
     Alert.alert("Success", "Order placed");
   };
 
-  // 🔐 LOGIN
+  // LOGIN / SIGNUP
   const login = async () => {
     try {
       await signInWithEmailAndPassword(auth, email, password);
@@ -206,37 +218,47 @@ const App = () => {
 
       if (auth.currentUser) {
         set(ref(database, `users/${auth.currentUser.uid}`), {
+          name: name || "User",
+          contact: phone || email,
           balance: 0,
         });
       }
     }
   };
 
-  // 🔐 LOGIN SCREEN
+  // LOGIN SCREEN
   if (!user) {
     return (
       <View style={styles.container}>
         <Text style={styles.title}>Login</Text>
 
         <TextInput
+          placeholder="Name"
+          style={styles.input}
+          onChangeText={setName}
+        />
+
+        <TextInput
+          placeholder="Phone"
+          style={styles.input}
+          onChangeText={setPhone}
+        />
+
+        <TextInput
           placeholder="Email"
-          placeholderTextColor="#aaa"
           style={styles.input}
           onChangeText={setEmail}
         />
 
         <TextInput
           placeholder="Password"
-          placeholderTextColor="#aaa"
-          style={styles.input}
           secureTextEntry
+          style={styles.input}
           onChangeText={setPassword}
         />
 
         <TouchableOpacity style={styles.checkoutBtn} onPress={login}>
-          <Text style={{ color: "white" }}>
-            Login / Sign Up
-          </Text>
+          <Text style={{ color: "white" }}>Login / Sign Up</Text>
         </TouchableOpacity>
       </View>
     );
@@ -244,7 +266,23 @@ const App = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>coco</Text>
+      {/* PROFILE BUTTON */}
+      <TouchableOpacity
+        style={styles.profileBtn}
+        onPress={() => {
+          setEditName(userName);
+          setEditContact(contact);
+          setShowProfile(true);
+        }}
+      >
+        <Text style={{ color: "#fff" }}>👤</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.title}>
+        👋 Hi, {userName || "User"}
+      </Text>
+
+      <Text style={{ color: "#aaa" }}>📞 {contact}</Text>
 
       <Text style={styles.walletText}>
         💰 ${walletBalance}
@@ -252,86 +290,62 @@ const App = () => {
 
       <ScrollView>
         {menu.map((item) => (
-          <FoodCard
-            key={item.id}
-            item={item}
-            addToCart={addToCart}
-          />
+          <FoodCard key={item.id} item={item} addToCart={addToCart} />
         ))}
       </ScrollView>
 
-      <TouchableOpacity
-        style={styles.cartButton}
-        onPress={() => setShowCart(!showCart)}
-      >
-        <Text style={{ color: "white" }}>
-          🛒 {cart.length}
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.agentButton}
-        onPress={() => setShowAgentPanel(!showAgentPanel)}
-      >
-        <Text style={{ color: "white" }}>Agent</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={{ position: "absolute", top: 40, right: 20 }}
-        onPress={() => signOut(auth)}
-      >
-        <Text style={{ color: "red" }}>Logout</Text>
-      </TouchableOpacity>
-
-      {showCart && (
+      {/* PROFILE PANEL */}
+      {showProfile && (
         <View style={styles.panel}>
-          <Text style={styles.panelTitle}>Cart</Text>
+          <Text style={styles.panelTitle}>My Profile</Text>
 
-          {cart.map((item) => (
-            <Text key={item.id} style={{ color: "#fff" }}>
-              {item.name} x {item.quantity}
-            </Text>
-          ))}
+          <Text style={styles.label}>Name</Text>
+          <TextInput
+            style={styles.input}
+            value={editName}
+            onChangeText={setEditName}
+          />
 
-          <Text style={{ color: "#fff" }}>
-            Total: ${total}
+          <Text style={styles.label}>Contact</Text>
+          <TextInput
+            style={styles.input}
+            value={editContact}
+            onChangeText={setEditContact}
+          />
+
+          <Text style={{ color: "#32CD32" }}>
+            Wallet: ${walletBalance}
           </Text>
 
           <TouchableOpacity
             style={styles.checkoutBtn}
-            onPress={checkout}
-          >
-            <Text style={{ color: "white" }}>
-              Checkout
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {showAgentPanel && (
-        <View style={styles.panel}>
-          <Text style={styles.panelTitle}>
-            Agent Panel
-          </Text>
-
-          <TouchableOpacity
-            style={styles.topUpBtn}
-            onPress={() => {
-              update(ref(database, `users/${user.uid}`), {
-                balance: walletBalance + 50,
+            onPress={async () => {
+              await update(ref(database, `users/${user.uid}`), {
+                name: editName,
+                contact: editContact,
               });
+
+              setUserName(editName);
+              setContact(editContact);
+
+              setShowProfile(false);
+              Alert.alert("Saved");
             }}
           >
-            <Text style={{ color: "#fff" }}>
-              + Add Money
+            <Text style={{ color: "#fff" }}>Save</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => signOut(auth)}>
+            <Text style={{ color: "red", marginTop: 10 }}>
+              Logout
             </Text>
           </TouchableOpacity>
 
-          {orders.map((o) => (
-            <Text key={o.id} style={{ color: "#fff" }}>
-              {o.id} - ${o.total} ({o.status})
+          <TouchableOpacity onPress={() => setShowProfile(false)}>
+            <Text style={{ color: "#aaa", marginTop: 10 }}>
+              Close
             </Text>
-          ))}
+          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -343,27 +357,12 @@ const FoodCard = ({ item, addToCart }: any) => {
   const [loading, setLoading] = useState(true);
 
   return (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => addToCart(item)}
-    >
-      {loading && (
-        <ActivityIndicator
-          style={{
-            position: "absolute",
-            top: 70,
-            alignSelf: "center",
-          }}
-        />
-      )}
+    <TouchableOpacity style={styles.card} onPress={() => addToCart(item)}>
+      {loading && <ActivityIndicator style={{ marginTop: 60 }} />}
 
       <Animated.Image
         source={{ uri: item.image }}
-        style={{
-          width: "100%",
-          height: 180,
-          opacity: fadeAnim,
-        }}
+        style={{ width: "100%", height: 180, opacity: fadeAnim }}
         onLoad={() => {
           setLoading(false);
           Animated.timing(fadeAnim, {
@@ -375,12 +374,8 @@ const FoodCard = ({ item, addToCart }: any) => {
       />
 
       <View style={{ padding: 10 }}>
-        <Text style={{ color: "#fff" }}>
-          {item.name}
-        </Text>
-        <Text style={{ color: "#2ecc71" }}>
-          ${item.price}
-        </Text>
+        <Text style={{ color: "#fff" }}>{item.name}</Text>
+        <Text style={{ color: "#2ecc71" }}>${item.price}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -389,25 +384,13 @@ const FoodCard = ({ item, addToCart }: any) => {
 export default App;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#121212",
-    padding: 15,
-  },
-  title: {
-    fontSize: 24,
-    color: "#FF6347",
-    fontWeight: "bold",
-  },
-  walletText: {
-    color: "#32CD32",
-    fontSize: 18,
-    marginBottom: 10,
-  },
+  container: { flex: 1, backgroundColor: "#121212", padding: 15 },
+  title: { fontSize: 24, color: "#FF6347", fontWeight: "bold" },
+  walletText: { color: "#32CD32", fontSize: 18 },
   input: {
     backgroundColor: "#1E1E1E",
     color: "#fff",
-    marginBottom: 10,
+    marginTop: 10,
     padding: 10,
   },
   card: {
@@ -416,43 +399,27 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     overflow: "hidden",
   },
-  cartButton: {
-    position: "absolute",
-    bottom: 20,
-    right: 20,
-    backgroundColor: "green",
-    padding: 15,
-    borderRadius: 30,
-  },
-  agentButton: {
-    position: "absolute",
-    bottom: 80,
-    right: 20,
-    backgroundColor: "blue",
-    padding: 12,
-    borderRadius: 30,
-  },
   panel: {
     position: "absolute",
-    bottom: 140,
+    bottom: 100,
     left: 10,
     right: 10,
     backgroundColor: "#1E1E1E",
     padding: 15,
   },
-  panelTitle: {
-    color: "#fff",
-    fontWeight: "bold",
-    marginBottom: 10,
-  },
+  panelTitle: { color: "#fff", fontWeight: "bold" },
   checkoutBtn: {
     backgroundColor: "#FF6347",
     padding: 10,
     marginTop: 10,
   },
-  topUpBtn: {
-    backgroundColor: "green",
-    padding: 10,
-    marginBottom: 10,
+  label: { color: "#aaa", marginTop: 10 },
+  profileBtn: {
+    position: "absolute",
+    top: 40,
+    left: 20,
+    backgroundColor: "#333",
+    padding: 8,
+    borderRadius: 10,
   },
 });
