@@ -279,13 +279,13 @@ const App = () => {
       </TouchableOpacity>
 
       <Text style={styles.title}>
-        👋 Hi, {userName || "User"}
+         {userName || "User"}
       </Text>
 
       <Text style={{ color: "#aaa" }}>📞 {contact}</Text>
 
       <Text style={styles.walletText}>
-        💰 ${walletBalance}
+         ${walletBalance}
       </Text>
 
       <ScrollView>
