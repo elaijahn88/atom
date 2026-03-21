@@ -26,6 +26,9 @@ interface FoodItem {
   price: number;
   image: string;
   category: "meal" | "chai";
+  ownerName: string;
+  ownerPhone: string;
+  ownerLocation: string;
 }
 
 type CartItem = FoodItem & { quantity: number };
@@ -70,37 +73,44 @@ const App = () => {
       id: 1,
       name: "Classic Burger",
       price: 6,
-      image:
-        "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800",
+      image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800",
       category: "meal",
+      ownerName: "Restaurant One",
+      ownerPhone: "+256700000001",
+      ownerLocation: "Kampala",
     },
     {
       id: 2,
       name: "Pepperoni Pizza",
       price: 10,
-      image:
-        "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800",
+      image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800",
       category: "meal",
+      ownerName: "Pizza Hub",
+      ownerPhone: "+256700000002",
+      ownerLocation: "Ntinda",
     },
     {
       id: 3,
       name: "Grilled Chicken",
       price: 9,
-      image:
-        "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800",
+      image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800",
       category: "meal",
+      ownerName: "Chicken Spot",
+      ownerPhone: "+256700000003",
+      ownerLocation: "Kawempe",
     },
     {
       id: 4,
       name: "African Milk Tea",
       price: 2,
-      image:
-        "https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=800",
+      image: "https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=800",
       category: "chai",
+      ownerName: "Tea Corner",
+      ownerPhone: "+256700000004",
+      ownerLocation: "Mukono",
     },
   ];
 
-  // AUTH
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -108,7 +118,6 @@ const App = () => {
     return unsub;
   }, []);
 
-  // LOAD USER DATA
   useEffect(() => {
     if (!user) return;
 
@@ -125,7 +134,6 @@ const App = () => {
     return () => unsub();
   }, [user]);
 
-  // LOAD ORDERS
   useEffect(() => {
     if (!user) return;
 
@@ -166,9 +174,7 @@ const App = () => {
 
       if (existing) {
         return prev.map((c) =>
-          c.id === item.id
-            ? { ...c, quantity: c.quantity + 1 }
-            : c
+          c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c
         );
       }
 
@@ -209,7 +215,6 @@ const App = () => {
     Alert.alert("Success", "Order placed");
   };
 
-  // LOGIN / SIGNUP
   const login = async () => {
     try {
       await signInWithEmailAndPassword(auth, email, password);
@@ -226,7 +231,6 @@ const App = () => {
     }
   };
 
-  // LOGIN SCREEN
   if (!user) {
     return (
       <View style={styles.container}>
@@ -237,19 +241,16 @@ const App = () => {
           style={styles.input}
           onChangeText={setName}
         />
-
         <TextInput
           placeholder="Phone"
           style={styles.input}
           onChangeText={setPhone}
         />
-
         <TextInput
           placeholder="Email"
           style={styles.input}
           onChangeText={setEmail}
         />
-
         <TextInput
           placeholder="Password"
           secureTextEntry
@@ -266,88 +267,15 @@ const App = () => {
 
   return (
     <View style={styles.container}>
-      {/* PROFILE BUTTON */}
-      <TouchableOpacity
-        style={styles.profileBtn}
-        onPress={() => {
-          setEditName(userName);
-          setEditContact(contact);
-          setShowProfile(true);
-        }}
-      >
-        <Text style={{ color: "#fff" }}></Text>
-      </TouchableOpacity>
-
-      <Text style={styles.title}>
-         {userName || "User"}
-      </Text>
-
+      <Text style={styles.title}>{userName || "User"}</Text>
       <Text style={{ color: "#aaa" }}>{contact}</Text>
-
-      <Text style={styles.walletText}>
-         ${walletBalance}
-      </Text>
+      <Text style={styles.walletText}>${walletBalance}</Text>
 
       <ScrollView>
         {menu.map((item) => (
           <FoodCard key={item.id} item={item} addToCart={addToCart} />
         ))}
       </ScrollView>
-
-      {/* PROFILE PANEL */}
-      {showProfile && (
-        <View style={styles.panel}>
-          <Text style={styles.panelTitle}>My Profile</Text>
-
-          <Text style={styles.label}>Name</Text>
-          <TextInput
-            style={styles.input}
-            value={editName}
-            onChangeText={setEditName}
-          />
-
-          <Text style={styles.label}>Contact</Text>
-          <TextInput
-            style={styles.input}
-            value={editContact}
-            onChangeText={setEditContact}
-          />
-
-          <Text style={{ color: "#32CD32" }}>
-            Wallet: ${walletBalance}
-          </Text>
-
-          <TouchableOpacity
-            style={styles.checkoutBtn}
-            onPress={async () => {
-              await update(ref(database, `users/${user.uid}`), {
-                name: editName,
-                contact: editContact,
-              });
-
-              setUserName(editName);
-              setContact(editContact);
-
-              setShowProfile(false);
-              Alert.alert("Saved");
-            }}
-          >
-            <Text style={{ color: "#fff" }}>Save</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => signOut(auth)}>
-            <Text style={{ color: "red", marginTop: 10 }}>
-              Logout
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => setShowProfile(false)}>
-            <Text style={{ color: "#aaa", marginTop: 10 }}>
-              Close
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
     </View>
   );
 };
@@ -376,6 +304,12 @@ const FoodCard = ({ item, addToCart }: any) => {
       <View style={{ padding: 10 }}>
         <Text style={{ color: "#fff" }}>{item.name}</Text>
         <Text style={{ color: "#2ecc71" }}>${item.price}</Text>
+
+        <View style={styles.ownerBox}>
+          <Text style={styles.ownerName}>👤 {item.ownerName}</Text>
+          <Text style={styles.ownerPhone}>📞 {item.ownerPhone}</Text>
+          <Text style={styles.ownerLocation}>📍 {item.ownerLocation}</Text>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -384,9 +318,20 @@ const FoodCard = ({ item, addToCart }: any) => {
 export default App;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#121212", padding: 15 },
-  title: { fontSize: 24, color: "#FF6347", fontWeight: "bold" },
-  walletText: { color: "#32CD32", fontSize: 18 },
+  container: {
+    flex: 1,
+    backgroundColor: "#121212",
+    padding: 15,
+  },
+  title: {
+    fontSize: 24,
+    color: "#FF6347",
+    fontWeight: "bold",
+  },
+  walletText: {
+    color: "#32CD32",
+    fontSize: 18,
+  },
   input: {
     backgroundColor: "#1E1E1E",
     color: "#fff",
@@ -399,27 +344,27 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     overflow: "hidden",
   },
-  panel: {
-    position: "absolute",
-    bottom: 100,
-    left: 10,
-    right: 10,
-    backgroundColor: "#1E1E1E",
-    padding: 15,
+  ownerBox: {
+    marginTop: 6,
+    padding: 6,
+    backgroundColor: "#111",
+    borderRadius: 8,
   },
-  panelTitle: { color: "#fff", fontWeight: "bold" },
+  ownerName: {
+    color: "#fff",
+    fontSize: 12,
+  },
+  ownerPhone: {
+    color: "#00ffcc",
+    fontSize: 12,
+  },
+  ownerLocation: {
+    color: "#aaa",
+    fontSize: 12,
+  },
   checkoutBtn: {
     backgroundColor: "#FF6347",
     padding: 10,
     marginTop: 10,
-  },
-  label: { color: "#aaa", marginTop: 10 },
-  profileBtn: {
-    position: "absolute",
-    top: 40,
-    left: 20,
-    backgroundColor: "#333",
-    padding: 8,
-    borderRadius: 10,
   },
 });
