@@ -8,7 +8,7 @@ import { db, auth } from "../../firebase"; import { onAuthStateChanged, signOut 
 
 const numColumns = 2; const screenWidth = Dimensions.get("window").width; const cardWidth = screenWidth / numColumns - 20;
 
-// Demo products with owner information const demoProducts = [ { id: 1, name: "iPhone 15", price: 6500000, image: "https://images.unsplash.com/photo-1695048133142-1a20484d2569", category: "Phones", ownerName: "Elijah Nabimanya", ownerPhone: "+256700000000", ownerLocation: "Kampala", }, { id: 2, name: "Samsung S23", price: 4200000, image: "https://images.unsplash.com/photo-1610945265064-0e34e5519bbf", category: "Phones", ownerName: "Sarah K.", ownerPhone: "+256701111111", ownerLocation: "Entebbe", }, { id: 3, name: "MacBook Pro", price: 9500000, image: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8", category: "Laptops", ownerName: "Daniel M.", ownerPhone: "+256702222222", ownerLocation: "Kampala", }, { id: 4, name: "Dell XPS", price: 5200000, image: "https://images.unsplash.com/photo-1587614382346-acd977736f90", category: "Laptops", ownerName: "Joy A.", ownerPhone: "+256703333333", ownerLocation: "Mukono", }, { id: 5, name: "Nike Air Max", price: 350000, image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff", category: "Shoes", ownerName: "Paul B.", ownerPhone: "+256704444444", ownerLocation: "Kawempe", }, { id: 6, name: "Adidas Ultraboost", price: 400000, image: "https://images.unsplash.com/photo-1600185365483-26d7a4cc7519", category: "Shoes", ownerName: "Grace N.", ownerPhone: "+256705555555", ownerLocation: "Ntinda", }, ];
+/* ---------------- DEMO DATA ---------------- */ const demoProducts = [ { id: 1, name: "iPhone 15", price: 6500000, image: "https://images.unsplash.com/photo-1695048133142-1a20484d2569", category: "Phones", ownerName: "Elijah Nabimanya", ownerPhone: "+256700000000", ownerLocation: "Kampala", }, { id: 2, name: "Samsung S23", price: 4200000, image: "https://images.unsplash.com/photo-1610945265064-0e34e5519bbf", category: "Phones", ownerName: "Sarah K.", ownerPhone: "+256701111111", ownerLocation: "Entebbe", }, { id: 3, name: "MacBook Pro", price: 9500000, image: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8", category: "Laptops", ownerName: "Daniel M.", ownerPhone: "+256702222222", ownerLocation: "Kampala", }, ];
 
 const MyStore = () => { const [user, setUser] = useState(null); const [cart, setCart] = useState([]); const [wallet, setWallet] = useState(0);
 
@@ -16,15 +16,15 @@ const [products, setProducts] = useState([]); const [page, setPage] = useState(1
 
 const toastAnim = useRef(new Animated.Value(0)).current;
 
-useEffect(() => { const unsub = onAuthStateChanged(auth, (u) => setUser(u)); return unsub; }, []);
+/* ---------- AUTH LISTENER ---------- */ useEffect(() => { const unsub = onAuthStateChanged(auth, (u) => { setUser(u || null); }); return unsub; }, []);
 
-useEffect(() => { if (!user) return;
+/* ---------- WALLET LISTENER ---------- */ useEffect(() => { if (!user?.uid) return;
 
 const walletRef = doc(db, "users", user.uid);
 
 const unsub = onSnapshot(walletRef, (snap) => {
   if (snap.exists()) {
-    setWallet(snap.data()?.walletBalance || 0);
+    setWallet(Number(snap.data()?.walletBalance || 0));
   }
 });
 
@@ -32,30 +32,30 @@ return unsub;
 
 }, [user]);
 
-useEffect(() => { loadMoreProducts(); }, []);
+/* ---------- INITIAL LOAD ---------- */ useEffect(() => { loadMoreProducts(); }, []);
 
-const loadMoreProducts = () => { if (loadingMore) return;
+/* ---------- LOAD MORE ---------- */ const loadMoreProducts = () => { if (loadingMore) return;
 
 setLoadingMore(true);
 
 setTimeout(() => {
   const newItems = demoProducts.map((item, index) => ({
     ...item,
-    id: item.id + page * 100 + index,
+    id: `${item.id}-${page}-${index}`,
   }));
 
   setProducts((prev) => [...prev, ...newItems]);
   setPage((prev) => prev + 1);
   setLoadingMore(false);
-}, 800);
+}, 600);
 
 };
 
-const addToCart = (item) => { setCart((prev) => prev.find((p) => p.id === item.id) ? prev : [...prev, item] ); };
+/* ---------- CART ---------- */ const addToCart = (item) => { setCart((prev) => prev.find((p) => p.id === item.id) ? prev : [...prev, item] ); };
 
-const getCartTotal = () => cart.reduce((sum, item) => sum + Number(item.price), 0);
+const getCartTotal = () => cart.reduce((sum, item) => sum + Number(item.price || 0), 0);
 
-const handlePayment = async () => { if (!user) return Alert.alert("Login required");
+/* ---------- PAYMENT ---------- */ const handlePayment = async () => { if (!user?.uid) { return Alert.alert("Login required"); }
 
 const total = getCartTotal();
 
@@ -63,9 +63,11 @@ try {
   const userRef = doc(db, "users", user.uid);
   const snap = await getDoc(userRef);
 
-  if (!snap.exists()) return Alert.alert("Wallet not found");
+  if (!snap.exists()) {
+    return Alert.alert("Wallet not found");
+  }
 
-  const balance = snap.data()?.walletBalance || 0;
+  const balance = Number(snap.data()?.walletBalance || 0);
 
   if (balance < total) {
     return Alert.alert("Insufficient Balance");
@@ -82,21 +84,22 @@ try {
     createdAt: serverTimestamp(),
   });
 
-  Alert.alert("Success", `UGX ${total.toLocaleString()} paid`);
   setCart([]);
-} catch {
+  Alert.alert("Success", `UGX ${total.toLocaleString()} paid`);
+} catch (err) {
+  console.log(err);
   Alert.alert("Payment failed");
 }
 
 };
 
-const renderItem = ({ item }) => ( <View style={styles.card}> <Image source={{ uri: item.image }} style={styles.image} resizeMode="cover" />
+/* ---------- PRODUCT CARD ---------- */ const renderItem = ({ item }) => ( <View style={styles.card}> <Image source={{ uri: item.image }} style={styles.image} resizeMode="cover" />
 
 <Text style={styles.title}>{item.name}</Text>
   <Text style={styles.category}>{item.category}</Text>
 
   <Text style={styles.price}>
-    {item.price.toLocaleString()} UGX
+    {Number(item.price || 0).toLocaleString()} UGX
   </Text>
 
   <View style={styles.ownerBox}>
@@ -116,19 +119,21 @@ const renderItem = ({ item }) => ( <View style={styles.card}> <Image source={{ u
 
 );
 
-if (!user) { return ( <View style={styles.container}> <Text style={{ color: "#fff" }}> Please login from your main app </Text> </View> ); }
+/* ---------- NOT LOGGED IN ---------- */ if (!user) { return ( <View style={styles.container}> <Text style={{ color: "#fff" }}> Please login from your main app </Text> </View> ); }
 
-return ( <View style={styles.container}> <View style={styles.walletBar}> <Ionicons name="wallet" size={24} color="#00ffcc" /> <Text style={styles.walletText}> UGX {wallet.toLocaleString()} </Text> </View>
+/* ---------- UI ---------- */ return ( <View style={styles.container}> <View style={styles.walletBar}> <Ionicons name="wallet" size={24} color="#00ffcc" /> <Text style={styles.walletText}> UGX {wallet.toLocaleString()} </Text> </View>
 
 <FlatList
     data={products}
     renderItem={renderItem}
-    keyExtractor={(i) => i.id.toString()}
+    keyExtractor={(i) => i.id}
     numColumns={numColumns}
     onEndReached={loadMoreProducts}
-    onEndReachedThreshold={0.5}
+    onEndReachedThreshold={0.3}
     ListFooterComponent={
-      loadingMore ? <ActivityIndicator color="#00ffcc" /> : null
+      loadingMore ? (
+        <ActivityIndicator color="#00ffcc" />
+      ) : null
     }
   />
 
