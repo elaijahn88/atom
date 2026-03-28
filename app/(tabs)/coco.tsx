@@ -1,336 +1,237 @@
-import React, { useState, useRef, useEffect } from "react";
+// MarketPlace.tsx – Full Marketplace with categories, search, cart, checkout
+
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
   FlatList,
-  Image,
+  TextInput,
   TouchableOpacity,
-  StyleSheet,
   Animated,
-  Dimensions,
-  Alert,
+  StyleSheet,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 
-import { Ionicons } from "@expo/vector-icons";
-import {
-  doc,
-  getDoc,
-  updateDoc,
-  increment,
-  collection,
-  addDoc,
-  serverTimestamp,
-  onSnapshot,
-} from "firebase/firestore";
-import { db, auth } from "../../firebase";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { firestore, database, auth } from "../../firebase";
+import { collection, query, orderBy, limit, startAfter, getDocs, where } from "firebase/firestore";
+import { ref, onValue, set } from "firebase/database";
+import { onAuthStateChanged } from "firebase/auth";
 
-const numColumns = 2;
-const screenWidth = Dimensions.get("window").width;
-const cardWidth = screenWidth / numColumns - 20;
+// ============================
+// TYPES
+// ============================
 
-/* ---------------- DEMO DATA ---------------- */
-const demoProducts = [
-  {
-    id: 1,
-    name: "iPhone 15",
-    price: 6500000,
-    image: "https://images.unsplash.com/photo-1695048133142-1a20484d2569",
-    category: "Phones",
-    ownerName: "Elijah Nabimanya",
-    ownerPhone: "+256700000000",
-    ownerLocation: "Kampala",
-  },
-  {
-    id: 2,
-    name: "Samsung S23",
-    price: 4200000,
-    image: "https://images.unsplash.com/photo-1610945265064-0e34e5519bbf",
-    category: "Phones",
-    ownerName: "Sarah K.",
-    ownerPhone: "+256701111111",
-    ownerLocation: "Entebbe",
-  },
-  {
-    id: 3,
-    name: "MacBook Pro",
-    price: 9500000,
-    image: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8",
-    category: "Laptops",
-    ownerName: "Daniel M.",
-    ownerPhone: "+256702222222",
-    ownerLocation: "Kampala",
-  },
-];
+interface Product {
+  id: string;
+  name: string;
+  price: number;
+  image: string;
+  category: string;
+  sellerName: string;
+}
 
-const MyStore = () => {
-  const [user, setUser] = useState(null);
-  const [cart, setCart] = useState([]);
-  const [wallet, setWallet] = useState(0);
-  const [products, setProducts] = useState([]);
-  const [page, setPage] = useState(1);
+type CartItem = Product & { quantity: number };
+
+// ============================
+// MAIN COMPONENT
+// ============================
+
+export default function Marketplace() {
+  const [user, setUser] = useState<any>(null);
+
+  const [products, setProducts] = useState<Product[]>([]);
+  const [lastDoc, setLastDoc] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const toastAnim = useRef(new Animated.Value(0)).current;
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [wallet, setWallet] = useState(0);
+  const [category, setCategory] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
-  /* ---------- AUTH LISTENER ---------- */
+  const PAGE_SIZE = 8;
+
+  // ============================
+  // AUTH LISTENER
+  // ============================
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u || null);
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) listenWallet(u.uid);
     });
-    return unsub;
+    return unsubscribe;
   }, []);
 
-  /* ---------- WALLET LISTENER ---------- */
-  useEffect(() => {
-    if (!user?.uid) return;
-
-    const walletRef = doc(db, "users", user.uid);
-
-    const unsub = onSnapshot(walletRef, (snap) => {
-      if (snap.exists()) {
-        setWallet(Number(snap.data()?.walletBalance || 0));
-      }
+  // ============================
+  // WALLET LISTENER
+  // ============================
+  const listenWallet = (uid: string) => {
+    const walletRef = ref(database, `wallet/${uid}`);
+    return onValue(walletRef, (snap) => {
+      const val = snap.val();
+      setWallet(typeof val === "number" ? val : 0);
     });
+  };
 
-    return unsub;
-  }, [user]);
-
-  /* ---------- INITIAL LOAD ---------- */
+  // ============================
+  // LOAD PRODUCTS
+  // ============================
   useEffect(() => {
-    loadMoreProducts();
-  }, []);
+    loadProducts(true);
+  }, [category, search]);
 
-  /* ---------- LOAD MORE ---------- */
-  const loadMoreProducts = () => {
-    if (loadingMore) return;
+  const loadProducts = async (reset = false) => {
+    if (reset) setLoading(true);
+    else setLoadingMore(true);
 
-    setLoadingMore(true);
+    let q: any = query(collection(firestore, "products"), orderBy("name"), limit(PAGE_SIZE));
 
-    setTimeout(() => {
-      const newItems = demoProducts.map((item, index) => ({
-        ...item,
-        id: `\( {item.id}- \){page}-${index}`,
-      }));
+    if (category) q = query(collection(firestore, "products"), where("category", "==", category), orderBy("name"), limit(PAGE_SIZE));
+    if (reset && search) q = query(collection(firestore, "products"), where("name", ">=", search), where("name", "<=", search + "\uf8ff"), orderBy("name"), limit(PAGE_SIZE));
 
-      setProducts((prev) => [...prev, ...newItems]);
-      setPage((prev) => prev + 1);
-      setLoadingMore(false);
-    }, 600);
+    if (!reset && lastDoc) q = query(collection(firestore, "products"), orderBy("name"), startAfter(lastDoc), limit(PAGE_SIZE));
+
+    const snap = await getDocs(q);
+    const arr: Product[] = [];
+    snap.forEach((doc) => arr.push({ id: doc.id, ...(doc.data() as any) }));
+
+    setProducts(reset ? arr : [...products, ...arr]);
+    setLastDoc(snap.docs[snap.docs.length - 1] || null);
+
+    setLoading(false);
+    setLoadingMore(false);
   };
 
-  /* ---------- CART ---------- */
-  const addToCart = (item) => {
-    setCart((prev) =>
-      prev.find((p) => p.id === item.id) ? prev : [...prev, item]
-    );
+  const loadMore = () => {
+    if (!lastDoc || loadingMore) return;
+    loadProducts(false);
   };
 
-  const getCartTotal = () =>
-    cart.reduce((sum, item) => sum + Number(item.price || 0), 0);
+  // ============================
+  // CART HANDLERS
+  // ============================
+  const addToCart = (item: Product) => {
+    setCart((prev) => {
+      const existing = prev.find((c) => c.id === item.id);
+      if (existing) return prev.map((c) => (c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c));
+      return [...prev, { ...item, quantity: 1 }];
+    });
+  };
 
-  /* ---------- PAYMENT ---------- */
-  const handlePayment = async () => {
-    if (!user?.uid) {
-      return Alert.alert("Login required");
-    }
+  const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
 
-    const total = getCartTotal();
+  const checkout = async () => {
+    if (!user) return Alert.alert("Login first");
+    if (cart.length === 0) return Alert.alert("Cart is empty");
+    if (wallet < total) return Alert.alert("Insufficient wallet balance");
 
     try {
-      const userRef = doc(db, "users", user.uid);
-      const snap = await getDoc(userRef);
-
-      if (!snap.exists()) {
-        return Alert.alert("Wallet not found");
-      }
-
-      const balance = Number(snap.data()?.walletBalance || 0);
-
-      if (balance < total) {
-        return Alert.alert("Insufficient Balance");
-      }
-
-      await updateDoc(userRef, {
-        walletBalance: increment(-total),
+      cart.forEach((item) => {
+        // In production, you would create orders in Firestore
+        // Here we just deduct wallet
       });
-
-      await addDoc(collection(db, "orders"), {
-        userId: user.uid,
-        items: cart,
-        total,
-        createdAt: serverTimestamp(),
-      });
-
+      await set(ref(database, `wallet/${user.uid}`), wallet - total);
       setCart([]);
-      Alert.alert("Success", `UGX ${total.toLocaleString()} paid`);
-    } catch (err) {
-      console.log(err);
-      Alert.alert("Payment failed");
+      Alert.alert("Checkout successful!");
+    } catch {
+      Alert.alert("Checkout failed");
     }
   };
 
-  /* ---------- PRODUCT CARD ---------- */
-  const renderItem = ({ item }) => (
-    <View style={styles.card}>
-      <Image source={{ uri: item.image }} style={styles.image} resizeMode="cover" />
-
-      <Text style={styles.title}>{item.name}</Text>
-      <Text style={styles.category}>{item.category}</Text>
-
-      <Text style={styles.price}>
-        {Number(item.price || 0).toLocaleString()} UGX
-      </Text>
-
-      <View style={styles.ownerBox}>
-        <Text style={styles.ownerName}>👤 {item.ownerName}</Text>
-        <Text style={styles.ownerPhone}>📞 {item.ownerPhone}</Text>
-        <Text style={styles.ownerLocation}>📍 {item.ownerLocation}</Text>
-      </View>
-
-      <TouchableOpacity style={styles.addButton} onPress={() => addToCart(item)}>
-        <Ionicons name="cart" size={18} color="#000" />
-        <Text style={styles.addText}>Add</Text>
-      </TouchableOpacity>
-    </View>
+  // ============================
+  // AUTH UI
+  // ============================
+  if (!user) return (
+    <View style={styles.center}><Text style={{color:'#fff'}}>Login required</Text></View>
   );
 
-  /* ---------- NOT LOGGED IN ---------- */
-  if (!user) {
-    return (
-      <View style={styles.container}>
-        <Text style={{ color: "#fff" }}>Please login from your main app</Text>
-      </View>
-    );
-  }
-
-  /* ---------- UI ---------- */
+  // ============================
+  // MAIN UI
+  // ============================
   return (
     <View style={styles.container}>
-      <View style={styles.walletBar}>
-        <Ionicons name="wallet" size={24} color="#00ffcc" />
-        <Text style={styles.walletText}>UGX {wallet.toLocaleString()}</Text>
+      <Text style={styles.wallet}>Wallet: UGX {wallet}</Text>
+
+      {/* SEARCH */}
+      <TextInput
+        placeholder="Search products..."
+        placeholderTextColor="#888"
+        style={styles.input}
+        value={search}
+        onChangeText={setSearch}
+      />
+
+      {/* CATEGORY TABS */}
+      <View style={styles.tabs}>
+        {["shoes", "phones", "gadgets", "others"].map((cat) => (
+          <TouchableOpacity
+            key={cat}
+            onPress={() => setCategory(category === cat ? null : cat)}
+            style={[styles.tab, category === cat && styles.activeTab]}
+          >
+            <Text style={{color: category === cat ? "#fff" : "#aaa"}}>{cat.toUpperCase()}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       <FlatList
         data={products}
-        renderItem={renderItem}
-        keyExtractor={(i) => i.id}
-        numColumns={numColumns}
-        onEndReached={loadMoreProducts}
-        onEndReachedThreshold={0.3}
-        ListFooterComponent={
-          loadingMore ? <ActivityIndicator color="#00ffcc" /> : null
-        }
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => <ProductCard item={item} addToCart={addToCart} />}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={loadingMore ? <ActivityIndicator /> : null}
       />
 
       {cart.length > 0 && (
-        <View style={styles.cartBar}>
-          <Text style={styles.cartText}>
-            Total: {getCartTotal().toLocaleString()} UGX
-          </Text>
-
-          <TouchableOpacity style={styles.payButton} onPress={handlePayment}>
-            <Text style={{ color: "#000" }}>Pay</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.checkout} onPress={checkout}>
+          <Text style={{ color: "#fff" }}>Checkout UGX {total}</Text>
+        </TouchableOpacity>
       )}
-
-      <TouchableOpacity
-        style={{ position: "absolute", top: 40, right: 20 }}
-        onPress={() => signOut(auth)}
-      >
-        <Text style={{ color: "red" }}>Logout</Text>
-      </TouchableOpacity>
     </View>
+  );
+}
+
+// ============================
+// PRODUCT CARD
+// ============================
+
+const ProductCard = ({ item, addToCart }: any) => {
+  const fade = useRef(new Animated.Value(0)).current;
+
+  return (
+    <TouchableOpacity style={styles.card} onPress={() => addToCart(item)}>
+      <Animated.Image
+        source={{ uri: item.image }}
+        style={{ width: "100%", height: 180, opacity: fade }}
+        resizeMode="cover"
+        onLoad={() => Animated.timing(fade, { toValue: 1, duration: 300, useNativeDriver: true }).start()}
+      />
+      <View style={{ padding: 10 }}>
+        <Text style={styles.name}>{item.name}</Text>
+        <Text style={styles.price}>UGX {item.price}</Text>
+        <Text style={styles.seller}>🏪 {item.sellerName}</Text>
+      </View>
+    </TouchableOpacity>
   );
 };
 
-export default MyStore;
+// ============================
+// STYLES
+// ============================
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#0f0f0f",
-    padding: 10,
-  },
-  title: {
-    color: "#fff",
-    fontSize: 16,
-  },
-  category: {
-    color: "#00ffcc",
-    fontSize: 12,
-  },
-  walletBar: {
-    flexDirection: "row",
-    justifyContent: "center",
-    padding: 10,
-  },
-  walletText: {
-    color: "#00ffcc",
-    marginLeft: 10,
-  },
-  card: {
-    backgroundColor: "#1c1c1c",
-    margin: 6,
-    padding: 10,
-    borderRadius: 12,
-    width: cardWidth,
-  },
-  image: {
-    width: "100%",
-    height: 120,
-    borderRadius: 8,
-  },
-  price: {
-    color: "#bbb",
-  },
-  addButton: {
-    backgroundColor: "#00c853",
-    flexDirection: "row",
-    justifyContent: "center",
-    padding: 8,
-    marginTop: 5,
-    borderRadius: 6,
-  },
-  addText: {
-    marginLeft: 5,
-  },
-  ownerBox: {
-    marginTop: 6,
-    padding: 6,
-    backgroundColor: "#111",
-    borderRadius: 8,
-  },
-  ownerName: {
-    color: "#fff",
-    fontSize: 12,
-  },
-  ownerPhone: {
-    color: "#00ffcc",
-    fontSize: 12,
-  },
-  ownerLocation: {
-    color: "#aaa",
-    fontSize: 12,
-  },
-  cartBar: {
-    position: "absolute",
-    bottom: 0,
-    width: "100%",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    padding: 10,
-    backgroundColor: "#000",
-  },
-  cartText: {
-    color: "#fff",
-  },
-  payButton: {
-    backgroundColor: "#00c853",
-    padding: 10,
-    borderRadius: 6,
-  },
+  container: { flex:1, padding:15, backgroundColor:'#121212' },
+  wallet: { color:'#32CD32', fontSize:16, marginBottom:10 },
+  input: { backgroundColor:'#1E1E1E', color:'#fff', padding:10, borderRadius:8, marginBottom:10 },
+  tabs: { flexDirection:'row', justifyContent:'space-around', marginBottom:10 },
+  tab: { padding:8, borderRadius:8, borderWidth:1, borderColor:'#555' },
+  activeTab: { backgroundColor:'#FF6347', borderColor:'#FF6347' },
+  card: { backgroundColor:'#1E1E1E', marginBottom:15, borderRadius:14, overflow:'hidden' },
+  name: { color:'#fff', fontSize:16 },
+  price: { color:'#2ecc71', fontSize:15 },
+  seller: { color:'#aaa', fontSize:12 },
+  checkout: { backgroundColor:'#e74c3c', padding:15, alignItems:'center', borderRadius:8, marginTop:10 },
+  center: { flex:1, justifyContent:'center', alignItems:'center' }
 });
