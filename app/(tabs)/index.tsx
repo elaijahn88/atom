@@ -7,7 +7,7 @@ import {
   sendLocalNotification,
   listenNotifications,
   listenNotificationResponse,
-} from "../lib/notifications"; // ✅ FIXED PATH
+} from "../lib/noti"; // ✅ FIXED PATH
 
 const Index = () => {
   const [token, setToken] = useState<string | null>(null);
