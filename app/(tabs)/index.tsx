@@ -35,13 +35,13 @@ const menu: FoodItem[] = [
 const { height } = Dimensions.get("window");
 
 const managers = [
-  { name: "Abu - Manager", phone: "+256756707499" },
+  { name: "Manager", phone: "+256756707499" },
   { name: "Supervisor", phone: "0746524088" },
 ];
 
 const App = () => {
-  const [userName] = useState("John Doe");
-  const [contact] = useState("+256700000000");
+  const [userName] = useState("coco iphoned");
+  const [contact] = useState("+256757032685");
   const [walletBalance, setWalletBalance] = useState(50);
 
   const [cart, setCart] = useState<CartItem[]>([]);
