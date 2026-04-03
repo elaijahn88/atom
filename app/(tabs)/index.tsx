@@ -1,64 +1,74 @@
-// app/coco/index.tsx
+// components/UserForm.tsx
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from "react-native";
-import { loginOrSignup, logout } from "../lib/fire"; // <-- import from lib
+import { View, Text, TextInput, Button, ScrollView, Alert, StyleSheet } from "react-native";
+import { saveUserData, UserBio } from "../lib/saveUserData";
 
-const Index = () => {
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
-  const [loggedIn, setLoggedIn] = useState(false);
+const UserForm = () => {
+  const [user, setUser] = useState<UserBio>({
+    firstName: "",
+    lastName: "",
+    age: 0,
+    gender: "",
+    email: "",
+    phone: "",
+    address: "",
+    city: "",
+    country: "",
+    occupation: "",
+  });
 
-  const handleLogin = async () => {
-    const result = await loginOrSignup(email, password, phone);
-    if (result.success) setLoggedIn(true);
-    else Alert.alert("Error", result.error || "Something went wrong");
+  const handleChange = (key: keyof UserBio, value: string) => {
+    setUser(prev => ({
+      ...prev,
+      [key]: key === "age" ? Number(value) : value,
+    }));
   };
 
-  const handleLogout = async () => {
-    await logout();
-    setLoggedIn(false);
-    setEmail("");
-    setPhone("");
-    setPassword("");
+  const handleSubmit = async () => {
+    try {
+      const result = await saveUserData(user);
+      Alert.alert("Success", `Saved!\nFirestore ID: ${result.firestoreId}\nRealtime Key: ${result.realtimeKey}`);
+      // Reset form
+      setUser({
+        firstName: "",
+        lastName: "",
+        age: 0,
+        gender: "",
+        email: "",
+        phone: "",
+        address: "",
+        city: "",
+        country: "",
+        occupation: "",
+      });
+    } catch (error) {
+      Alert.alert("Error", "Failed to save user data. Check console.");
+    }
   };
-
-  if (!loggedIn) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Login / Sign Up</Text>
-
-        <TextInput placeholder="Phone" style={styles.input} value={phone} onChangeText={setPhone} />
-        <TextInput placeholder="Email" style={styles.input} value={email} onChangeText={setEmail} keyboardType="email-address" />
-        <TextInput placeholder="Password" style={styles.input} value={password} onChangeText={setPassword} secureTextEntry />
-
-        <TouchableOpacity style={styles.button} onPress={handleLogin}>
-          <Text style={styles.buttonText}>Login / Sign Up</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Welcome!</Text>
-      <Text style={styles.info}>Email: {email}</Text>
-      <Text style={styles.info}>Phone: {phone}</Text>
-
-      <TouchableOpacity style={styles.button} onPress={handleLogout}>
-        <Text style={styles.buttonText}>Sign Out</Text>
-      </TouchableOpacity>
-    </View>
+    <ScrollView style={styles.container}>
+      {Object.entries(user).map(([key, value]) => (
+        <View key={key} style={styles.inputContainer}>
+          <Text style={styles.label}>{key}</Text>
+          <TextInput
+            style={styles.input}
+            value={value.toString()}
+            onChangeText={text => handleChange(key as keyof UserBio, text)}
+            keyboardType={key === "age" ? "numeric" : "default"}
+          />
+        </View>
+      ))}
+      <Button title="Save User Info" onPress={handleSubmit} />
+    </ScrollView>
   );
 };
 
-export default Index;
+export default UserForm;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", padding: 20, backgroundColor: "#1F1F2E" },
-  title: { fontSize: 28, fontWeight: "bold", color: "#FF6B6B", marginBottom: 20, textAlign: "center" },
-  input: { backgroundColor: "#2C2C3C", color: "#fff", padding: 15, borderRadius: 12, marginBottom: 15 },
-  button: { backgroundColor: "#FF6B6B", padding: 15, borderRadius: 12, alignItems: "center" },
-  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-  info: { color: "#fff", fontSize: 18, textAlign: "center", marginVertical: 5 },
+  container: { padding: 20, backgroundColor: "#fff" },
+  inputContainer: { marginBottom: 15 },
+  label: { fontWeight: "bold", marginBottom: 5 },
+  input: { borderWidth: 1, borderColor: "#ccc", padding: 10, borderRadius: 5 },
 });
