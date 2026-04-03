@@ -1,7 +1,7 @@
 // components/UserForm.tsx
 import React, { useState } from "react";
 import { View, Text, TextInput, Button, ScrollView, Alert, StyleSheet } from "react-native";
-import { saveUserData, UserBio } from "../lib/saveUserData";
+import { saveUserData, UserBio } from "../lib/fire";
 
 const UserForm = () => {
   const [user, setUser] = useState<UserBio>({
