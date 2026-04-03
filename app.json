@@ -1,6 +1,5 @@
 {
   "expo": {
-   
     "name": "coco",
     "slug": "jovan",
     "version": "1.0.0",
@@ -9,24 +8,31 @@
     "scheme": "unique",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+
     "ios": {
       "supportsTablet": true
     },
+
     "android": {
       "package": "com.xlijah.Atom",
+      "googleServicesFile": "../../google-services.json",
+
       "adaptiveIcon": {
         "backgroundColor": "#000000",
         "foregroundImage": "./android-icon-foreground.png.png",
         "backgroundImage": "./android-icon-background.png.png",
         "monochromeImage": "./android-icon-monochrome.png"
       },
+
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
+
     "web": {
       "output": "static",
       "favicon": "./favicon.png"
     },
+
     "plugins": [
       "expo-router",
       [
@@ -42,10 +48,12 @@
         }
       ]
     ],
+
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
+
     "extra": {
       "eas": {
         "projectId": "07db4ab5-d541-484f-b13f-f17630b9c6ec"
