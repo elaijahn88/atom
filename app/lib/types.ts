@@ -1,4 +1,4 @@
-import { saveUserData } from "@/lib/saveUserData";
+import { saveUserData } from "./fire";
 import { getAuth } from "firebase/auth";
 
 const auth = getAuth();
