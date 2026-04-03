@@ -67,7 +67,7 @@ const Index = () => {
       {lastNotification && (
         <View style={styles.box}>
           <Text style={{ color: "#fff" }}>
-            Last Notification:
+            
           </Text>
           <Text style={{ color: "#aaa" }}>
             {lastNotification.request.content.title}
