@@ -8,6 +8,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from "react-native";
 
 import { auth, database, ref, set } from "../../firebase";
@@ -22,15 +23,30 @@ const App = () => {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  const fadeAnim = new Animated.Value(0);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return unsub;
   }, []);
 
+  const showSuccessAnimation = () => {
+    setShowSuccess(true);
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 800,
+      useNativeDriver: true,
+    }).start(() => {
+      setTimeout(() => setShowSuccess(false), 2000);
+    });
+  };
+
   const login = async () => {
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      showSuccessAnimation();
     } catch {
       try {
         const userCredential = await createUserWithEmailAndPassword(
@@ -42,6 +58,7 @@ const App = () => {
           set(ref(database, `users/${userCredential.user.uid}`), {
             contact: phone || email,
           });
+          showSuccessAnimation();
         }
       } catch (err: any) {
         Alert.alert("Error", err.message);
@@ -83,6 +100,12 @@ const App = () => {
         <TouchableOpacity style={styles.button} onPress={login}>
           <Text style={styles.buttonText}>Login / Sign Up</Text>
         </TouchableOpacity>
+
+        {showSuccess && (
+          <Animated.View style={[styles.successBox, { opacity: fadeAnim }]}>
+            <Text style={styles.successText}>✅ Success!</Text>
+          </Animated.View>
+        )}
       </KeyboardAvoidingView>
     );
   }
@@ -160,5 +183,23 @@ const styles = StyleSheet.create({
     fontSize: 18,
     marginTop: 10,
     textAlign: "center",
+  },
+  successBox: {
+    position: "absolute",
+    bottom: 50,
+    backgroundColor: "#32CD32",
+    paddingVertical: 15,
+    paddingHorizontal: 40,
+    borderRadius: 25,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5,
+  },
+  successText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "bold",
   },
 });
