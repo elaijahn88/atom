@@ -3,17 +3,18 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
-import { getDatabase, ref, push, onValue } from "firebase/database";
+import { getDatabase } from "firebase/database";
 import { getRemoteConfig } from "firebase/remote-config";
 
-// 🔑 Firebase configuration
+// 🔑 Firebase configuration (from google-services.json)
 const firebaseConfig = {
-  apiKey: "AIzaSyC-tkURRvTk80HH-kfAvnW8V396iO1lcIE",
-  authDomain: "file-6f3ac.firebaseapp.com",
-  projectId: "file-6f3ac",
-  storageBucket: "file-6f3ac.appspot.com",
-  messagingSenderId: "588974859374",
-  appId: "1:588974859374:android:b0661bd1bfdb356aa3f27f",
+  apiKey: "AIzaSyD5jl0y21celoXtnFpyIjM-0_y1k8yCEsk",
+  authDomain: "elijah-89c76.firebaseapp.com",
+  projectId: "elijah-89c76",
+  storageBucket: "elijah-89c76.firebasestorage.app",
+  messagingSenderId: "786398756349",
+  appId: "1:786398756349:android:125ee41780ab86c9ff6d94", 
+  // 👆 You can swap this with the second appId if targeting com.xlijah.Atom
 };
 
 // ✅ Initialize Firebase
@@ -25,10 +26,10 @@ const auth = getAuth(app);
 const storage = getStorage(app);
 const database = getDatabase(app);
 
-// 🧠 Initialize Remote Config (no fetch here)
+// 🧠 Initialize Remote Config
 const remoteConfig = getRemoteConfig(app);
 remoteConfig.settings = {
   minimumFetchIntervalMillis: 3600000, // fetch every 1 hour
 };
 
-export { db, auth, storage, database, ref, push, onValue, remoteConfig };
+export { db, auth, storage, database, remoteConfig };
