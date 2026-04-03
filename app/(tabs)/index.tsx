@@ -42,7 +42,7 @@ const managers = [
 const App = () => {
   const [userName] = useState("coco iphoned");
   const [contact] = useState("+256757032685");
-  const [walletBalance, setWalletBalance] = useState(50);
+  const [walletBalance, setWalletBalance] = useState(20);
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartVisible, setCartVisible] = useState(false);
