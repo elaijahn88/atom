@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "786398756349",
+    "project_id": "elijah-89c76",
+    "storage_bucket": "elijah-89c76.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:786398756349:android:125ee41780ab86c9ff6d94",
+        "android_client_info": {
+          "package_name": "Elijaj1.elijah255_"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD5jl0y21celoXtnFpyIjM-0_y1k8yCEsk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:786398756349:android:c68bbe064c483674ff6d94",
+        "android_client_info": {
+          "package_name": "com.xlijah.Atom"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD5jl0y21celoXtnFpyIjM-0_y1k8yCEsk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
