@@ -31,7 +31,7 @@ const Index = () => {
       console.log("User tapped:", response);
 
       Alert.alert(
-        "Notification Clicked",
+        "✓✓✓✓✓✓",
         response.notification.request.content.body
       );
     });
@@ -44,8 +44,8 @@ const Index = () => {
 
   const handleSend = async () => {
     await sendLocalNotification(
-      "Hello 👋",
-      "This is your test notification!"
+      "coco restaurant 👋",
+      "Time for food and drinks!"
     );
   };
 
