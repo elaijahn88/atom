@@ -1,5 +1,5 @@
 // lib/saveUserData.ts
-import { db, database, ref, push } from "../firebase";
+import { db, database, ref, push } from "../../firebase";
 import { collection, addDoc } from "firebase/firestore";
 
 // Type for user bio info
