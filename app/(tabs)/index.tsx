@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { View, Text, TouchableOpacity, Image, StyleSheet } from "react-native";
-import { pickImage, takePhoto, pickFile } from "../lib/file";
+import { pickImage, takePhoto, pickFile } from "../lib/picker";
 
-const ImagePickerComponent = () => {
+const PickerComponent = () => {
   const [data, setData] = useState<any>(null);
 
   const handleGallery = async () => {
@@ -48,10 +48,10 @@ const ImagePickerComponent = () => {
   );
 };
 
-export default ImagePickerComponent;
+export default PickerComponent;
 
 const styles = StyleSheet.create({
-  container: { padding: 20 },
+  container: { padding: 20, flex: 1 },
   title: { fontSize: 20, marginBottom: 10 },
   button: {
     backgroundColor: "#333",
