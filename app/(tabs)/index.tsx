@@ -1,13 +1,13 @@
-// app/coco/index.tsx
+// app/tabs/index.tsx
 import React, { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from "react-native";
 
 import {
   registerForPushNotifications,
   sendLocalNotification,
   listenNotifications,
   listenNotificationResponse,
-} from "../lib/noti";
+} from "../lib/notifications"; // ✅ FIXED PATH
 
 const Index = () => {
   const [token, setToken] = useState<string | null>(null);
@@ -15,16 +15,25 @@ const Index = () => {
 
   useEffect(() => {
     // Register device
-    registerForPushNotifications().then(setToken);
+    registerForPushNotifications().then((t) => {
+      setToken(t);
+      console.log("TOKEN:", t);
+    });
 
-    // Listen for notifications
+    // Listen when notification arrives
     const sub1 = listenNotifications((notification: any) => {
+      console.log("Notification received:", notification);
       setLastNotification(notification);
     });
 
-    // Listen for taps
+    // Listen when user taps notification
     const sub2 = listenNotificationResponse((response: any) => {
-      console.log("User tapped notification:", response);
+      console.log("User tapped:", response);
+
+      Alert.alert(
+        "Notification Clicked",
+        response.notification.request.content.body
+      );
     });
 
     return () => {
@@ -33,25 +42,33 @@ const Index = () => {
     };
   }, []);
 
+  const handleSend = async () => {
+    await sendLocalNotification(
+      "Hello 👋",
+      "This is your test notification!"
+    );
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Notifications</Text>
 
       <Text style={styles.info}>Token:</Text>
-      <Text style={styles.token}>{token || "Fetching..."}</Text>
+      <Text style={styles.token}>
+        {token ? token : "Fetching..."}
+      </Text>
 
-      <TouchableOpacity
-        style={styles.button}
-        onPress={() =>
-          sendLocalNotification("Hello 👋", "This is your test notification!")
-        }
-      >
-        <Text style={styles.buttonText}>Send Notification</Text>
+      <TouchableOpacity style={styles.button} onPress={handleSend}>
+        <Text style={styles.buttonText}>
+          Send Notification
+        </Text>
       </TouchableOpacity>
 
       {lastNotification && (
         <View style={styles.box}>
-          <Text style={{ color: "#fff" }}>Last Notification:</Text>
+          <Text style={{ color: "#fff" }}>
+            Last Notification:
+          </Text>
           <Text style={{ color: "#aaa" }}>
             {lastNotification.request.content.title}
           </Text>
