@@ -1,6 +1,6 @@
-// MarketPlace.tsx – Full Marketplace with categories, search, cart, checkout
+// MarketPlace.tsx – Marketplace with quantity selector
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,13 +10,7 @@ import {
   Animated,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from "react-native";
-
-import { firestore, database, auth } from "../../firebase";
-import { collection, query, orderBy, limit, startAfter, getDocs, where } from "firebase/firestore";
-import { ref, onValue, set } from "firebase/database";
-import { onAuthStateChanged } from "firebase/auth";
 
 // ============================
 // TYPES
@@ -34,126 +28,121 @@ interface Product {
 type CartItem = Product & { quantity: number };
 
 // ============================
+// SAMPLE DATA
+// ============================
+
+const CATEGORIES = ["shoes", "phones", "gadgets", "others"];
+const SELLERS = ["Nike Store", "Apple Store", "Samsung Store", "Tech Store", "Puma Store", "Sound Store", "Google Store"];
+const PRODUCT_NAMES = ["Air", "Boost", "Galaxy", "iPhone", "Pixel", "Headphones", "Laptop", "Tablet", "Sneakers", "Buds"];
+
+// Images by category
+const CATEGORY_IMAGES: { [key: string]: string[] } = {
+  shoes: ["https://picsum.photos/200/200?shoe1", "https://picsum.photos/200/200?shoe2", "https://picsum.photos/200/200?shoe3"],
+  phones: ["https://picsum.photos/200/200?phone1", "https://picsum.photos/200/200?phone2", "https://picsum.photos/200/200?phone3"],
+  gadgets: ["https://picsum.photos/200/200?gadget1", "https://picsum.photos/200/200?gadget2", "https://picsum.photos/200/200?gadget3"],
+  others: ["https://picsum.photos/200/200?other1", "https://picsum.photos/200/200?other2", "https://picsum.photos/200/200?other3"],
+};
+
+// Generate random product with category-based image
+const generateProduct = (id: number): Product => {
+  const category = CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)];
+  const name = `${category.charAt(0).toUpperCase() + category.slice(1)} ${PRODUCT_NAMES[Math.floor(Math.random() * PRODUCT_NAMES.length)]}`;
+  const sellerName = SELLERS[Math.floor(Math.random() * SELLERS.length)];
+  const price = Math.floor(Math.random() * 4000000) + 50000; // 50k to 4M
+  const imagePool = CATEGORY_IMAGES[category];
+  const image = imagePool[Math.floor(Math.random() * imagePool.length)];
+  return { id: id.toString(), name, price, category, sellerName, image };
+};
+
+// ============================
 // MAIN COMPONENT
 // ============================
 
 export default function Marketplace() {
-  const [user, setUser] = useState<any>(null);
+  const PAGE_SIZE = 6;
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [lastDoc, setLastDoc] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [wallet, setWallet] = useState(0);
+  const [wallet, setWallet] = useState(5000000);
   const [category, setCategory] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextId, setNextId] = useState(1);
 
-  const PAGE_SIZE = 8;
-
-  // ============================
-  // AUTH LISTENER
-  // ============================
+  // Load initial products
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      if (u) listenWallet(u.uid);
-    });
-    return unsubscribe;
+    loadMoreProducts(true);
   }, []);
 
   // ============================
-  // WALLET LISTENER
+  // FILTERED PRODUCTS
   // ============================
-  const listenWallet = (uid: string) => {
-    const walletRef = ref(database, `wallet/${uid}`);
-    return onValue(walletRef, (snap) => {
-      const val = snap.val();
-      setWallet(typeof val === "number" ? val : 0);
-    });
-  };
+
+  const filteredProducts = products.filter((p) => {
+    const matchCategory = category ? p.category === category : true;
+    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
+    return matchCategory && matchSearch;
+  });
 
   // ============================
-  // LOAD PRODUCTS
+  // LOAD MORE PRODUCTS
   // ============================
+
+  const loadMoreProducts = (reset = false) => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+
+    setTimeout(() => {
+      const newProducts: Product[] = [];
+      for (let i = 0; i < PAGE_SIZE; i++) {
+        const id = nextId + i;
+        newProducts.push(generateProduct(id));
+      }
+      setNextId(nextId + PAGE_SIZE);
+
+      setProducts(reset ? newProducts : [...products, ...newProducts]);
+      setLoadingMore(false);
+    }, 400); // simulate network delay
+  };
+
+  // Reset products when category or search changes
   useEffect(() => {
-    loadProducts(true);
+    loadMoreProducts(true);
   }, [category, search]);
-
-  const loadProducts = async (reset = false) => {
-    if (reset) setLoading(true);
-    else setLoadingMore(true);
-
-    let q: any = query(collection(firestore, "products"), orderBy("name"), limit(PAGE_SIZE));
-
-    if (category) q = query(collection(firestore, "products"), where("category", "==", category), orderBy("name"), limit(PAGE_SIZE));
-    if (reset && search) q = query(collection(firestore, "products"), where("name", ">=", search), where("name", "<=", search + "\uf8ff"), orderBy("name"), limit(PAGE_SIZE));
-
-    if (!reset && lastDoc) q = query(collection(firestore, "products"), orderBy("name"), startAfter(lastDoc), limit(PAGE_SIZE));
-
-    const snap = await getDocs(q);
-    const arr: Product[] = [];
-    snap.forEach((doc) => arr.push({ id: doc.id, ...(doc.data() as any) }));
-
-    setProducts(reset ? arr : [...products, ...arr]);
-    setLastDoc(snap.docs[snap.docs.length - 1] || null);
-
-    setLoading(false);
-    setLoadingMore(false);
-  };
-
-  const loadMore = () => {
-    if (!lastDoc || loadingMore) return;
-    loadProducts(false);
-  };
 
   // ============================
   // CART HANDLERS
   // ============================
-  const addToCart = (item: Product) => {
+
+  const addToCart = (item: Product, quantity: number) => {
+    if (quantity <= 0) return;
+
     setCart((prev) => {
       const existing = prev.find((c) => c.id === item.id);
-      if (existing) return prev.map((c) => (c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c));
-      return [...prev, { ...item, quantity: 1 }];
+      if (existing) return prev.map((c) => (c.id === item.id ? { ...c, quantity: c.quantity + quantity } : c));
+      return [...prev, { ...item, quantity }];
     });
   };
 
   const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
 
-  const checkout = async () => {
-    if (!user) return Alert.alert("Login first");
-    if (cart.length === 0) return Alert.alert("Cart is empty");
-    if (wallet < total) return Alert.alert("Insufficient wallet balance");
+  const checkout = () => {
+    if (cart.length === 0) return alert("Cart is empty");
+    if (wallet < total) return alert("Insufficient wallet balance");
 
-    try {
-      cart.forEach((item) => {
-        // In production, you would create orders in Firestore
-        // Here we just deduct wallet
-      });
-      await set(ref(database, `wallet/${user.uid}`), wallet - total);
-      setCart([]);
-      Alert.alert("Checkout successful!");
-    } catch {
-      Alert.alert("Checkout failed");
-    }
+    setWallet(wallet - total);
+    setCart([]);
+    alert("Checkout successful!");
   };
-
-  // ============================
-  // AUTH UI
-  // ============================
-  if (!user) return (
-    <View style={styles.center}><Text style={{color:'#fff'}}>Login required</Text></View>
-  );
 
   // ============================
   // MAIN UI
   // ============================
+
   return (
     <View style={styles.container}>
       <Text style={styles.wallet}>Wallet: UGX {wallet}</Text>
 
-      {/* SEARCH */}
       <TextInput
         placeholder="Search products..."
         placeholderTextColor="#888"
@@ -162,26 +151,26 @@ export default function Marketplace() {
         onChangeText={setSearch}
       />
 
-      {/* CATEGORY TABS */}
       <View style={styles.tabs}>
-        {["shoes", "phones", "gadgets", "others"].map((cat) => (
+        {CATEGORIES.map((cat) => (
           <TouchableOpacity
             key={cat}
             onPress={() => setCategory(category === cat ? null : cat)}
             style={[styles.tab, category === cat && styles.activeTab]}
           >
-            <Text style={{color: category === cat ? "#fff" : "#aaa"}}>{cat.toUpperCase()}</Text>
+            <Text style={{ color: category === cat ? "#fff" : "#aaa" }}>{cat.toUpperCase()}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
       <FlatList
-        data={products}
+        data={filteredProducts}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <ProductCard item={item} addToCart={addToCart} />}
-        onEndReached={loadMore}
+        onEndReached={() => loadMoreProducts(false)}
         onEndReachedThreshold={0.5}
-        ListFooterComponent={loadingMore ? <ActivityIndicator /> : null}
+        ListFooterComponent={loadingMore ? <ActivityIndicator color="#fff" /> : null}
+        ListEmptyComponent={<Text style={{ color: "#fff", textAlign: "center", marginTop: 20 }}>No products found</Text>}
       />
 
       {cart.length > 0 && (
@@ -194,14 +183,15 @@ export default function Marketplace() {
 }
 
 // ============================
-// PRODUCT CARD
+// PRODUCT CARD WITH QUANTITY
 // ============================
 
 const ProductCard = ({ item, addToCart }: any) => {
-  const fade = useRef(new Animated.Value(0)).current;
+  const fade = new Animated.Value(0);
+  const [quantity, setQuantity] = useState(1);
 
   return (
-    <TouchableOpacity style={styles.card} onPress={() => addToCart(item)}>
+    <TouchableOpacity style={styles.card} activeOpacity={1}>
       <Animated.Image
         source={{ uri: item.image }}
         style={{ width: "100%", height: 180, opacity: fade }}
@@ -212,6 +202,26 @@ const ProductCard = ({ item, addToCart }: any) => {
         <Text style={styles.name}>{item.name}</Text>
         <Text style={styles.price}>UGX {item.price}</Text>
         <Text style={styles.seller}>🏪 {item.sellerName}</Text>
+
+        {/* Quantity Selector */}
+        <View style={styles.quantityContainer}>
+          <TouchableOpacity
+            style={styles.qtyButton}
+            onPress={() => setQuantity((q) => (q > 1 ? q - 1 : 1))}
+          >
+            <Text style={styles.qtyText}>-</Text>
+          </TouchableOpacity>
+          <Text style={styles.qtyNumber}>{quantity}</Text>
+          <TouchableOpacity
+            style={styles.qtyButton}
+            onPress={() => setQuantity((q) => q + 1)}
+          >
+            <Text style={styles.qtyText}>+</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.addButton} onPress={() => addToCart(item, quantity)}>
+            <Text style={{ color: "#fff" }}>Add to Cart</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -222,16 +232,20 @@ const ProductCard = ({ item, addToCart }: any) => {
 // ============================
 
 const styles = StyleSheet.create({
-  container: { flex:1, padding:15, backgroundColor:'#121212' },
-  wallet: { color:'#32CD32', fontSize:16, marginBottom:10 },
-  input: { backgroundColor:'#1E1E1E', color:'#fff', padding:10, borderRadius:8, marginBottom:10 },
-  tabs: { flexDirection:'row', justifyContent:'space-around', marginBottom:10 },
-  tab: { padding:8, borderRadius:8, borderWidth:1, borderColor:'#555' },
-  activeTab: { backgroundColor:'#FF6347', borderColor:'#FF6347' },
-  card: { backgroundColor:'#1E1E1E', marginBottom:15, borderRadius:14, overflow:'hidden' },
-  name: { color:'#fff', fontSize:16 },
-  price: { color:'#2ecc71', fontSize:15 },
-  seller: { color:'#aaa', fontSize:12 },
-  checkout: { backgroundColor:'#e74c3c', padding:15, alignItems:'center', borderRadius:8, marginTop:10 },
-  center: { flex:1, justifyContent:'center', alignItems:'center' }
+  container: { flex: 1, padding: 15, backgroundColor: "#121212" },
+  wallet: { color: "#32CD32", fontSize: 16, marginBottom: 10 },
+  input: { backgroundColor: "#1E1E1E", color: "#fff", padding: 10, borderRadius: 8, marginBottom: 10 },
+  tabs: { flexDirection: "row", justifyContent: "space-around", marginBottom: 10 },
+  tab: { padding: 8, borderRadius: 8, borderWidth: 1, borderColor: "#555" },
+  activeTab: { backgroundColor: "#FF6347", borderColor: "#FF6347" },
+  card: { backgroundColor: "#1E1E1E", marginBottom: 15, borderRadius: 14, overflow: "hidden" },
+  name: { color: "#fff", fontSize: 16 },
+  price: { color: "#2ecc71", fontSize: 15 },
+  seller: { color: "#aaa", fontSize: 12 },
+  checkout: { backgroundColor: "#e74c3c", padding: 15, alignItems: "center", borderRadius: 8, marginTop: 10 },
+  quantityContainer: { flexDirection: "row", alignItems: "center", marginTop: 10 },
+  qtyButton: { padding: 8, backgroundColor: "#333", borderRadius: 5 },
+  qtyText: { color: "#fff", fontSize: 16 },
+  qtyNumber: { color: "#fff", marginHorizontal: 10, fontSize: 16 },
+  addButton: { marginLeft: 10, backgroundColor: "#FF6347", paddingVertical: 6, paddingHorizontal: 10, borderRadius: 5 },
 });
