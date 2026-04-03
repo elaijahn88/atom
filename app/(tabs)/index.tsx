@@ -4,7 +4,7 @@ import { View, Text, TextInput, Button, ScrollView, Alert, StyleSheet } from "re
 import { saveUserData, UserBio } from "../lib/fire";
 
 const UserForm = () => {
-  const [user, setUser] = useState<UserBio>({
+  const [user, setUser] = useState<Omit<UserBio, "uid">>({
     firstName: "",
     lastName: "",
     age: 0,
@@ -27,7 +27,11 @@ const UserForm = () => {
   const handleSubmit = async () => {
     try {
       const result = await saveUserData(user);
-      Alert.alert("Success", `Saved!\nFirestore ID: ${result.firestoreId}\nRealtime Key: ${result.realtimeKey}`);
+      Alert.alert(
+        "Success",
+        `Saved!\nFirestore ID: ${result.firestoreId}\nRealtime Key: ${result.realtimeKey}`
+      );
+
       // Reset form
       setUser({
         firstName: "",
@@ -41,8 +45,9 @@ const UserForm = () => {
         country: "",
         occupation: "",
       });
-    } catch (error) {
-      Alert.alert("Error", "Failed to save user data. Check console.");
+    } catch (error: any) {
+      console.error(error);
+      Alert.alert("Error", error.message || "Failed to save user data.");
     }
   };
 
