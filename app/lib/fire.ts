@@ -1,35 +1,56 @@
-// app/lib/firebaseService.ts
-import { auth, database, ref, set } from "../../firebase";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "firebase/auth";
+// lib/saveUserData.ts
+import { db, database, ref, push } from "../firebase";
+import { collection, addDoc } from "firebase/firestore";
 
-export interface UserData {
-  phone: string;
+// Type for user bio info
+export interface UserBio {
+  firstName: string;
+  lastName: string;
+  age: number;
+  gender: string;
   email: string;
+  phone: string;
+  address: string;
+  city: string;
+  country: string;
+  occupation: string;
 }
 
 /**
- * Login or create a new user
+ * Save user bio info to Firestore
  */
-export const loginOrSignup = async (email: string, password: string, phone: string) => {
+export const saveToFirestore = async (user: UserBio) => {
   try {
-    await signInWithEmailAndPassword(auth, email, password);
-    return { success: true };
-  } catch {
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      if (userCredential.user) {
-        await set(ref(database, `users/${userCredential.user.uid}`), { contact: phone || email });
-      }
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err.message };
-    }
+    const docRef = await addDoc(collection(db, "users"), user);
+    console.log("Document written with ID: ", docRef.id);
+    return docRef.id;
+  } catch (error) {
+    console.error("Error adding document to Firestore: ", error);
+    throw error;
   }
 };
 
 /**
- * Sign out the user
+ * Save user bio info to Realtime Database
  */
-export const logout = async () => {
-  await signOut(auth);
+export const saveToRealtimeDB = async (user: UserBio) => {
+  try {
+    const usersRef = ref(database, "users");
+    const newUserRef = push(usersRef);
+    await newUserRef.set(user);
+    console.log("Data saved to Realtime Database at: ", newUserRef.key);
+    return newUserRef.key;
+  } catch (error) {
+    console.error("Error saving to Realtime Database: ", error);
+    throw error;
+  }
+};
+
+/**
+ * Save user info to both Firestore and Realtime DB
+ */
+export const saveUserData = async (user: UserBio) => {
+  const firestoreId = await saveToFirestore(user);
+  const realtimeKey = await saveToRealtimeDB(user);
+  return { firestoreId, realtimeKey };
 };
