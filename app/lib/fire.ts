@@ -1,5 +1,5 @@
 // lib/fire.ts
-import { auth, db, database } from "../firebase";
+import { auth, db, database } from "../../firebase";
 import { doc, setDoc } from "firebase/firestore";
 import { ref, push } from "firebase/database";
 
