@@ -1,5 +1,6 @@
-// app/lib/fire.ts
-import { auth, database, ref, set, get, child, update } from "../../firebase";
+import { auth } from "../../firebase";
+import { database } from "../../firebase";
+import { ref, set, get, child, update } from "firebase/database";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "firebase/auth";
 
 export interface UserData {
@@ -14,7 +15,7 @@ export const loginOrSignup = async (email: string, password: string, phone: stri
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const uid = userCredential.user.uid;
     const snapshot = await get(child(ref(database), `users/${uid}`));
-    const wallet = snapshot.exists() && snapshot.val().wallet ? snapshot.val().wallet : 20; // default wallet
+    const wallet = snapshot.exists() && snapshot.val().wallet ? snapshot.val().wallet : 20;
     return { success: true, uid, email, phone, wallet };
   } catch {
     try {
