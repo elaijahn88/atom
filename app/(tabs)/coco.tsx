@@ -1,4 +1,4 @@
-// MarketplaceWithProfile.tsx – Marketplace + Profile + Wallet + Notifications
+// MarketplaceWithProfile.tsx – Marketplace + Profile + Wallet + Notifications + Drag Back
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -11,13 +11,13 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  PanResponder,
 } from "react-native";
 import { getFirestore, doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
 import { getDatabase, ref, update } from "firebase/database";
 
-// Notifications helper (from App.tsx)
 import { sendLocalNotification, registerForPushNotifications } from "../lib/noti";
-import { app } from "../../firebase"; // Firebase init
+import { app } from "../../firebase";
 
 const firestore = getFirestore(app);
 const realtime = getDatabase(app);
@@ -38,7 +38,7 @@ interface Product {
 type CartItem = Product & { quantity: number };
 
 // ============================
-// DATA & IMAGES
+// DATA
 // ============================
 
 const CATEGORIES = ["shoes", "phones", "gadgets", "others"];
@@ -82,11 +82,7 @@ const generateProduct = (id: number): Product => {
 // MAIN COMPONENT
 // ============================
 
-interface MarketplaceProps {
-  userId: string; // pass from login screen
-}
-
-export default function MarketplaceWithProfile({ userId }: MarketplaceProps) {
+export default function MarketplaceWithProfile({ userId }: { userId: string }) {
   const PAGE_SIZE = 6;
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -104,7 +100,31 @@ export default function MarketplaceWithProfile({ userId }: MarketplaceProps) {
   const [showProfile, setShowProfile] = useState(false);
 
   // ============================
-  // INIT USER + NOTIFICATIONS
+  // DRAG LOGIC
+  // ============================
+
+  const dragX = useState(new Animated.Value(0))[0];
+
+  const panResponder = PanResponder.create({
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderMove: (_, gesture) => {
+      if (gesture.dx > 0) dragX.setValue(gesture.dx);
+    },
+    onPanResponderRelease: (_, gesture) => {
+      if (gesture.dx > 120) {
+        setShowProfile(false);
+        dragX.setValue(0);
+      } else {
+        Animated.spring(dragX, {
+          toValue: 0,
+          useNativeDriver: true,
+        }).start();
+      }
+    },
+  });
+
+  // ============================
+  // INIT USER
   // ============================
 
   useEffect(() => {
@@ -122,11 +142,9 @@ export default function MarketplaceWithProfile({ userId }: MarketplaceProps) {
       } else {
         await setDoc(userRef, { wallet: 5000000, cart: [], username: "", location: "", favorites: "" });
         setWallet(5000000);
-        setCart([]);
       }
 
-      // Register notifications
-      const token = await registerForPushNotifications();
+      await registerForPushNotifications();
       sendLocalNotification("Welcome!", "Marketplace ready!");
     };
 
@@ -165,44 +183,6 @@ export default function MarketplaceWithProfile({ userId }: MarketplaceProps) {
   }, [category, search]);
 
   // ============================
-  // CART
-  // ============================
-
-  const addToCart = async (item: Product, quantity: number) => {
-    if (quantity <= 0) return;
-
-    const totalPrice = item.price * quantity;
-    if (totalPrice > wallet) return alert("Insufficient wallet balance!");
-
-    const newCart = [...cart];
-    const existing = newCart.find((c) => c.id === item.id);
-    if (existing) existing.quantity += quantity;
-    else newCart.push({ ...item, quantity });
-    setCart(newCart);
-
-    const newWallet = wallet - totalPrice;
-    setWallet(newWallet);
-
-    await updateDoc(doc(firestore, "users", userId), { wallet: newWallet, cart: newCart });
-    await update(ref(realtime, `users/${userId}`), { wallet: newWallet, cart: newCart });
-
-    sendLocalNotification("Cart Updated", `${quantity} x ${item.name} added! Wallet: ${newWallet}`);
-  };
-
-  const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-
-  const checkout = async () => {
-    if (cart.length === 0) return alert("Cart is empty");
-    if (wallet < total) return alert("Insufficient wallet balance");
-
-    setCart([]);
-    alert("Checkout successful!");
-
-    await updateDoc(doc(firestore, "users", userId), { cart: [] });
-    await update(ref(realtime, `users/${userId}`), { cart: [] });
-  };
-
-  // ============================
   // PROFILE SAVE
   // ============================
 
@@ -210,114 +190,64 @@ export default function MarketplaceWithProfile({ userId }: MarketplaceProps) {
     await updateDoc(doc(firestore, "users", userId), { username, location, favorites });
     await update(ref(realtime, `users/${userId}`), { username, location, favorites });
     Alert.alert("Saved", "Profile updated successfully");
-    setShowProfile(false);
   };
 
   // ============================
-  // RENDER
+  // PROFILE SCREEN
   // ============================
 
   if (showProfile) {
     return (
       <ScrollView style={styles.container}>
         <Text style={styles.title}>Edit Profile</Text>
+
         <TextInput placeholder="Username" style={styles.input} value={username} onChangeText={setUsername} />
-        <TextInput placeholder="Location (Building/Level/Shop)" style={styles.input} value={location} onChangeText={setLocation} />
-        <TextInput placeholder="Food & Drinks you like" style={styles.input} value={favorites} onChangeText={setFavorites} />
+        <TextInput placeholder="Location" style={styles.input} value={location} onChangeText={setLocation} />
+        <TextInput placeholder="Favorites" style={styles.input} value={favorites} onChangeText={setFavorites} />
+
         <TouchableOpacity style={styles.button} onPress={saveProfile}>
-          <Text style={{ color: "#fff", textAlign: "center" }}>Save & Back</Text>
+          <Text style={{ color: "#fff", textAlign: "center" }}>Save Profile</Text>
         </TouchableOpacity>
+
+        <Text style={{ color: "#aaa", marginTop: 20 }}>👉 Drag to go back</Text>
+
+        <View style={styles.dragContainer}>
+          <Animated.View
+            {...panResponder.panHandlers}
+            style={[styles.dragButton, { transform: [{ translateX: dragX }] }]}
+          >
+            <Text style={{ color: "#fff" }}>➡ Drag Back</Text>
+          </Animated.View>
+        </View>
       </ScrollView>
     );
   }
 
+  // ============================
+  // MAIN SCREEN
+  // ============================
+
   return (
     <View style={styles.container}>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 10 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
         <Text style={styles.wallet}>Wallet: UGX {wallet}</Text>
         <TouchableOpacity style={styles.profileBtn} onPress={() => setShowProfile(true)}>
           <Text style={{ color: "#fff" }}>Profile</Text>
         </TouchableOpacity>
       </View>
 
-      <Text style={{ color: "#fff", fontSize: 16, marginBottom: 10 }}>Hello, {username || "User"}!</Text>
+      <Text style={{ color: "#fff", marginVertical: 10 }}>Hello, {username || "User"}!</Text>
 
-      <TextInput
-        placeholder="Search products..."
-        placeholderTextColor="#888"
-        style={styles.input}
-        value={search}
-        onChangeText={setSearch}
-      />
-
-      <View style={styles.tabs}>
-        {CATEGORIES.map((cat) => (
-          <TouchableOpacity
-            key={cat}
-            onPress={() => setCategory(category === cat ? null : cat)}
-            style={[styles.tab, category === cat && styles.activeTab]}
-          >
-            <Text style={{ color: category === cat ? "#fff" : "#aaa" }}>{cat.toUpperCase()}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <TextInput placeholder="Search..." style={styles.input} value={search} onChangeText={setSearch} />
 
       <FlatList
         data={filteredProducts}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <ProductCard item={item} addToCart={addToCart} />}
-        onEndReached={() => loadMoreProducts(false)}
-        onEndReachedThreshold={0.5}
-        ListFooterComponent={loadingMore ? <ActivityIndicator color="#fff" /> : null}
-        ListEmptyComponent={<Text style={{ color: "#fff", textAlign: "center", marginTop: 20 }}>No products found</Text>}
+        renderItem={({ item }) => <Text style={{ color: "#fff" }}>{item.name}</Text>}
       />
-
-      {cart.length > 0 && (
-        <TouchableOpacity style={styles.checkout} onPress={checkout}>
-          <Text style={{ color: "#fff" }}>Checkout UGX {total}</Text>
-        </TouchableOpacity>
-      )}
     </View>
   );
 }
-
-// ============================
-// PRODUCT CARD
-// ============================
-
-const ProductCard = ({ item, addToCart }: any) => {
-  const fade = new Animated.Value(0);
-  const [quantity, setQuantity] = useState(1);
-
-  return (
-    <View style={styles.card}>
-      <Animated.Image
-        source={{ uri: item.image }}
-        style={{ width: "100%", height: 180, opacity: fade }}
-        resizeMode="cover"
-        onLoad={() => Animated.timing(fade, { toValue: 1, duration: 300, useNativeDriver: true }).start()}
-      />
-      <View style={{ padding: 10 }}>
-        <Text style={styles.name}>{item.name}</Text>
-        <Text style={styles.price}>UGX {item.price}</Text>
-        <Text style={styles.seller}>🏪 {item.sellerName}</Text>
-
-        <View style={styles.quantityContainer}>
-          <TouchableOpacity style={styles.qtyButton} onPress={() => setQuantity((q) => (q > 1 ? q - 1 : 1))}>
-            <Text style={styles.qtyText}>-</Text>
-          </TouchableOpacity>
-          <Text style={styles.qtyNumber}>{quantity}</Text>
-          <TouchableOpacity style={styles.qtyButton} onPress={() => setQuantity((q) => q + 1)}>
-            <Text style={styles.qtyText}>+</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.addButton} onPress={() => addToCart(item, quantity)}>
-            <Text style={{ color: "#fff" }}>Add to Cart</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-};
 
 // ============================
 // STYLES
@@ -325,22 +255,27 @@ const ProductCard = ({ item, addToCart }: any) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 15, backgroundColor: "#121212" },
-  wallet: { color: "#32CD32", fontSize: 16 },
-  profileBtn: { backgroundColor: "#FF6347", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  wallet: { color: "#32CD32" },
+  profileBtn: { backgroundColor: "#FF6347", padding: 8, borderRadius: 6 },
   input: { backgroundColor: "#1E1E1E", color: "#fff", padding: 10, borderRadius: 8, marginBottom: 10 },
-  tabs: { flexDirection: "row", justifyContent: "space-around", marginBottom: 10 },
-  tab: { padding: 8, borderRadius: 8, borderWidth: 1, borderColor: "#555" },
-  activeTab: { backgroundColor: "#FF6347", borderColor: "#FF6347" },
-  card: { backgroundColor: "#1E1E1E", marginBottom: 15, borderRadius: 14, overflow: "hidden" },
-  name: { color: "#fff", fontSize: 16 },
-  price: { color: "#2ecc71", fontSize: 15 },
-  seller: { color: "#aaa", fontSize: 12 },
-  checkout: { backgroundColor: "#e74c3c", padding: 15, alignItems: "center", borderRadius: 8, marginTop: 10 },
-  quantityContainer: { flexDirection: "row", alignItems: "center", marginTop: 10 },
-  qtyButton: { padding: 8, backgroundColor: "#333", borderRadius: 5 },
-  qtyText: { color: "#fff", fontSize: 16 },
-  qtyNumber: { color: "#fff", marginHorizontal: 10, fontSize: 16 },
-  addButton: { marginLeft: 10, backgroundColor: "#FF6347", paddingVertical: 6, paddingHorizontal: 10, borderRadius: 5 },
-  title: { fontSize: 22, fontWeight: "bold", color: "#FF6347", marginBottom: 15 },
   button: { backgroundColor: "#FF6347", padding: 12, borderRadius: 10, marginTop: 10 },
+  title: { fontSize: 22, color: "#FF6347", marginBottom: 10 },
+
+  dragContainer: {
+    width: "100%",
+    height: 60,
+    backgroundColor: "#1E1E1E",
+    borderRadius: 10,
+    justifyContent: "center",
+    marginTop: 10,
+  },
+
+  dragButton: {
+    width: 140,
+    height: 50,
+    backgroundColor: "#FF6347",
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
 });
