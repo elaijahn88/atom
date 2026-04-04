@@ -20,8 +20,8 @@ const menu: FoodItem[] = [
 ];
 
 const managers = [
-  { name: "Manager", phone: "+256756707499" },
-  { name: "Supervisor", phone: "0746524088" },
+  { name: "Jof", phone: "+256756707499" },
+  { name: "Eli", phone: "0746524088" },
 ];
 
 const { height } = Dimensions.get("window");
@@ -92,7 +92,7 @@ const App = () => {
     if (res.success) {
       setUser({ uid: res.uid, email: res.email, phone: res.phone });
       setWalletBalance(res.wallet || 20);
-      sendLocalNotification("Welcome!", `Logged in as ${res.email}`);
+      sendLocalNotification("Welcome!", ` ${res.email}`);
     } else {
       Alert.alert("Error", res.error || "Login failed");
     }
@@ -104,7 +104,7 @@ const App = () => {
   if (!user) {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>Login / Signup</Text>
+        <Text style={styles.title}></Text>
         <TextInput placeholder="Email" style={styles.input} value={email} onChangeText={setEmail} placeholderTextColor="#aaa" />
         <TextInput placeholder="Password" style={styles.input} value={password} onChangeText={setPassword} secureTextEntry placeholderTextColor="#aaa" />
         <TextInput placeholder="Phone" style={styles.input} value={phone} onChangeText={setPhone} placeholderTextColor="#aaa" />
@@ -118,7 +118,7 @@ const App = () => {
   // APP SCREEN
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>Hello, {user.email}</Text>
+      <Text style={styles.title}> {user.email}</Text>
       <Text style={{ color: "#aaa" }}>{user.phone}</Text>
       <Text style={styles.walletText}>Wallet: ${walletBalance}</Text>
 
