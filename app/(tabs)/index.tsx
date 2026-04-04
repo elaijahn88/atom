@@ -7,9 +7,9 @@ import * as Device from "expo-device";
 
 import { 
   loginOrSignup, updateWallet, updateUserProfile, getUserProfile, getUserByDeviceId, saveDeviceIdForUser 
-} from "./fire";
+} from "../lib/fire";
 
-import { sendLocalNotification, registerForPushNotifications } from "./noti";
+import { sendLocalNotification, registerForPushNotifications } from "../lib/noti";
 
 // TYPES
 interface FoodItem {
