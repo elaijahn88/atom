@@ -1,4 +1,4 @@
-// app/lib/notifications.ts
+// app/lib/noti.ts
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import { Platform } from "react-native";
