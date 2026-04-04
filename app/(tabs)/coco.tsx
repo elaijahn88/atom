@@ -16,7 +16,7 @@ import { getFirestore, doc, setDoc, getDoc, updateDoc } from "firebase/firestore
 import { getDatabase, ref, update } from "firebase/database";
 
 // Notifications helper (from App.tsx)
-import { sendLocalNotification, registerForPushNotifications } from "../../lib/notifi";
+import { sendLocalNotification, registerForPushNotifications } from "../lib/noti";
 import { app } from "../../firebase"; // Firebase init
 
 const firestore = getFirestore(app);
