@@ -1,9 +1,9 @@
-// firebase.js
+// lib/firebase.ts
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
-import { getDatabase, ref, push, onValue } from "firebase/database";
+import { getDatabase } from "firebase/database";
 import { getRemoteConfig } from "firebase/remote-config";
 
 // 🔑 Firebase configuration
@@ -14,21 +14,22 @@ const firebaseConfig = {
   storageBucket: "file-6f3ac.appspot.com",
   messagingSenderId: "588974859374",
   appId: "1:588974859374:android:b0661bd1bfdb356aa3f27f",
+
+  // ✅ IMPORTANT: Required for Realtime DB
+  databaseURL: "https://file-6f3ac-default-rtdb.firebaseio.com",
 };
 
-// ✅ Initialize Firebase
+// ✅ Initialize Firebase ONCE
 const app = initializeApp(firebaseConfig);
 
-// ✅ Export Firebase services
-const db = getFirestore(app);
-const auth = getAuth(app);
-const storage = getStorage(app);
-const database = getDatabase(app);
+// ✅ Services
+export const auth = getAuth(app);
+export const db = getFirestore(app);
+export const storage = getStorage(app);
+export const database = getDatabase(app);
 
-// 🧠 Initialize Remote Config (no fetch here)
-const remoteConfig = getRemoteConfig(app);
+// ✅ Remote Config
+export const remoteConfig = getRemoteConfig(app);
 remoteConfig.settings = {
-  minimumFetchIntervalMillis: 3600000, // fetch every 1 hour
+  minimumFetchIntervalMillis: 3600000,
 };
-
-export { db, auth, storage, database, ref, push, onValue, remoteConfig };
