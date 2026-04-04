@@ -1,4 +1,4 @@
-// MarketplaceWithProfile.tsx – Marketplace + Profile + Wallet + Notifications + Drag Back
+// MarketplaceWithProfile.tsx – Marketplace + Profile + Wallet + Notifications + Drag Back + Cart + Checkout
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -8,10 +8,10 @@ import {
   TouchableOpacity,
   Animated,
   StyleSheet,
-  ActivityIndicator,
   Alert,
   ScrollView,
   PanResponder,
+  Image,
 } from "react-native";
 import { getFirestore, doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
 import { getDatabase, ref, update } from "firebase/database";
@@ -98,6 +98,7 @@ export default function MarketplaceWithProfile({ userId }: { userId: string }) {
   const [favorites, setFavorites] = useState("");
 
   const [showProfile, setShowProfile] = useState(false);
+  const [showProfileBtn, setShowProfileBtn] = useState(true);
 
   // ============================
   // DRAG LOGIC
@@ -190,6 +191,41 @@ export default function MarketplaceWithProfile({ userId }: { userId: string }) {
     await updateDoc(doc(firestore, "users", userId), { username, location, favorites });
     await update(ref(realtime, `users/${userId}`), { username, location, favorites });
     Alert.alert("Saved", "Profile updated successfully");
+    sendLocalNotification("Profile Saved", "Your profile has been updated!");
+    setShowProfileBtn(false); // Hide profile button after save
+  };
+
+  // ============================
+  // CART & CHECKOUT
+  // ============================
+
+  const addToCart = (product: Product) => {
+    const existing = cart.find((item) => item.id === product.id);
+    if (existing) {
+      setCart(cart.map((item) => (item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item)));
+    } else {
+      setCart([...cart, { ...product, quantity: 1 }]);
+    }
+    sendLocalNotification("Added to Cart", `${product.name} added to your cart`);
+  };
+
+  const checkout = async () => {
+    const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    if (total > wallet) {
+      Alert.alert("Insufficient Wallet", "You do not have enough money to checkout");
+      return;
+    }
+
+    const newWallet = wallet - total;
+    setWallet(newWallet);
+    setCart([]);
+
+    // Save wallet and empty cart to Firestore & Realtime DB
+    await updateDoc(doc(firestore, "users", userId), { wallet: newWallet, cart: [] });
+    await update(ref(realtime, `users/${userId}`), { wallet: newWallet, cart: [] });
+
+    Alert.alert("Checkout Successful", `You paid UGX ${total.toLocaleString()}`);
+    sendLocalNotification("Checkout Successful", `You paid UGX ${total.toLocaleString()}`);
   };
 
   // ============================
@@ -230,10 +266,12 @@ export default function MarketplaceWithProfile({ userId }: { userId: string }) {
   return (
     <View style={styles.container}>
       <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={styles.wallet}>Wallet: UGX {wallet}</Text>
-        <TouchableOpacity style={styles.profileBtn} onPress={() => setShowProfile(true)}>
-          <Text style={{ color: "#fff" }}>Profile</Text>
-        </TouchableOpacity>
+        <Text style={styles.wallet}>Wallet: UGX {wallet.toLocaleString()}</Text>
+        {showProfileBtn && (
+          <TouchableOpacity style={styles.profileBtn} onPress={() => setShowProfile(true)}>
+            <Text style={{ color: "#fff" }}>Profile</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <Text style={{ color: "#fff", marginVertical: 10 }}>Hello, {username || "User"}!</Text>
@@ -243,8 +281,27 @@ export default function MarketplaceWithProfile({ userId }: { userId: string }) {
       <FlatList
         data={filteredProducts}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <Text style={{ color: "#fff" }}>{item.name}</Text>}
+        numColumns={2}
+        columnWrapperStyle={{ justifyContent: "space-between", marginBottom: 15 }}
+        renderItem={({ item }) => (
+          <View style={styles.productCard}>
+            <Image source={{ uri: item.image }} style={styles.productImage} />
+            <Text style={styles.productName}>{item.name}</Text>
+            <Text style={styles.productSeller}>{item.sellerName}</Text>
+            <Text style={styles.productPrice}>UGX {item.price.toLocaleString()}</Text>
+
+            <TouchableOpacity style={styles.addBtn} onPress={() => addToCart(item)}>
+              <Text style={{ color: "#fff" }}>Add to Cart</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       />
+
+      {cart.length > 0 && (
+        <TouchableOpacity style={styles.checkoutBtn} onPress={checkout}>
+          <Text style={{ color: "#fff", textAlign: "center" }}>Checkout ({cart.length} items)</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -255,7 +312,7 @@ export default function MarketplaceWithProfile({ userId }: { userId: string }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 15, backgroundColor: "#121212" },
-  wallet: { color: "#32CD32" },
+  wallet: { color: "#32CD32", fontWeight: "bold" },
   profileBtn: { backgroundColor: "#FF6347", padding: 8, borderRadius: 6 },
   input: { backgroundColor: "#1E1E1E", color: "#fff", padding: 10, borderRadius: 8, marginBottom: 10 },
   button: { backgroundColor: "#FF6347", padding: 12, borderRadius: 10, marginTop: 10 },
@@ -277,5 +334,50 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
+  },
+
+  productCard: {
+    flex: 1,
+    backgroundColor: "#1E1E1E",
+    borderRadius: 10,
+    padding: 10,
+    alignItems: "center",
+    marginHorizontal: 5,
+  },
+  productImage: {
+    width: "100%",
+    height: 120,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  productName: {
+    color: "#fff",
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  productSeller: {
+    color: "#aaa",
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  productPrice: {
+    color: "#32CD32",
+    fontWeight: "bold",
+    marginBottom: 6,
+  },
+  addBtn: {
+    backgroundColor: "#32CD32",
+    padding: 8,
+    borderRadius: 6,
+    marginTop: 4,
+    width: "100%",
+    alignItems: "center",
+  },
+  checkoutBtn: {
+    backgroundColor: "#FF6347",
+    padding: 14,
+    borderRadius: 10,
+    marginTop: 10,
   },
 });
