@@ -1,13 +1,14 @@
-import React, { useState, useRef, useEffect } from "react";
-import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet,
-  Animated, ActivityIndicator, Dimensions, Linking, PanResponder
-} from "react-native";
+// app/App.tsx
+import React, { useState, useEffect, useRef } from "react";
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated, Linking, Alert, TextInput, ActivityIndicator, Dimensions } from "react-native";
+import * as Device from "expo-device";
 
-// Import logic from lib
-import { sendLocalNotification } from "../lib/noti";
-import { pickImage, pickDocument } from "../lib/file";
+// Services
+import { loginOrSignup, updateWallet } from "./lib/firebaseService";
+import { sendLocalNotification, registerForPushNotifications } from "./lib/notifications";
+import { pickImage, pickFile } from "./lib/file";
 
+// Types
 interface FoodItem { id: number; name: string; price: number; image: string; category: "meal" | "chai"; ownerName: string; ownerPhone: string; ownerLocation: string; }
 type CartItem = FoodItem & { quantity: number; };
 
@@ -18,18 +19,20 @@ const menu: FoodItem[] = [
   { id: 4, name: "African Milk Tea", price: 2, image: "https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=800", category: "chai", ownerName: "Tea Corner", ownerPhone: "+256700000004", ownerLocation: "Mukono" },
 ];
 
-const { height } = Dimensions.get("window");
 const managers = [
   { name: "Manager", phone: "+256756707499" },
   { name: "Supervisor", phone: "0746524088" },
 ];
 
+const { height } = Dimensions.get("window");
+
 const App = () => {
-  const [userName] = useState("coco iphoned");
-  const [contact] = useState("+256757032685");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [user, setUser] = useState<any>(null);
   const [walletBalance, setWalletBalance] = useState(20);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [cartVisible, setCartVisible] = useState(false);
 
   const cartScale = useRef(new Animated.Value(1)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
@@ -39,152 +42,136 @@ const App = () => {
   const FULL = 0;
   const CLOSED = height;
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 5,
-      onPanResponderMove: (_, g) => panY.setValue(g.dy + (cartVisible ? PARTIAL : CLOSED)),
-      onPanResponderRelease: (_, g) => {
-        if (g.dy < -100) snapTo(FULL);
-        else if (g.dy > 100) closeCart();
-        else snapTo(cartVisible ? PARTIAL : CLOSED);
-      },
-    })
-  ).current;
-
+  // Auto-register notifications
   useEffect(() => {
-    snapTo(cartVisible ? PARTIAL : CLOSED);
-    Animated.timing(overlayOpacity, { toValue: cartVisible ? 0.5 : 0, duration: 300, useNativeDriver: true }).start();
-  }, [cartVisible]);
+    registerForPushNotifications().then(token => console.log("Push token:", token));
+  }, []);
 
+  // Cart bottom sheet
   const snapTo = (toValue: number) => Animated.spring(panY, { toValue, useNativeDriver: true, tension: 50, friction: 12 }).start();
+  const openCart = () => { snapTo(PARTIAL); Animated.timing(overlayOpacity, { toValue: 0.5, duration: 300, useNativeDriver: true }).start(); };
+  const closeCart = () => { snapTo(CLOSED); Animated.timing(overlayOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(); };
 
-  const addToCart = (item: FoodItem) => {
+  // Add to cart & wallet deduction
+  const addToCart = async (item: FoodItem) => {
+    if (walletBalance < item.price) {
+      alert("Insufficient wallet balance!");
+      return;
+    }
+
     Animated.sequence([
       Animated.timing(cartScale, { toValue: 1.2, duration: 150, useNativeDriver: true }),
       Animated.timing(cartScale, { toValue: 1, duration: 150, useNativeDriver: true }),
     ]).start();
+
     setCart(prev => {
       const exist = prev.find(c => c.id === item.id);
-      if (exist) return prev.map(c => (c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c));
+      if (exist) return prev.map(c => c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c);
       return [...prev, { ...item, quantity: 1 }];
     });
-    sendLocalNotification("Cart Updated", `${item.name} added to your cart!`);
+
+    const newBalance = walletBalance - item.price;
+    setWalletBalance(newBalance);
+
+    // Save wallet to Firebase
+    if (user?.uid) await updateWallet(user.uid, newBalance);
+
+    sendLocalNotification("Cart Updated", `${item.name} added! Wallet: $${newBalance}`);
   };
 
-  const increaseQty = (id: number) => setCart(cart.map(c => (c.id === id ? { ...c, quantity: c.quantity + 1 } : c)));
-  const decreaseQty = (id: number) => setCart(cart.map(c => (c.id === id ? { ...c, quantity: c.quantity - 1 } : c)).filter(c => c.quantity > 0));
-  const removeItem = (id: number) => setCart(cart.filter(c => c.id !== id));
-  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-
-  const checkout = () => {
-    if (walletBalance < total) return alert("Insufficient balance");
-    setWalletBalance(walletBalance - total);
-    setCart([]);
-    closeCart();
-    sendLocalNotification("Order Placed", `Your order of $${total} has been successfully placed.`);
-  };
-
-  // Call + Notification wrapper
-  const callAndNotify = (number: string, name: string) => {
+  // Call owner & notify
+  const callOwner = (number: string, name: string) => {
     sendLocalNotification("Calling", `Calling ${name} (${number})`);
     Linking.openURL(`tel:${number}`);
   };
 
-  const openCart = () => setCartVisible(true);
-  const closeCart = () => { setCartVisible(false); snapTo(CLOSED); };
+  // Login / Signup
+  const handleLogin = async () => {
+    const deviceId = Device.deviceName || "unknown-device";
+    const res = await loginOrSignup(email, password, phone, deviceId);
+    if (res.success) {
+      setUser({ uid: res.uid, email: res.email, phone: res.phone });
+      setWalletBalance(res.wallet || 20);
+      sendLocalNotification("Welcome!", `Logged in as ${res.email}`);
+    } else {
+      Alert.alert("Error", res.error || "Login failed");
+    }
+  };
 
+  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+  // LOGIN SCREEN
+  if (!user) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>Login / Signup</Text>
+        <TextInput placeholder="Email" style={styles.input} value={email} onChangeText={setEmail} placeholderTextColor="#aaa" />
+        <TextInput placeholder="Password" style={styles.input} value={password} onChangeText={setPassword} secureTextEntry placeholderTextColor="#aaa" />
+        <TextInput placeholder="Phone" style={styles.input} value={phone} onChangeText={setPhone} placeholderTextColor="#aaa" />
+        <TouchableOpacity style={styles.button} onPress={handleLogin}>
+          <Text style={{ color: "#fff", textAlign: "center", fontWeight: "bold" }}>Login / Signup</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // APP SCREEN
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{userName}</Text>
-      <Text style={{ color: "#aaa" }}>{contact}</Text>
+    <ScrollView style={styles.container}>
+      <Text style={styles.title}>Hello, {user.email}</Text>
+      <Text style={{ color: "#aaa" }}>{user.phone}</Text>
       <Text style={styles.walletText}>Wallet: ${walletBalance}</Text>
 
-      <ScrollView>
-        {menu.map(item => (
-          <FoodCard key={item.id} item={item} addToCart={addToCart} callOwner={callAndNotify} />
-        ))}
-
-        <View style={{ marginTop: 20 }}>
-          {managers.map(m => (
-            <TouchableOpacity key={m.phone} onPress={() => callAndNotify(m.phone, m.name)} style={styles.managerBtn}>
-              <Text style={{ color: "#fff" }}>{m.name}: {m.phone}</Text>
+      {menu.map(item => (
+        <View key={item.id} style={styles.card}>
+          <Text style={styles.cardTitle}>{item.name}</Text>
+          <Text style={styles.cardPrice}>${item.price}</Text>
+          <View style={{ flexDirection: "row", marginTop: 10 }}>
+            <TouchableOpacity onPress={() => addToCart(item)} style={{ marginRight: 15 }}>
+              <Text style={styles.addBtn}>Add 🛒</Text>
             </TouchableOpacity>
-          ))}
+            <TouchableOpacity onPress={() => callOwner(item.ownerPhone, item.ownerName)}>
+              <Text style={styles.callBtn}>Call Owner</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </ScrollView>
+      ))}
+
+      {managers.map(m => (
+        <TouchableOpacity key={m.phone} onPress={() => callOwner(m.phone, m.name)} style={styles.button}>
+          <Text style={{ color: "#fff" }}>{m.name}: {m.phone}</Text>
+        </TouchableOpacity>
+      ))}
 
       {cart.length > 0 && (
         <Animated.View style={[styles.floatingCart, { transform: [{ scale: cartScale }] }]}>
           <TouchableOpacity onPress={openCart}>
-            <Text style={{ color: "#fff" }}>🛒 {cart.length} | ${total}</Text>
+            <Text style={{ color: "#fff", fontWeight: "bold" }}>🛒 {cart.length} | ${total}</Text>
           </TouchableOpacity>
         </Animated.View>
       )}
 
-      {cartVisible && <Animated.View style={[styles.overlay, { opacity: overlayOpacity }]}><TouchableOpacity style={{ flex: 1 }} onPress={closeCart} /></Animated.View>}
-
-      <Animated.View {...panResponder.panHandlers} style={[styles.cartScreen, { transform: [{ translateY: panY }] }]}>
-        <Text style={styles.cartTitle}>Your Cart</Text>
-        <ScrollView>
-          {cart.map(item => (
-            <View key={item.id} style={styles.cartItem}>
-              <Text style={{ color: "#fff" }}>{item.name}</Text>
-              <Text style={{ color: "#2ecc71" }}>${item.price} x {item.quantity} = ${item.price * item.quantity}</Text>
-              <View style={styles.qtyButtons}>
-                <TouchableOpacity onPress={() => decreaseQty(item.id)}><Text style={styles.qtyBtn}>-</Text></TouchableOpacity>
-                <TouchableOpacity onPress={() => increaseQty(item.id)}><Text style={styles.qtyBtn}>+</Text></TouchableOpacity>
-                <TouchableOpacity onPress={() => removeItem(item.id)}><Text style={styles.qtyBtn}>🗑</Text></TouchableOpacity>
-              </View>
-            </View>
-          ))}
-          <Text style={styles.totalText}>Total: ${total}</Text>
-          <TouchableOpacity style={styles.checkoutBtn} onPress={checkout}><Text style={{ color: "#fff" }}>Checkout</Text></TouchableOpacity>
-          <TouchableOpacity style={{ marginTop: 10 }} onPress={closeCart}><Text style={{ color: "#FF6347", textAlign: "center" }}>Close Cart</Text></TouchableOpacity>
-        </ScrollView>
-      </Animated.View>
-    </View>
+      {cart.length > 0 && (
+        <Animated.View style={[styles.overlay, { opacity: overlayOpacity }]}><TouchableOpacity style={{ flex: 1 }} onPress={closeCart} /></Animated.View>
+      )}
+    </ScrollView>
   );
 };
 
-const FoodCard = ({ item, addToCart, callOwner }: any) => {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const [loading, setLoading] = useState(true);
-
-  return (
-    <View style={styles.card}>
-      {loading && <ActivityIndicator style={{ marginTop: 60 }} />}
-      <Animated.Image
-        source={{ uri: item.image }}
-        style={{ width: "100%", height: 180, opacity: fadeAnim }}
-        onLoad={() => { setLoading(false); Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start(); }}
-      />
-      <View style={{ padding: 10 }}>
-        <Text style={{ color: "#fff" }}>{item.name}</Text>
-        <Text style={{ color: "#2ecc71" }}>${item.price}</Text>
-        <View style={{ flexDirection: "row", marginTop: 5 }}>
-          <TouchableOpacity onPress={() => addToCart(item)} style={{ marginRight: 10 }}><Text style={{ color: "#FF6347" }}>Add 🛒</Text></TouchableOpacity>
-          <TouchableOpacity onPress={() => callOwner(item.ownerPhone, item.ownerName)}><Text style={{ color: "#32CD32" }}>Call Owner</Text></TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-};
-
+// STYLES
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#121212", padding: 15 },
-  title: { fontSize: 24, color: "#FF6347", fontWeight: "bold", marginBottom: 10 },
-  walletText: { color: "#32CD32", fontSize: 18, marginBottom: 15 },
-  card: { backgroundColor: "#1E1E1E", marginBottom: 15, borderRadius: 15, overflow: "hidden" },
-  managerBtn: { padding: 10, backgroundColor: "#333", marginBottom: 10, borderRadius: 8 },
-  floatingCart: { position: "absolute", bottom: 20, right: 20, backgroundColor: "#FF6347", padding: 15, borderRadius: 50 },
+  title: { fontSize: 24, color: "#FF6347", fontWeight: "bold", marginBottom: 15 },
+  walletText: { color: "#32CD32", fontSize: 18, marginBottom: 20 },
+  input: { backgroundColor: "#1E1E1E", color: "#fff", padding: 12, borderRadius: 10, marginBottom: 15 },
+  button: { backgroundColor: "#FF6347", padding: 12, marginTop: 10, borderRadius: 10 },
+  card: { backgroundColor: "#1E1E1E", padding: 15, marginBottom: 15, borderRadius: 12 },
+  cardTitle: { color: "#fff", fontSize: 18, fontWeight: "bold" },
+  cardPrice: { color: "#2ecc71", fontSize: 16 },
+  addBtn: { color: "#FF6347", fontWeight: "bold" },
+  callBtn: { color: "#32CD32", fontWeight: "bold" },
+  floatingCart: { position: "absolute", bottom: 25, right: 25, backgroundColor: "#FF6347", padding: 15, borderRadius: 50 },
   overlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#000" },
-  cartScreen: { position: "absolute", bottom: 0, left: 0, right: 0, height: "100%", backgroundColor: "#1E1E1E", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 15 },
-  cartTitle: { fontSize: 20, color: "#FF6347", fontWeight: "bold", marginBottom: 15 },
-  cartItem: { marginBottom: 10 },
-  qtyButtons: { flexDirection: "row", marginTop: 5, alignItems: "center" },
-  qtyBtn: { color: "#fff", marginRight: 15, fontSize: 18 },
-  totalText: { color: "#2ecc71", fontWeight: "bold", fontSize: 16, marginTop: 10 },
-  checkoutBtn: { backgroundColor: "#FF6347", padding: 10, marginTop: 10, borderRadius: 8 },
 });
 
 export default App;
