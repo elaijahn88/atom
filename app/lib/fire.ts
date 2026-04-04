@@ -1,12 +1,7 @@
 // lib/fire.ts
-import { getAuth } from "firebase/auth";
-import { getFirestore, doc, setDoc } from "firebase/firestore";
-import { getDatabase, ref, push } from "firebase/database";
-
-// Initialize Firestore and Realtime Database
-const db = getFirestore();
-const rdb = getDatabase();
-const auth = getAuth();
+import { auth, db, database } from "./firebase";
+import { doc, setDoc } from "firebase/firestore";
+import { ref, push } from "firebase/database";
 
 // Type for user bio
 export type UserBio = {
@@ -23,13 +18,15 @@ export type UserBio = {
   occupation?: string;
 };
 
-// Save user data to Firestore and Realtime DB
+// Save user data
 export const saveUserData = async (
   formData: Omit<UserBio, "uid" | "email"> & { email?: string }
 ) => {
   const currentUser = auth.currentUser;
 
-  if (!currentUser) throw new Error("User not logged in");
+  if (!currentUser) {
+    throw new Error("Please log in first");
+  }
 
   const userData: UserBio = {
     ...formData,
@@ -38,16 +35,20 @@ export const saveUserData = async (
   };
 
   try {
-    // Save to Firestore
+    // ✅ Firestore
     await setDoc(doc(db, "users", userData.uid), userData);
 
-    // Save to Realtime Database
-    const rRef = ref(rdb, "users");
+    // ✅ Realtime DB
+    const rRef = ref(database, "users");
     const newRKey = push(rRef, userData).key;
 
-    return { success: true, firestoreId: userData.uid, realtimeKey: newRKey };
+    return {
+      success: true,
+      firestoreId: userData.uid,
+      realtimeKey: newRKey,
+    };
   } catch (error) {
-    console.error("Failed to save user data:", error);
+    console.error("Save error:", error);
     throw error;
   }
 };
