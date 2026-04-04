@@ -9,7 +9,7 @@ import {
   Alert,
   StyleSheet,
 } from "react-native";
-import { saveUserData, UserBio } from "../../lib/fire";
+import { saveUserData, UserBio } from "../lib/fire";
 
 const UserForm = () => {
   const [user, setUser] = useState<Omit<UserBio, "uid">>({
