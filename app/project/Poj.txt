@@ -1,0 +1,16 @@
+project/
+ ├── firebase.js                 // core Firebase config
+ ├── app/
+ │    ├── tabs/
+ │    │     ├── index.tsx
+ │    │     └── coco.tsx
+ │    └── lib/
+ │          ├── firebase.ts      // Firebase helpers (logic)
+ │          ├── file.ts          // file logic
+ │          ├── login.ts         // login logic
+ │          ├── noti.ts          // notifications logic
+ │          └── ui/              // UI components for lib
+ │                ├── Notification.tsx
+ │                ├── Login.tsx
+ │                ├── Firebase.tsx
+ │                └── File.tsx
