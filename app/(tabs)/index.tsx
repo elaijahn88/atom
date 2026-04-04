@@ -5,7 +5,7 @@ import * as Device from "expo-device";
 
 // Services
 import { loginOrSignup, updateWallet } from "../lib/fire";
-import { sendLocalNotification, registerForPushNotifications } from "./lib/noti";
+import { sendLocalNotification, registerForPushNotifications } from "../lib/noti";
 import { pickImage, pickFile } from "../lib/file";
 
 // Types
