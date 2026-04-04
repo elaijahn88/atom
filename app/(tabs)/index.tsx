@@ -1,20 +1,35 @@
 // index.tsx
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet,
-  Linking, Alert, TextInput, Image, KeyboardAvoidingView, Platform
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  Linking,
+  Alert,
+  TextInput,
+  Image,
+  KeyboardAvoidingView,
+  Platform
 } from "react-native";
 import * as Device from "expo-device";
 
 import {
-  loginOrSignup, updateWallet,
-  getUserByDeviceId, saveDeviceIdForUser,
-  sendMessage, listenForMessages,
-  updateMessageStatus, setTypingStatus, listenTypingStatus
+  loginOrSignup,
+  updateWallet,
+  getUserByDeviceId,
+  saveDeviceIdForUser,
+  sendMessage,
+  listenForMessages,
+  updateMessageStatus,
+  setTypingStatus,
+  listenTypingStatus
 } from "../lib/fire";
 
 import {
-  sendLocalNotification, registerForPushNotifications
+  sendLocalNotification,
+  registerForPushNotifications
 } from "../lib/noti";
 
 interface FoodItem {
@@ -27,8 +42,22 @@ interface FoodItem {
 }
 
 const menu: FoodItem[] = [
-  { id: 1, name: "Burger", price: 6, image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800", ownerPhone: "+256700000001", ownerDeviceId: "seller-1" },
-  { id: 2, name: "Pizza", price: 10, image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800", ownerPhone: "+256700000002", ownerDeviceId: "seller-2" }
+  {
+    id: 1,
+    name: "Burger",
+    price: 6,
+    image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800",
+    ownerPhone: "+256700000001",
+    ownerDeviceId: "seller-1"
+  },
+  {
+    id: 2,
+    name: "Pizza",
+    price: 10,
+    image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800",
+    ownerPhone: "+256700000002",
+    ownerDeviceId: "seller-2"
+  }
 ];
 
 export default function App() {
@@ -50,9 +79,10 @@ export default function App() {
   const [isAtBottom, setIsAtBottom] = useState(true);
 
   // SAFE DEVICE ID (memoized)
-  const deviceId = useMemo(() => {
-    return (Device.modelName || Device.brand || "android-device") + "-id";
-  }, []);
+  const deviceId = useMemo(
+    () => (Device.modelName || Device.brand || "android-device") + "-id",
+    []
+  );
 
   // Push notifications
   useEffect(() => {
@@ -62,7 +92,7 @@ export default function App() {
   // AUTO LOGIN
   useEffect(() => {
     const check = async () => {
-      const u = await getUserByDeviceId(deviceId);
+      const u = await getUserByDeviceId(deviceId).catch(console.log);
       if (u) {
         setUser(u);
         setWalletBalance(typeof u.wallet === "number" ? u.wallet : 20);
@@ -79,17 +109,17 @@ export default function App() {
       if (!msgs) return;
       setMessages(msgs);
 
-      msgs.forEach(msg => {
-        if (msg.status === "sent") {
-          updateMessageStatus(msg.id, "delivered").catch(console.log);
-        }
+      msgs.forEach((msg) => {
+        if (msg.status === "sent") updateMessageStatus(msg.id, "delivered").catch(console.log);
       });
 
       if (msgs.length > 0) {
         try {
           await updateMessageStatus(msgs[0].id, "seen");
           sendLocalNotification("New Message 📩", msgs[0].text);
-        } catch (e) { console.log(e); }
+        } catch (e) {
+          console.log(e);
+        }
       }
 
       if (isAtBottom) {
@@ -207,15 +237,12 @@ export default function App() {
             scrollEventThrottle={16}
             contentContainerStyle={{ paddingBottom: 10 }}
           >
-            {messages.map(msg => {
+            {messages.map((msg) => {
               const isMe = msg.senderId === user.uid;
               let time = "";
               try {
-                if (msg.createdAt?.toDate) {
-                  time = msg.createdAt.toDate().toLocaleTimeString();
-                } else if (msg.createdAt) {
-                  time = new Date(msg.createdAt).toLocaleTimeString();
-                }
+                if (msg.createdAt?.toDate) time = msg.createdAt.toDate().toLocaleTimeString();
+                else if (msg.createdAt) time = new Date(msg.createdAt).toLocaleTimeString();
               } catch (e) {}
 
               return (
@@ -254,9 +281,7 @@ export default function App() {
           value={messageText}
           onChangeText={(text) => {
             setMessageText(text);
-            if (activeChatDevice) {
-              setTypingStatus(deviceId, activeChatDevice, text.length > 0).catch(console.log);
-            }
+            if (activeChatDevice) setTypingStatus(deviceId, activeChatDevice, text.length > 0).catch(console.log);
           }}
         />
 
@@ -267,12 +292,12 @@ export default function App() {
     );
   }
 
-  // HOME
+  // HOME SCREEN
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.wallet}>Wallet: ${walletBalance}</Text>
 
-      {menu.map(item => (
+      {menu.map((item) => (
         <View key={item.id} style={styles.card}>
           <Image source={{ uri: item.image }} style={styles.image} />
           <Text style={styles.cardTitle}>{item.name}</Text>
@@ -307,5 +332,5 @@ const styles = StyleSheet.create({
   price: { color: "#0f0", marginBottom: 5 },
   add: { color: "#FF6347", marginBottom: 5 },
   chat: { color: "#00BFFF", marginBottom: 5 },
-  call: { color: "#32CD32" },
+  call: { color: "#32CD32" }
 });
