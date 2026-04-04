@@ -1,5 +1,5 @@
 // index.tsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
   Linking, Alert, TextInput, Image, KeyboardAvoidingView, Platform
@@ -27,22 +27,8 @@ interface FoodItem {
 }
 
 const menu: FoodItem[] = [
-  {
-    id: 1,
-    name: "Burger",
-    price: 6,
-    image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800",
-    ownerPhone: "+256700000001",
-    ownerDeviceId: "seller-1"
-  },
-  {
-    id: 2,
-    name: "Pizza",
-    price: 10,
-    image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800",
-    ownerPhone: "+256700000002",
-    ownerDeviceId: "seller-2"
-  }
+  { id: 1, name: "Burger", price: 6, image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800", ownerPhone: "+256700000001", ownerDeviceId: "seller-1" },
+  { id: 2, name: "Pizza", price: 10, image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800", ownerPhone: "+256700000002", ownerDeviceId: "seller-2" }
 ];
 
 export default function App() {
@@ -63,9 +49,12 @@ export default function App() {
   const scrollViewRef = useRef<ScrollView>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
 
-  const getDeviceId = () =>
-    (Device.modelName || Device.brand || "android-device") + Math.random();
+  // SAFE DEVICE ID (memoized)
+  const deviceId = useMemo(() => {
+    return (Device.modelName || Device.brand || "android-device") + "-id";
+  }, []);
 
+  // Push notifications
   useEffect(() => {
     registerForPushNotifications().catch(console.log);
   }, []);
@@ -73,68 +62,67 @@ export default function App() {
   // AUTO LOGIN
   useEffect(() => {
     const check = async () => {
-      const deviceId = getDeviceId();
       const u = await getUserByDeviceId(deviceId);
       if (u) {
         setUser(u);
-        setWalletBalance(u.wallet || 20);
+        setWalletBalance(typeof u.wallet === "number" ? u.wallet : 20);
       }
     };
     check();
-  }, []);
+  }, [deviceId]);
 
   // LISTEN MESSAGES
   useEffect(() => {
     if (!user) return;
 
-    const deviceId = getDeviceId();
-
     const unsub = listenForMessages(deviceId, async (msgs) => {
+      if (!msgs) return;
       setMessages(msgs);
 
       msgs.forEach(msg => {
         if (msg.status === "sent") {
-          updateMessageStatus(msg.id, "delivered");
+          updateMessageStatus(msg.id, "delivered").catch(console.log);
         }
       });
 
       if (msgs.length > 0) {
-        await updateMessageStatus(msgs[0].id, "seen");
-        sendLocalNotification("New Message 📩", msgs[0].text);
+        try {
+          await updateMessageStatus(msgs[0].id, "seen");
+          sendLocalNotification("New Message 📩", msgs[0].text);
+        } catch (e) { console.log(e); }
       }
 
-      // Auto-scroll if at bottom
       if (isAtBottom) {
-        setTimeout(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 50);
+        setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 50);
       }
     });
 
     return () => unsub();
-  }, [user, isAtBottom]);
+  }, [user, deviceId, isAtBottom]);
 
   // LISTEN TYPING
   useEffect(() => {
     if (!user) return;
 
-    const unsub = listenTypingStatus(getDeviceId(), (typing) => {
+    const unsub = listenTypingStatus(deviceId, (typing) => {
       setTypingUser(typing);
     });
 
     return () => unsub();
-  }, [user]);
+  }, [user, deviceId]);
 
   // LOGIN
   const handleLogin = async () => {
-    const deviceId = getDeviceId();
-    const res = await loginOrSignup(email, password, "", deviceId);
-
-    if (res.success) {
-      await saveDeviceIdForUser(res.uid, deviceId);
-      setUser({ uid: res.uid });
-    } else {
-      Alert.alert("Error", res.error);
+    try {
+      const res = await loginOrSignup(email, password, "", deviceId);
+      if (res.success) {
+        await saveDeviceIdForUser(res.uid, deviceId);
+        setUser({ uid: res.uid });
+      } else {
+        Alert.alert("Error", res.error || "Login failed");
+      }
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Login failed");
     }
   };
 
@@ -149,22 +137,21 @@ export default function App() {
 
     const newBalance = walletBalance - item.price;
     setWalletBalance(newBalance);
-    await updateWallet(user.uid, newBalance);
+    await updateWallet(user.uid, newBalance).catch(console.log);
   };
 
   // CHAT
-  const openChat = (deviceId: string) => {
-    setActiveChatDevice(deviceId);
+  const openChat = (chatDevice: string) => {
+    setActiveChatDevice(chatDevice);
     setScreen("chat");
   };
 
   const handleSendMessage = async () => {
-    if (!messageText || !user?.uid) return;
+    if (!messageText || !user?.uid || !activeChatDevice) return;
 
-    await sendMessage(user.uid, activeChatDevice, messageText);
+    await sendMessage(user.uid, activeChatDevice, messageText).catch(console.log);
     setMessageText("");
-
-    setTypingStatus(getDeviceId(), activeChatDevice, false);
+    setTypingStatus(deviceId, activeChatDevice, false).catch(console.log);
   };
 
   // TRACK IF USER SCROLLS UP
@@ -185,12 +172,14 @@ export default function App() {
           onChangeText={setEmail}
           keyboardType="email-address"
           autoCapitalize="none"
+          placeholderTextColor="#aaa"
         />
         <TextInput
           placeholder="Password"
           style={styles.input}
           secureTextEntry
           onChangeText={setPassword}
+          placeholderTextColor="#aaa"
         />
 
         <TouchableOpacity style={styles.button} onPress={handleLogin}>
@@ -204,8 +193,8 @@ export default function App() {
   if (screen === "chat") {
     return (
       <KeyboardAvoidingView
-        style={{ flex: 1, backgroundColor: "#121212", padding: 15 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1, backgroundColor: "#121212" }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <TouchableOpacity onPress={() => setScreen("home")}>
           <Text style={{ color: "#fff" }}>⬅ Back</Text>
@@ -216,12 +205,18 @@ export default function App() {
             ref={scrollViewRef}
             onScroll={handleScroll}
             scrollEventThrottle={16}
+            contentContainerStyle={{ paddingBottom: 10 }}
           >
             {messages.map(msg => {
               const isMe = msg.senderId === user.uid;
-              const time = msg.createdAt && msg.createdAt.toDate
-                ? msg.createdAt.toDate().toLocaleTimeString()
-                : "";
+              let time = "";
+              try {
+                if (msg.createdAt?.toDate) {
+                  time = msg.createdAt.toDate().toLocaleTimeString();
+                } else if (msg.createdAt) {
+                  time = new Date(msg.createdAt).toLocaleTimeString();
+                }
+              } catch (e) {}
 
               return (
                 <View
@@ -250,9 +245,7 @@ export default function App() {
           </ScrollView>
         </View>
 
-        {typingUser && (
-          <Text style={{ color: "#aaa" }}>Typing...</Text>
-        )}
+        {typingUser && <Text style={{ color: "#aaa" }}>Typing...</Text>}
 
         <TextInput
           placeholder="Type message..."
@@ -261,7 +254,9 @@ export default function App() {
           value={messageText}
           onChangeText={(text) => {
             setMessageText(text);
-            setTypingStatus(getDeviceId(), activeChatDevice, text.length > 0);
+            if (activeChatDevice) {
+              setTypingStatus(deviceId, activeChatDevice, text.length > 0).catch(console.log);
+            }
           }}
         />
 
