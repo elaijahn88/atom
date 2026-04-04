@@ -1,4 +1,4 @@
-// app/tabs/index.tsx
+
 import React, { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from "react-native";
 
