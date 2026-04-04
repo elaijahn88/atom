@@ -1,4 +1,4 @@
-// app/App.tsx
+// app/tabs/index.tsx
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated, Linking, Alert, TextInput, ActivityIndicator, Dimensions } from "react-native";
 import * as Device from "expo-device";
