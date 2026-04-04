@@ -1,205 +1,127 @@
-import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Animated,
-} from "react-native";
+// app/screens/AuthScreen.tsx
+import React, { useState } from "react";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from "react-native";
+import { loginOrSignup, logout } from "../lib/login";
 
-import { auth, database, ref, set } from "../../firebase";
-import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  onAuthStateChanged,
-} from "firebase/auth";
-
-const App = () => {
-  const [user, setUser] = useState<any>(null);
+export default function AuthScreen() {
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [showSuccess, setShowSuccess] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false);
 
-  const fadeAnim = new Animated.Value(0);
+  const handleAuth = async () => {
+    if (!email || !password) {
+      Alert.alert("Error", "Please enter email and password");
+      return;
+    }
+    setLoading(true);
+    const result = await loginOrSignup(email, password, phone);
+    setLoading(false);
 
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
-    return unsub;
-  }, []);
-
-  const showSuccessAnimation = () => {
-    setShowSuccess(true);
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 800,
-      useNativeDriver: true,
-    }).start(() => {
-      setTimeout(() => setShowSuccess(false), 2000);
-    });
-  };
-
-  const login = async () => {
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      showSuccessAnimation();
-    } catch {
-      try {
-        const userCredential = await createUserWithEmailAndPassword(
-          auth,
-          email,
-          password
-        );
-        if (userCredential.user) {
-          set(ref(database, `users/${userCredential.user.uid}`), {
-            contact: phone || email,
-          });
-          showSuccessAnimation();
-        }
-      } catch (err: any) {
-        Alert.alert("Error", err.message);
-      }
+    if (result.success) {
+      setLoggedIn(true);
+      Alert.alert("Success", "Logged in successfully!");
+    } else {
+      Alert.alert("Error", result.error || "Something went wrong");
     }
   };
 
-  if (!user) {
-    return (
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <Text style={styles.title}>Welcome</Text>
-        <Text style={styles.subtitle}>Login or Sign Up</Text>
-
-        <TextInput
-          placeholder="Phone Number"
-          style={styles.input}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
-          placeholderTextColor="#ccc"
-        />
-        <TextInput
-          placeholder="Email"
-          style={styles.input}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          placeholderTextColor="#ccc"
-        />
-        <TextInput
-          placeholder="Password"
-          style={styles.input}
-          onChangeText={setPassword}
-          secureTextEntry
-          placeholderTextColor="#ccc"
-        />
-
-        <TouchableOpacity style={styles.button} onPress={login}>
-          <Text style={styles.buttonText}>Login / Sign Up</Text>
-        </TouchableOpacity>
-
-        {showSuccess && (
-          <Animated.View style={[styles.successBox, { opacity: fadeAnim }]}>
-            <Text style={styles.successText}>✅ Success!</Text>
-          </Animated.View>
-        )}
-      </KeyboardAvoidingView>
-    );
-  }
+  const handleLogout = async () => {
+    await logout();
+    setLoggedIn(false);
+    setEmail("");
+    setPassword("");
+    setPhone("");
+    Alert.alert("Success", "Logged out successfully");
+  };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Welcome Back!</Text>
-      <Text style={styles.info}>Email: {user.email}</Text>
-      <Text style={styles.info}>Phone: {phone}</Text>
+      <Text style={styles.title}>Welcome!</Text>
 
-      <TouchableOpacity
-        style={[styles.button, { marginTop: 40 }]}
-        onPress={() => auth.signOut()}
-      >
-        <Text style={styles.buttonText}>Sign Out</Text>
-      </TouchableOpacity>
+      {!loggedIn ? (
+        <>
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Phone (optional)"
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
+          />
+
+          <TouchableOpacity style={styles.button} onPress={handleAuth} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login / Signup</Text>}
+          </TouchableOpacity>
+        </>
+      ) : (
+        <>
+          <Text style={styles.loggedInText}>You are logged in!</Text>
+          <TouchableOpacity style={[styles.button, styles.logoutButton]} onPress={handleLogout}>
+            <Text style={styles.buttonText}>Logout</Text>
+          </TouchableOpacity>
+        </>
+      )}
     </View>
   );
-};
-
-export default App;
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1F1F2E",
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: "#1E1E2F",
     padding: 20,
+    justifyContent: "center",
   },
   title: {
     fontSize: 32,
+    color: "#fff",
     fontWeight: "bold",
-    color: "#FF6B6B",
-    marginBottom: 5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "#aaa",
-    marginBottom: 30,
+    marginBottom: 40,
+    textAlign: "center",
   },
   input: {
-    width: "100%",
-    backgroundColor: "#2C2C3C",
+    backgroundColor: "#2A2A3D",
     color: "#fff",
     padding: 15,
-    marginBottom: 15,
     borderRadius: 12,
+    marginBottom: 15,
     fontSize: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
   },
   button: {
-    width: "100%",
-    backgroundColor: "#FF6B6B",
-    padding: 15,
+    backgroundColor: "#6C63FF",
+    paddingVertical: 15,
     borderRadius: 12,
-    shadowColor: "#FF6B6B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 5,
     alignItems: "center",
+    marginTop: 10,
+  },
+  logoutButton: {
+    backgroundColor: "#FF6363",
   },
   buttonText: {
     color: "#fff",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-  info: {
-    color: "#fff",
     fontSize: 18,
-    marginTop: 10,
+    fontWeight: "bold",
+  },
+  loggedInText: {
+    color: "#fff",
+    fontSize: 20,
     textAlign: "center",
-  },
-  successBox: {
-    position: "absolute",
-    bottom: 50,
-    backgroundColor: "#32CD32",
-    paddingVertical: 15,
-    paddingHorizontal: 40,
-    borderRadius: 25,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 5,
-  },
-  successText: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
+    marginBottom: 20,
   },
 });
