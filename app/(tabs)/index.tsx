@@ -4,9 +4,9 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated, Linking
 import * as Device from "expo-device";
 
 // Services
-import { loginOrSignup, updateWallet } from "./lib/firebaseService";
-import { sendLocalNotification, registerForPushNotifications } from "./lib/notifications";
-import { pickImage, pickFile } from "./lib/file";
+import { loginOrSignup, updateWallet } from "../../lib/fire";
+import { sendLocalNotification, registerForPushNotifications } from "./lib/noti";
+import { pickImage, pickFile } from "../../lib/file";
 
 // Types
 interface FoodItem { id: number; name: string; price: number; image: string; category: "meal" | "chai"; ownerName: string; ownerPhone: string; ownerLocation: string; }
