@@ -1,12 +1,11 @@
-// lib/fire.ts
-import { auth, db, database } from "../../firebase";
+import { db, database } from "../../firebase";
 import { doc, setDoc } from "firebase/firestore";
 import { ref, push } from "firebase/database";
 
 // Type for user bio
 export type UserBio = {
   uid: string;
-  email: string;
+  email?: string;
   firstName?: string;
   lastName?: string;
   age?: number;
@@ -18,25 +17,26 @@ export type UserBio = {
   occupation?: string;
 };
 
+// Generate random ID (instead of Firebase Auth UID)
+const generateUID = () => {
+  return "user_" + Math.random().toString(36).substring(2, 12);
+};
+
 // Save user data
 export const saveUserData = async (
-  formData: Omit<UserBio, "uid" | "email"> & { email?: string }
+  formData: Omit<UserBio, "uid">
 ) => {
-  const currentUser = auth.currentUser;
-
-  if (!currentUser) {
-    throw new Error("Please log in first");
-  }
+  // ✅ Generate UID manually
+  const uid = generateUID();
 
   const userData: UserBio = {
     ...formData,
-    uid: currentUser.uid,
-    email: currentUser.email || formData.email || "",
+    uid,
   };
 
   try {
     // ✅ Firestore
-    await setDoc(doc(db, "users", userData.uid), userData);
+    await setDoc(doc(db, "users", uid), userData);
 
     // ✅ Realtime DB
     const rRef = ref(database, "users");
@@ -44,7 +44,7 @@ export const saveUserData = async (
 
     return {
       success: true,
-      firestoreId: userData.uid,
+      firestoreId: uid,
       realtimeKey: newRKey,
     };
   } catch (error) {
