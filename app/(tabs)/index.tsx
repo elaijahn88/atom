@@ -23,8 +23,8 @@ import {
   getUserProfile,
   getUserByDeviceId,
   saveDeviceIdForUser,
-} from "./lib/fire";
-import { sendLocalNotification, registerForPushNotifications } from "./lib/noti";
+} from "../lib/fire";
+import { sendLocalNotification, registerForPushNotifications } from "../lib/noti";
 
 // Types
 interface FoodItem {
