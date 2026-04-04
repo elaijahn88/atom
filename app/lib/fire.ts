@@ -1,4 +1,4 @@
-// app/lib/firebaseService.ts
+// app/lib/fire.ts
 import { auth, database, ref, set, get, child, update } from "../../firebase";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "firebase/auth";
 
