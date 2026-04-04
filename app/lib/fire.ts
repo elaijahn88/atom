@@ -1,5 +1,5 @@
 // fire.ts
-import { db, auth } from "./firebase";
+import { db, auth } from "../../firebase";
 import { doc, setDoc, getDoc, updateDoc, collection, query, orderBy, onSnapshot, addDoc, getDocs } from "firebase/firestore";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
 
