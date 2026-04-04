@@ -4,14 +4,13 @@ import {
   Animated, ActivityIndicator, Dimensions, Linking, PanResponder
 } from "react-native";
 
-import { sendLocalNotification } from "../lib/ui/notification";
-import { pickImage, pickDocument } from "../lib/ui/file";
+// Import logic from lib
+import { sendLocalNotification } from "../lib/noti";
+import { pickImage, pickDocument } from "../lib/file";
 
-// Food/cart types
 interface FoodItem { id: number; name: string; price: number; image: string; category: "meal" | "chai"; ownerName: string; ownerPhone: string; ownerLocation: string; }
 type CartItem = FoodItem & { quantity: number; };
 
-// Sample menu
 const menu: FoodItem[] = [
   { id: 1, name: "Classic Burger", price: 6, image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800", category: "meal", ownerName: "Restaurant One", ownerPhone: "+256700000001", ownerLocation: "Kampala" },
   { id: 2, name: "Pepperoni Pizza", price: 10, image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800", category: "meal", ownerName: "Pizza Hub", ownerPhone: "+256700000002", ownerLocation: "Ntinda" },
@@ -69,7 +68,7 @@ const App = () => {
       if (exist) return prev.map(c => (c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c));
       return [...prev, { ...item, quantity: 1 }];
     });
-    sendLocalNotification("Cart Updated", `${item.name} added!`);
+    sendLocalNotification("Cart Updated", `${item.name} added to your cart!`);
   };
 
   const increaseQty = (id: number) => setCart(cart.map(c => (c.id === id ? { ...c, quantity: c.quantity + 1 } : c)));
@@ -82,10 +81,15 @@ const App = () => {
     setWalletBalance(walletBalance - total);
     setCart([]);
     closeCart();
-    sendLocalNotification("Order Placed", `Total $${total} deducted`);
+    sendLocalNotification("Order Placed", `Your order of $${total} has been successfully placed.`);
   };
 
-  const callNumber = (number: string) => Linking.openURL(`tel:${number}`);
+  // Call + Notification wrapper
+  const callAndNotify = (number: string, name: string) => {
+    sendLocalNotification("Calling", `Calling ${name} (${number})`);
+    Linking.openURL(`tel:${number}`);
+  };
+
   const openCart = () => setCartVisible(true);
   const closeCart = () => { setCartVisible(false); snapTo(CLOSED); };
 
@@ -96,10 +100,13 @@ const App = () => {
       <Text style={styles.walletText}>Wallet: ${walletBalance}</Text>
 
       <ScrollView>
-        {menu.map(item => <FoodCard key={item.id} item={item} addToCart={addToCart} />)}
+        {menu.map(item => (
+          <FoodCard key={item.id} item={item} addToCart={addToCart} callOwner={callAndNotify} />
+        ))}
+
         <View style={{ marginTop: 20 }}>
           {managers.map(m => (
-            <TouchableOpacity key={m.phone} onPress={() => callNumber(m.phone)} style={styles.managerBtn}>
+            <TouchableOpacity key={m.phone} onPress={() => callAndNotify(m.phone, m.name)} style={styles.managerBtn}>
               <Text style={{ color: "#fff" }}>{m.name}: {m.phone}</Text>
             </TouchableOpacity>
           ))}
@@ -139,12 +146,12 @@ const App = () => {
   );
 };
 
-const FoodCard = ({ item, addToCart }: any) => {
+const FoodCard = ({ item, addToCart, callOwner }: any) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const [loading, setLoading] = useState(true);
 
   return (
-    <TouchableOpacity style={styles.card} onPress={() => addToCart(item)}>
+    <View style={styles.card}>
       {loading && <ActivityIndicator style={{ marginTop: 60 }} />}
       <Animated.Image
         source={{ uri: item.image }}
@@ -154,8 +161,12 @@ const FoodCard = ({ item, addToCart }: any) => {
       <View style={{ padding: 10 }}>
         <Text style={{ color: "#fff" }}>{item.name}</Text>
         <Text style={{ color: "#2ecc71" }}>${item.price}</Text>
+        <View style={{ flexDirection: "row", marginTop: 5 }}>
+          <TouchableOpacity onPress={() => addToCart(item)} style={{ marginRight: 10 }}><Text style={{ color: "#FF6347" }}>Add 🛒</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => callOwner(item.ownerPhone, item.ownerName)}><Text style={{ color: "#32CD32" }}>Call Owner</Text></TouchableOpacity>
+        </View>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 };
 
