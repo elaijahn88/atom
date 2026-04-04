@@ -1,93 +1,116 @@
 // fire.ts
-import { 
-  doc, setDoc, getDoc, collection, query, where, getDocs 
-} from "firebase/firestore";
-import { ref, set, get, child, update } from "firebase/database";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "firebase/auth";
-import { auth, db, database } from "../../firebase";
+import { db, auth } from "./firebase";
+import { doc, setDoc, getDoc, updateDoc, collection, query, orderBy, onSnapshot, addDoc, getDocs } from "firebase/firestore";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
 
-// ======================
-// Interfaces
-// ======================
-export interface UserData {
-  uid?: string;
-  email?: string;
-  phone?: string;
-  wallet?: number;
-  deviceId?: string;
-  username?: string;
-  location?: string;
-  foodLikes?: string;
-  drinkLikes?: string;
+/** ------------------ USER AUTH ------------------ */
+export async function loginOrSignup(email: string, password: string, name: string, deviceId: string) {
+  try {
+    let userCred;
+    try {
+      userCred = await signInWithEmailAndPassword(auth, email, password);
+    } catch {
+      // If login fails, create account
+      userCred = await createUserWithEmailAndPassword(auth, email, password);
+      await setDoc(doc(db, "users", userCred.user.uid), {
+        email,
+        name,
+        wallet: 20,
+        deviceId
+      });
+    }
+
+    return { success: true, uid: userCred.user.uid };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
 }
 
-// ======================
-// Firestore Functions
-// ======================
-
-export const getUserByDeviceId = async (deviceId: string) => {
-  const q = query(
-    collection(db, "users"), 
-    where("deviceId", "==", deviceId)
-  );
-  const querySnapshot = await getDocs(q);
-  if (!querySnapshot.empty) {
-    const docSnap = querySnapshot.docs[0];
-    return { uid: docSnap.id, ...docSnap.data() } as UserData;
-  }
-  return null;
-};
-
-export const saveDeviceIdForUser = async (uid: string, deviceId: string) => {
-  const userRef = doc(db, "users", uid);
-  await setDoc(userRef, { deviceId }, { merge: true });
-};
-
-export const updateUserProfile = async (uid: string, data: Partial<UserData>) => {
-  const userRef = doc(db, "users", uid);
-  await setDoc(userRef, data, { merge: true });
-};
-
-export const getUserProfile = async (uid: string): Promise<UserData | null> => {
-  const userRef = doc(db, "users", uid);
-  const docSnap = await getDoc(userRef);
-  return docSnap.exists() ? ({ uid: docSnap.id, ...docSnap.data() } as UserData) : null;
-};
-
-// ======================
-// Realtime DB + Auth Functions
-// ======================
-
-export const loginOrSignup = async (email: string, password: string, phone: string, deviceId: string) => {
+export async function getUserByDeviceId(deviceId: string) {
   try {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const uid = userCredential.user.uid;
-    const snapshot = await get(child(ref(database), `users/${uid}`));
-    const existingData = snapshot.exists() ? snapshot.val() : {};
-    const wallet = existingData.wallet ?? 20;
-    return { success: true, uid, email, phone, wallet, ...existingData };
-  } catch {
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const uid = userCredential.user.uid;
-      await set(ref(database, `users/${uid}`), {
-        contact: phone || email,
-        wallet: 20,
-        deviceId,
-        email,
-        phone: phone || null,
-      });
-      return { success: true, uid, email, phone, wallet: 20 };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    const q = query(collection(db, "users"));
+    const snapshot = await getDocs(q);
+    for (const docSnap of snapshot.docs) {
+      const data: any = docSnap.data();
+      if (data.deviceId === deviceId) return { uid: docSnap.id, ...data };
     }
+    return null;
+  } catch (e) {
+    console.log(e);
+    return null;
   }
-};
+}
 
-export const updateWallet = async (uid: string, newBalance: number) => {
-  await update(ref(database, `users/${uid}`), { wallet: newBalance });
-};
+export async function saveDeviceIdForUser(uid: string, deviceId: string) {
+  try {
+    await updateDoc(doc(db, "users", uid), { deviceId });
+  } catch (e) {
+    console.log(e);
+  }
+}
 
-export const logout = async () => {
-  await signOut(auth);
-};
+export async function updateWallet(uid: string, wallet: number) {
+  try {
+    await updateDoc(doc(db, "users", uid), { wallet });
+  } catch (e) {
+    console.log(e);
+  }
+}
+
+/** ------------------ MESSAGES ------------------ */
+export async function sendMessage(senderId: string, receiverDeviceId: string, text: string) {
+  try {
+    await addDoc(collection(db, "messages"), {
+      senderId,
+      receiverDeviceId,
+      text,
+      status: "sent",
+      createdAt: new Date()
+    });
+  } catch (e) {
+    console.log(e);
+  }
+}
+
+export function listenForMessages(deviceId: string, callback: (msgs: any[]) => void) {
+  const q = query(collection(db, "messages"), orderBy("createdAt"));
+  const unsub = onSnapshot(q, (snapshot) => {
+    const msgs = snapshot.docs
+      .map((doc) => ({ id: doc.id, ...doc.data() }))
+      .filter((msg) => msg.receiverDeviceId === deviceId || msg.senderId === deviceId);
+    callback(msgs);
+  });
+  return unsub;
+}
+
+export async function updateMessageStatus(messageId: string, status: "sent" | "delivered" | "seen") {
+  try {
+    await updateDoc(doc(db, "messages", messageId), { status });
+  } catch (e) {
+    console.log(e);
+  }
+}
+
+/** ------------------ TYPING STATUS ------------------ */
+export async function setTypingStatus(senderDeviceId: string, receiverDeviceId: string, isTyping: boolean) {
+  try {
+    const docRef = doc(db, "typing", `${senderDeviceId}_${receiverDeviceId}`);
+    await setDoc(docRef, { isTyping, updatedAt: new Date() });
+  } catch (e) {
+    console.log(e);
+  }
+}
+
+export function listenTypingStatus(receiverDeviceId: string, callback: (typing: string | null) => void) {
+  const q = query(collection(db, "typing"));
+  const unsub = onSnapshot(q, (snapshot) => {
+    let typingUser: string | null = null;
+    snapshot.docs.forEach((doc) => {
+      const data: any = doc.data();
+      const [senderId, receiverId] = doc.id.split("_");
+      if (receiverId === receiverDeviceId && data.isTyping) typingUser = senderId;
+    });
+    callback(typingUser);
+  });
+  return unsub;
+}
