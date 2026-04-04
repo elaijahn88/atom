@@ -59,8 +59,14 @@ export default function App() {
   // PUSH NOTIFICATIONS
   useEffect(() => { registerForPushNotifications().catch(console.log); }, []);
 
-  // DEVICE ID
-  const getDeviceId = () => Device.osInternalBuildId || Device.modelName || Device.brand || "unknown-device";
+  // DEVICE ID (library-free)
+  const getDeviceId = () => {
+    return (
+      Device.osInternalBuildId || 
+      Device.modelName || 
+      Device.brand + "-" + Math.floor(Math.random() * 1000000)
+    );
+  };
 
   // AUTO LOGIN
   useEffect(() => {
@@ -131,6 +137,22 @@ export default function App() {
     if (user?.uid) await updateWallet(user.uid, newBalance);
   };
 
+  // CHECKOUT
+  const handleCheckout = async () => {
+    if (!user?.uid) return Alert.alert("Error", "You must be logged in to checkout");
+    if (cart.length === 0) return Alert.alert("Cart empty", "Add items first");
+
+    const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    if (walletBalance < totalAmount) return Alert.alert("Insufficient balance", "You don't have enough funds");
+
+    const newBalance = walletBalance - totalAmount;
+    setWalletBalance(newBalance);
+    await updateWallet(user.uid, newBalance);
+
+    sendLocalNotification("Checkout Complete", `You have paid $${totalAmount} successfully!`);
+    setCart([]);
+  };
+
   const callOwner = (number: string) => Linking.openURL(`tel:${number}`);
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
@@ -179,7 +201,14 @@ export default function App() {
         </View>
       ))}
 
-      {cart.length > 0 && <View style={styles.cart}><Text style={{ color: "#fff" }}>🛒 {cart.length} | ${total}</Text></View>}
+      {cart.length > 0 && (
+        <View style={styles.cart}>
+          <Text style={{ color: "#fff" }}>🛒 {cart.length} | ${total}</Text>
+          <TouchableOpacity onPress={handleCheckout}>
+            <Text style={{ color: "#fff", marginTop: 5, fontWeight: "bold" }}>Checkout</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -197,5 +226,5 @@ const styles = StyleSheet.create({
   price: { color: "#0f0" },
   add: { color: "#FF6347" },
   call: { color: "#32CD32" },
-  cart: { position: "absolute", bottom: 20, right: 20, backgroundColor: "#FF6347", padding: 10 },
+  cart: { position: "absolute", bottom: 20, right: 20, backgroundColor: "#FF6347", padding: 10, borderRadius: 8 },
 });
