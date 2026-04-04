@@ -6,7 +6,7 @@ import { getStorage } from "firebase/storage";
 import { getDatabase } from "firebase/database";
 import { getRemoteConfig } from "firebase/remote-config";
 
-// 🔑 Firebase configuration from google-services.json
+// Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyD5jl0y21celoXtnFpyIjM-0_y1k8yCEsk",
   authDomain: "elijah-89c76.firebaseapp.com",
@@ -14,21 +14,19 @@ const firebaseConfig = {
   storageBucket: "elijah-89c76.firebasestorage.app",
   messagingSenderId: "786398756349",
   appId: "1:786398756349:android:125ee41780ab86c9ff6d94",
-
-  // ✅ Required if you use Realtime Database
   databaseURL: "https://elijah-89c76-default-rtdb.firebaseio.com",
 };
 
-// ✅ Initialize Firebase ONCE
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// ✅ Services
+// Services
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const database = getDatabase(app);
 
-// ✅ Remote Config
+// Remote Config
 export const remoteConfig = getRemoteConfig(app);
 remoteConfig.settings = {
   minimumFetchIntervalMillis: 3600000,
