@@ -91,12 +91,7 @@ const menu: FoodItem[] = [
   },
 ];
 
-const managers = [
-  { name: "Jof", phone: "+256756707499" },
-  { name: "Eli", phone: "0746524088" },
-];
-
-const { width, height } = Dimensions.get("window");
+const { height } = Dimensions.get("window");
 
 export default function App() {
   // LOGIN STATE
@@ -119,25 +114,27 @@ export default function App() {
 
   // ANIMATION
   const cartScale = useRef(new Animated.Value(1)).current;
-  const overlayOpacity = useRef(new Animated.Value(0)).current;
-  const panY = useRef(new Animated.Value(height)).current;
-
-  const PARTIAL = height * 0.35;
-  const CLOSED = height;
 
   // ---------------- PUSH NOTIFICATIONS ----------------
   useEffect(() => {
-    registerForPushNotifications().then((token) =>
-      console.log("Push token:", token)
-    );
+    registerForPushNotifications().catch(console.log);
   }, []);
+
+  // ---------------- SAFE DEVICE ID ----------------
+  const getDeviceId = () => {
+    return (
+      Device.osInternalBuildId ||
+      Device.modelName ||
+      Device.brand ||
+      "unknown-device"
+    );
+  };
 
   // ---------------- AUTO LOGIN ----------------
   useEffect(() => {
     const checkDeviceLogin = async () => {
-      const deviceId = Device.deviceName || "unknown-device";
-
       try {
+        const deviceId = getDeviceId();
         const existingUser = await getUserByDeviceId(deviceId);
 
         if (existingUser) {
@@ -145,9 +142,6 @@ export default function App() {
           setWalletBalance(existingUser.wallet || 20);
           setUsername(existingUser.username || "User");
           setUserPhone(existingUser.phone || "");
-          setLocation(existingUser.location || "");
-          setFoodLikes(existingUser.foodLikes || "");
-          setDrinkLikes(existingUser.drinkLikes || "");
 
           sendLocalNotification(
             "Welcome back!",
@@ -162,14 +156,13 @@ export default function App() {
     checkDeviceLogin();
   }, []);
 
-  // ---------------- PROFILE FETCH (FIXED HOOK) ----------------
+  // ---------------- PROFILE FETCH ----------------
   useEffect(() => {
     if (!showProfile || !user?.uid) return;
 
     const fetchProfile = async () => {
       try {
         const data = await getUserProfile(user.uid);
-
         if (data) {
           setUsername(data.username || "");
           setUserPhone(data.phone || "");
@@ -187,22 +180,34 @@ export default function App() {
 
   // ---------------- LOGIN ----------------
   const handleLogin = async () => {
-    const deviceId = Device.deviceName || "unknown-device";
+    const deviceId = getDeviceId();
+
+    // ✅ validation (prevents crashes)
+    if (!email || !password) {
+      Alert.alert("Error", "Email and password are required");
+      return;
+    }
+
+    if (password.length < 6) {
+      Alert.alert("Error", "Password must be at least 6 characters");
+      return;
+    }
 
     try {
-      const res = await loginOrSignup(
-        email,
-        password,
-        phone,
-        deviceId
-      );
+      const res = await loginOrSignup(email, password, phone, deviceId);
+
+      // ✅ safety check
+      if (!res) {
+        Alert.alert("Error", "No response from server");
+        return;
+      }
 
       if (res.success) {
         await saveDeviceIdForUser(res.uid, deviceId);
 
         const userData = {
           uid: res.uid,
-          phone: res.phone,
+          phone: res.phone || "",
           username: res.username || "User",
           location: res.location || "",
           foodLikes: res.foodLikes || "",
@@ -214,17 +219,18 @@ export default function App() {
         setWalletBalance(userData.wallet);
         setUsername(userData.username);
         setUserPhone(userData.phone);
-        setLocation(userData.location);
-        setFoodLikes(userData.foodLikes);
-        setDrinkLikes(userData.drinkLikes);
 
         sendLocalNotification("Welcome!", `Hello ${userData.username}`);
       } else {
         Alert.alert("Error", res.error || "Login failed");
       }
-    } catch (err) {
-      console.log("Login error:", err);
-      Alert.alert("Error", "Something went wrong");
+    } catch (err: any) {
+      console.log("Login error FULL:", err);
+
+      Alert.alert(
+        "Login Error",
+        err?.message || "Check internet or Firebase config"
+      );
     }
   };
 
@@ -315,15 +321,19 @@ export default function App() {
     const saveProfile = async () => {
       if (!user?.uid) return;
 
-      await updateUserProfile(user.uid, {
-        username,
-        phone: userPhone,
-        location,
-        foodLikes,
-        drinkLikes,
-      });
+      try {
+        await updateUserProfile(user.uid, {
+          username,
+          phone: userPhone,
+          location,
+          foodLikes,
+          drinkLikes,
+        });
 
-      setShowProfile(false);
+        setShowProfile(false);
+      } catch (err) {
+        Alert.alert("Error", "Failed to save profile");
+      }
     };
 
     return (
@@ -372,9 +382,7 @@ export default function App() {
             <Text style={styles.add}>Add</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => callOwner(item.ownerPhone)}
-          >
+          <TouchableOpacity onPress={() => callOwner(item.ownerPhone)}>
             <Text style={styles.call}>Call</Text>
           </TouchableOpacity>
         </View>
