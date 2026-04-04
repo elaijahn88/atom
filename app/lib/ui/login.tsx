@@ -1,4 +1,4 @@
-// app/screens/AuthScreen.tsx
+
 import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from "react-native";
 import { loginOrSignup, logout } from "../lib/login";
