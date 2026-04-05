@@ -1,9 +1,12 @@
 // fire.ts
 import { getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion, collection, query, orderBy, onSnapshot, addDoc, getDocs } from "firebase/firestore";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
-import { app, auth, db } from "../../firebase"; // adjust path as needed
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+import { getDatabase, ref, update } from "firebase/database";
+import { app } from "../../firebase";
 
-const firestore = getFirestore(app);
+const db = getFirestore(app);
+const auth = getAuth(app);
+const realtime = getDatabase(app);
 
 // =================== TYPES ===================
 export interface UserProfile {
@@ -16,7 +19,6 @@ export interface UserProfile {
   orderHistory?: any[];
   pin?: string;
   deviceId?: string;
-  email?: string;
 }
 
 // =================== AUTH ===================
@@ -29,7 +31,7 @@ export async function loginOrSignup(email: string, password: string, name: strin
     } catch {
       const res = await createUserWithEmailAndPassword(auth, email, password);
       user = res.user;
-      await setDoc(doc(db, "users", user.uid), { email, name, deviceId, wallet: 20, cart: [], favorites: [], orderHistory: [] });
+      await setDoc(doc(db, "users", user.uid), { email, name, deviceId, wallet: 5000000, cart: [], favorites: [], orderHistory: [] });
     }
     return { success: true, uid: user.uid };
   } catch (err: any) {
@@ -39,45 +41,71 @@ export async function loginOrSignup(email: string, password: string, name: strin
 
 // =================== USER PROFILE ===================
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-  const snap = await getDoc(doc(db, "users", uid));
-  return snap.exists() ? { uid, ...snap.data() } : null;
+  try {
+    const snap = await getDoc(doc(db, "users", uid));
+    return snap.exists() ? { uid, ...(snap.data() as UserProfile) } : null;
+  } catch (err) {
+    console.log("getUserProfile error:", err);
+    return null;
+  }
 }
 
+export async function updateUserProfile(uid: string, data: Partial<UserProfile>) {
+  try { await updateDoc(doc(db, "users", uid), data); }
+  catch (err) { console.log("updateUserProfile error:", err); }
+}
+
+export async function createUserIfNotExists(uid: string, data: Partial<UserProfile>) {
+  try {
+    const refUser = doc(db, "users", uid);
+    const snap = await getDoc(refUser);
+    if (!snap.exists()) {
+      await setDoc(refUser, { wallet: 5000000, cart: [], favorites: [], orderHistory: [], ...data });
+    }
+  } catch (err) { console.log("createUserIfNotExists error:", err); }
+}
+
+// =================== WALLET ===================
+export async function updateWallet(uid: string, amount: number) {
+  try {
+    await updateDoc(doc(db, "users", uid), { wallet: amount });
+    await update(ref(realtime, `users/${uid}`), { wallet: amount });
+  } catch (err) { console.log("updateWallet error:", err); }
+}
+
+// =================== CART & FAVORITES ===================
+export async function addToCart(uid: string, product: any) {
+  try { await updateDoc(doc(db, "users", uid), { cart: arrayUnion(product) }); }
+  catch (err) { console.log("addToCart error:", err); }
+}
+
+export async function addToFavorites(uid: string, product: any) {
+  try { await updateDoc(doc(db, "users", uid), { favorites: arrayUnion(product) }); }
+  catch (err) { console.log("addToFavorites error:", err); }
+}
+
+// =================== ORDER HISTORY ===================
+export async function addOrderHistory(uid: string, order: any) {
+  try {
+    await updateDoc(doc(db, "users", uid), { orderHistory: arrayUnion(order) });
+  } catch (err) { console.log("addOrderHistory error:", err); }
+}
+
+// =================== DEVICE & PHONE LOOKUP ===================
 export async function getUserByDeviceId(deviceId: string) {
-  const snap = await getDocs(collection(db, "users"));
-  const u = snap.docs.find(d => d.data().deviceId === deviceId);
+  const snapshot = await getDocs(collection(db, "users"));
+  const u = snapshot.docs.find(d => d.data().deviceId === deviceId);
   return u ? { uid: u.id, ...u.data() } : null;
 }
 
 export async function getUserByPhone(phone: string) {
-  const snap = await getDocs(collection(db, "users"));
-  const u = snap.docs.find(d => d.data().phone === phone);
+  const snapshot = await getDocs(collection(db, "users"));
+  const u = snapshot.docs.find(d => d.data().phone === phone);
   return u ? { uid: u.id, ...u.data() } : null;
 }
 
 export async function saveDeviceIdForUser(uid: string, deviceId: string) {
   await updateDoc(doc(db, "users", uid), { deviceId });
-}
-
-// =================== WALLET / CART / FAVORITES ===================
-export async function updateWallet(uid: string, amount: number) {
-  await updateDoc(doc(db, "users", uid), { wallet: amount });
-}
-
-export async function updateUserProfile(uid: string, data: Partial<UserProfile>) {
-  await updateDoc(doc(db, "users", uid), data);
-}
-
-export async function addToFavorites(uid: string, product: any) {
-  await updateDoc(doc(db, "users", uid), { favorites: arrayUnion(product) });
-}
-
-export async function addToCart(uid: string, product: any) {
-  await updateDoc(doc(db, "users", uid), { cart: arrayUnion(product) });
-}
-
-export async function addOrderHistory(uid: string, order: any) {
-  await updateDoc(doc(db, "users", uid), { orderHistory: arrayUnion(order) });
 }
 
 // =================== CHAT ===================
@@ -104,7 +132,7 @@ export async function addChatUser(uid: string, deviceId: string, username: strin
 }
 
 // =================== TRANSACTIONS ===================
-export async function addTransaction(uid: string, tx: { type: string, amount: number, date: string, to?: string }) {
+export async function addTransaction(uid: string, tx: { type: string; amount: number; date: string; to?: string }) {
   await addDoc(collection(db, "transactions"), { uid, ...tx });
 }
 
@@ -119,13 +147,4 @@ export function listenForTransactions(uid: string, callback: (txs: any[]) => voi
     const txs = snap.docs.filter(d => d.data().uid === uid).map(d => d.data());
     callback(txs);
   });
-}
-
-// =================== CREATE USER IF NOT EXISTS ===================
-export async function createUserIfNotExists(uid: string, data: Partial<UserProfile>) {
-  const refUser = doc(db, "users", uid);
-  const snap = await getDoc(refUser);
-  if (!snap.exists()) {
-    await setDoc(refUser, { wallet: 5000000, cart: [], favorites: [], orderHistory: [], ...data });
-  }
 }
