@@ -113,11 +113,11 @@ export default function App() {
   // ====================== HOME SCREEN ======================
   const renderHome = () => (
     <ScrollView style={styles.scrollContainer}>
-      <Text style={{ color: "#fff", fontSize: 22, marginBottom: 10 }}>Welcome, {username}</Text>
-      <Text style={{ color: accColor, fontSize: 20, marginBottom: 15 }}>Wallet: {walletBalance} ugx</Text>
+      <Text style={{ color: "#fff", fontSize: 22, marginBottom: 10 }}>{username}</Text>
+      <Text style={{ color: accColor, fontSize: 20, marginBottom: 15 }}>Acc©: {walletBalance} ugx</Text>
 
       <TouchableOpacity style={[styles.button, { backgroundColor: "#008000" }]} onPress={() => setShowUpdateWallet(prev => !prev)}>
-        <Text style={styles.btnText}>{showUpdateWallet ? "Hide Wallet Update" : "Acc/Update"}</Text>
+        <Text style={styles.btnText}>{showUpdateWallet ? "off" : "Acc"}</Text>
       </TouchableOpacity>
 
       {showUpdateWallet && (
