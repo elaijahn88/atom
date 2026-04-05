@@ -340,7 +340,7 @@ export default function App() {
             setWalletPassword("");
           }}
         >
-          <Text style={styles.btnText}>Update Wallet</Text>
+          <Text style={styles.btnText}>Acc</Text>
         </TouchableOpacity>
       </View>
 
