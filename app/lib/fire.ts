@@ -1,22 +1,46 @@
 // fire.ts
 import { db, auth } from "../../firebase";
-import { doc, setDoc, getDoc, updateDoc, collection, query, orderBy, onSnapshot, addDoc, getDocs } from "firebase/firestore";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+import {
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  collection,
+  query,
+  where,
+  orderBy,
+  onSnapshot,
+  addDoc,
+  getDocs
+} from "firebase/firestore";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword
+} from "firebase/auth";
 
 /** ------------------ USER AUTH ------------------ */
-export async function loginOrSignup(email: string, password: string, name: string, deviceId: string) {
+export async function loginOrSignup(
+  email: string,
+  password: string,
+  phone: string,
+  deviceId: string
+) {
   try {
     let userCred;
+
     try {
       userCred = await signInWithEmailAndPassword(auth, email, password);
     } catch {
-      // If login fails, create account
+      // Create account
       userCred = await createUserWithEmailAndPassword(auth, email, password);
+
       await setDoc(doc(db, "users", userCred.user.uid), {
         email,
-        name,
+        phone: phone || "",
+        username: "User",
         wallet: 20,
-        deviceId
+        deviceId,
+        pin: ""
       });
     }
 
@@ -26,14 +50,23 @@ export async function loginOrSignup(email: string, password: string, name: strin
   }
 }
 
+/** ------------------ USERS ------------------ */
+
+// GET BY DEVICE
 export async function getUserByDeviceId(deviceId: string) {
   try {
-    const q = query(collection(db, "users"));
+    const q = query(
+      collection(db, "users"),
+      where("deviceId", "==", deviceId)
+    );
+
     const snapshot = await getDocs(q);
-    for (const docSnap of snapshot.docs) {
-      const data: any = docSnap.data();
-      if (data.deviceId === deviceId) return { uid: docSnap.id, ...data };
+
+    if (!snapshot.empty) {
+      const docSnap = snapshot.docs[0];
+      return { uid: docSnap.id, ...docSnap.data() };
     }
+
     return null;
   } catch (e) {
     console.log(e);
@@ -41,6 +74,29 @@ export async function getUserByDeviceId(deviceId: string) {
   }
 }
 
+// GET BY PHONE ✅ IMPORTANT
+export async function getUserByPhone(phone: string) {
+  try {
+    const q = query(
+      collection(db, "users"),
+      where("phone", "==", phone)
+    );
+
+    const snapshot = await getDocs(q);
+
+    if (!snapshot.empty) {
+      const docSnap = snapshot.docs[0];
+      return { uid: docSnap.id, ...docSnap.data() };
+    }
+
+    return null;
+  } catch (e) {
+    console.log(e);
+    return null;
+  }
+}
+
+// SAVE DEVICE ID
 export async function saveDeviceIdForUser(uid: string, deviceId: string) {
   try {
     await updateDoc(doc(db, "users", uid), { deviceId });
@@ -49,6 +105,7 @@ export async function saveDeviceIdForUser(uid: string, deviceId: string) {
   }
 }
 
+// UPDATE WALLET
 export async function updateWallet(uid: string, wallet: number) {
   try {
     await updateDoc(doc(db, "users", uid), { wallet });
@@ -57,8 +114,36 @@ export async function updateWallet(uid: string, wallet: number) {
   }
 }
 
+// UPDATE PROFILE (USERNAME, PHONE, PIN)
+export async function updateUserProfile(uid: string, data: any) {
+  try {
+    await updateDoc(doc(db, "users", uid), data);
+  } catch (e) {
+    console.log(e);
+  }
+}
+
+// GET PROFILE
+export async function getUserProfile(uid: string) {
+  try {
+    const docSnap = await getDoc(doc(db, "users", uid));
+    if (docSnap.exists()) {
+      return docSnap.data();
+    }
+    return null;
+  } catch (e) {
+    console.log(e);
+    return null;
+  }
+}
+
 /** ------------------ MESSAGES ------------------ */
-export async function sendMessage(senderId: string, receiverDeviceId: string, text: string) {
+
+export async function sendMessage(
+  senderId: string,
+  receiverDeviceId: string,
+  text: string
+) {
   try {
     await addDoc(collection(db, "messages"), {
       senderId,
@@ -72,18 +157,31 @@ export async function sendMessage(senderId: string, receiverDeviceId: string, te
   }
 }
 
-export function listenForMessages(deviceId: string, callback: (msgs: any[]) => void) {
+export function listenForMessages(
+  deviceId: string,
+  callback: (msgs: any[]) => void
+) {
   const q = query(collection(db, "messages"), orderBy("createdAt"));
+
   const unsub = onSnapshot(q, (snapshot) => {
     const msgs = snapshot.docs
       .map((doc) => ({ id: doc.id, ...doc.data() }))
-      .filter((msg) => msg.receiverDeviceId === deviceId || msg.senderId === deviceId);
+      .filter(
+        (msg: any) =>
+          msg.receiverDeviceId === deviceId ||
+          msg.senderId === deviceId
+      );
+
     callback(msgs);
   });
+
   return unsub;
 }
 
-export async function updateMessageStatus(messageId: string, status: "sent" | "delivered" | "seen") {
+export async function updateMessageStatus(
+  messageId: string,
+  status: "sent" | "delivered" | "seen"
+) {
   try {
     await updateDoc(doc(db, "messages", messageId), { status });
   } catch (e) {
@@ -92,7 +190,12 @@ export async function updateMessageStatus(messageId: string, status: "sent" | "d
 }
 
 /** ------------------ TYPING STATUS ------------------ */
-export async function setTypingStatus(senderDeviceId: string, receiverDeviceId: string, isTyping: boolean) {
+
+export async function setTypingStatus(
+  senderDeviceId: string,
+  receiverDeviceId: string,
+  isTyping: boolean
+) {
   try {
     const docRef = doc(db, "typing", `${senderDeviceId}_${receiverDeviceId}`);
     await setDoc(docRef, { isTyping, updatedAt: new Date() });
@@ -101,16 +204,26 @@ export async function setTypingStatus(senderDeviceId: string, receiverDeviceId: 
   }
 }
 
-export function listenTypingStatus(receiverDeviceId: string, callback: (typing: string | null) => void) {
+export function listenTypingStatus(
+  receiverDeviceId: string,
+  callback: (typing: string | null) => void
+) {
   const q = query(collection(db, "typing"));
+
   const unsub = onSnapshot(q, (snapshot) => {
     let typingUser: string | null = null;
+
     snapshot.docs.forEach((doc) => {
       const data: any = doc.data();
       const [senderId, receiverId] = doc.id.split("_");
-      if (receiverId === receiverDeviceId && data.isTyping) typingUser = senderId;
+
+      if (receiverId === receiverDeviceId && data.isTyping) {
+        typingUser = senderId;
+      }
     });
+
     callback(typingUser);
   });
+
   return unsub;
 }
