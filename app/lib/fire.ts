@@ -1,5 +1,5 @@
 // fire.ts
-import { getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion, collection, query, orderBy, onSnapshot, addDoc, getDocs } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion, collection, query, orderBy, onSnapshot, addDoc, getDocs, where } from "firebase/firestore";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
 import { getDatabase, ref, update } from "firebase/database";
 import { app } from "../../firebase";
@@ -55,16 +55,6 @@ export async function updateUserProfile(uid: string, data: Partial<UserProfile>)
   catch (err) { console.log("updateUserProfile error:", err); }
 }
 
-export async function createUserIfNotExists(uid: string, data: Partial<UserProfile>) {
-  try {
-    const refUser = doc(db, "users", uid);
-    const snap = await getDoc(refUser);
-    if (!snap.exists()) {
-      await setDoc(refUser, { wallet: 5000000, cart: [], favorites: [], orderHistory: [], ...data });
-    }
-  } catch (err) { console.log("createUserIfNotExists error:", err); }
-}
-
 // =================== WALLET ===================
 export async function updateWallet(uid: string, amount: number) {
   try {
@@ -73,25 +63,59 @@ export async function updateWallet(uid: string, amount: number) {
   } catch (err) { console.log("updateWallet error:", err); }
 }
 
-// =================== CART & FAVORITES ===================
+// =================== CART ===================
 export async function addToCart(uid: string, product: any) {
   try { await updateDoc(doc(db, "users", uid), { cart: arrayUnion(product) }); }
   catch (err) { console.log("addToCart error:", err); }
 }
 
-export async function addToFavorites(uid: string, product: any) {
-  try { await updateDoc(doc(db, "users", uid), { favorites: arrayUnion(product) }); }
-  catch (err) { console.log("addToFavorites error:", err); }
+// =================== CHAT ===================
+export async function sendMessage(senderUid: string, receiverDeviceId: string, text: string) {
+  await addDoc(collection(db, "messages"), { senderUid, receiverDeviceId, text, date: new Date().toISOString() });
 }
 
-// =================== ORDER HISTORY ===================
-export async function addOrderHistory(uid: string, order: any) {
+export function listenForMessages(deviceId: string, userUid: string, callback: (msgs: any[]) => void) {
+  const q = query(collection(db, "messages"), orderBy("date", "asc"));
+  return onSnapshot(q, snap => {
+    const msgs = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(m => m.receiverDeviceId === deviceId || m.senderUid === userUid);
+    callback(msgs);
+  });
+}
+
+export async function getChatUsers(uid: string) {
+  const snap = await getDocs(query(collection(db, "chatUsers"), where("uid", "==", uid)));
+  return snap.docs.map(d => d.data());
+}
+
+// Optimized addChatUser – prevents duplicates
+export async function addChatUser(uid: string, deviceId: string, username: string, phone: string) {
   try {
-    await updateDoc(doc(db, "users", uid), { orderHistory: arrayUnion(order) });
-  } catch (err) { console.log("addOrderHistory error:", err); }
+    const q = query(collection(db, "chatUsers"), where("uid", "==", uid), where("deviceId", "==", deviceId));
+    const snap = await getDocs(q);
+    if (snap.empty) {
+      await addDoc(collection(db, "chatUsers"), { uid, deviceId, username, phone });
+    }
+  } catch (err) {
+    console.log("addChatUser error:", err);
+  }
 }
 
-// =================== DEVICE & PHONE LOOKUP ===================
+// =================== TRANSACTIONS ===================
+export async function addTransaction(uid: string, tx: { type: string; amount: number; date: string; to?: string }) {
+  await addDoc(collection(db, "transactions"), { uid, ...tx });
+}
+
+export function listenForTransactions(uid: string, callback: (txs: any[]) => void) {
+  const q = query(collection(db, "transactions"), orderBy("date", "desc"));
+  return onSnapshot(q, snap => {
+    const txs = snap.docs.filter(d => d.data().uid === uid).map(d => d.data());
+    callback(txs);
+  });
+}
+
+// =================== USER LOOKUP ===================
 export async function getUserByDeviceId(deviceId: string) {
   const snapshot = await getDocs(collection(db, "users"));
   const u = snapshot.docs.find(d => d.data().deviceId === deviceId);
@@ -106,45 +130,4 @@ export async function getUserByPhone(phone: string) {
 
 export async function saveDeviceIdForUser(uid: string, deviceId: string) {
   await updateDoc(doc(db, "users", uid), { deviceId });
-}
-
-// =================== CHAT ===================
-export async function sendMessage(senderUid: string, receiverDeviceId: string, text: string) {
-  await addDoc(collection(db, "messages"), { senderUid, receiverDeviceId, text, date: new Date().toISOString() });
-}
-
-export function listenForMessages(deviceId: string, callback: (msgs: any[]) => void) {
-  const q = query(collection(db, "messages"), orderBy("date", "asc"));
-  return onSnapshot(q, snap => {
-    const msgs = snap.docs.filter(d => d.data().receiverDeviceId === deviceId || d.data().senderUid === deviceId)
-      .map(d => ({ id: d.id, ...d.data() }));
-    callback(msgs);
-  });
-}
-
-export async function getChatUsers(uid: string) {
-  const snap = await getDocs(collection(db, "chatUsers"));
-  return snap.docs.filter(d => d.data().uid === uid).map(d => d.data());
-}
-
-export async function addChatUser(uid: string, deviceId: string, username: string, phone: string) {
-  await addDoc(collection(db, "chatUsers"), { uid, deviceId, username, phone });
-}
-
-// =================== TRANSACTIONS ===================
-export async function addTransaction(uid: string, tx: { type: string; amount: number; date: string; to?: string }) {
-  await addDoc(collection(db, "transactions"), { uid, ...tx });
-}
-
-export async function getTransactions(uid: string) {
-  const snap = await getDocs(query(collection(db, "transactions"), orderBy("date", "desc")));
-  return snap.docs.filter(d => d.data().uid === uid).map(d => d.data());
-}
-
-export function listenForTransactions(uid: string, callback: (txs: any[]) => void) {
-  const q = query(collection(db, "transactions"), orderBy("date", "desc"));
-  return onSnapshot(q, snap => {
-    const txs = snap.docs.filter(d => d.data().uid === uid).map(d => d.data());
-    callback(txs);
-  });
 }
