@@ -19,7 +19,7 @@ import {
   getChatUsers,
   addChatUser,
   addTransaction,
-  getTransactions
+  listenForTransactions
 } from "../lib/fire";
 
 import { sendLocalNotification, registerForPushNotifications } from "../lib/noti";
@@ -68,13 +68,6 @@ export default function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  // SEND MONEY
-  const [receiverPhone, setReceiverPhone] = useState("");
-  const [sendAmount, setSendAmount] = useState("");
-  const [sendPin, setSendPin] = useState("");
-  const [adminPassword, setAdminPassword] = useState("");
-
-  // ---------------- INIT ----------------
   useEffect(() => {
     registerForPushNotifications().catch(console.log);
     const init = async () => {
@@ -84,14 +77,12 @@ export default function App() {
         setWalletBalance(u.wallet || 20);
         setUsername(u.username || "User");
         setUserPhone(u.phone || "");
-        const txs = await getTransactions(u.uid);
-        setTransactions(txs);
       }
     };
     init();
   }, []);
 
-  // ---------------- CHAT LISTENER ----------------
+  // CHAT LISTENER
   useEffect(() => {
     if (!user) return;
     const unsubscribe = listenForMessages(deviceId, (msgs) => {
@@ -101,24 +92,32 @@ export default function App() {
     return unsubscribe;
   }, [user]);
 
-  // ---------------- CHAT LIST ----------------
+  // CHAT LIST
   useEffect(() => {
     if (!user) return;
     getChatUsers(user.uid).then(setChatUsers);
   }, [user]);
 
-  // ---------------- LOGIN ----------------
+  // TRANSACTIONS LISTENER
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribeTx = listenForTransactions(user.uid, (txs) => {
+      setTransactions(txs);
+      if (txs.length) setLastTransaction(txs[0]);
+    });
+    return unsubscribeTx;
+  }, [user]);
+
+  // LOGIN
   const handleLogin = async () => {
     const res = await loginOrSignup(email, password, "", deviceId);
     if (res.success) {
       await saveDeviceIdForUser(res.uid, deviceId);
       setUser({ uid: res.uid });
-      const txs = await getTransactions(res.uid);
-      setTransactions(txs);
     } else Alert.alert("Error", res.error);
   };
 
-  // ---------------- CART ----------------
+  // ADD TO CART
   const addToCart = async (item: FoodItem) => {
     if (walletBalance < item.price) return Alert.alert("No balance");
     setCart(prev => {
@@ -131,23 +130,35 @@ export default function App() {
     await updateWallet(user.uid, newBalance);
   };
 
+  // CHECKOUT
   const handleCheckout = async () => {
     const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-    if (walletBalance < total) return Alert.alert("Not enough balance");
+    if (walletBalance < total) return Alert.alert("Not enough");
     const newBalance = walletBalance - total;
     setWalletBalance(newBalance);
     await updateWallet(user.uid, newBalance);
 
-    const tx = { type: "purchase", amount: total, date: new Date().toISOString() };
+    const tx = { type: "purchase", amount: total, date: new Date().toLocaleString() };
     await addTransaction(user.uid, tx);
-    setTransactions(prev => [tx, ...prev]);
-    setLastTransaction(tx);
     setCart([]);
     setScreen("receipt");
     sendLocalNotification(`Purchase successful: $${total}`);
   };
 
-  // ---------------- SEND MONEY ----------------
+  // CHAT SEND
+  const handleSendMessage = async () => {
+    if (!messageText) return;
+    await sendMessage(user.uid, activeChatDevice, messageText);
+    setMessageText("");
+    sendLocalNotification("Message sent");
+  };
+
+  // SEND MONEY
+  const [receiverPhone, setReceiverPhone] = useState("");
+  const [sendAmount, setSendAmount] = useState("");
+  const [sendPin, setSendPin] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+
   const handleSendMoney = async () => {
     const amount = parseFloat(sendAmount);
     if (!amount || amount <= 0) return Alert.alert("Invalid amount");
@@ -169,28 +180,19 @@ export default function App() {
 
     setWalletBalance(senderNew);
 
-    const tx = { type: "send", amount, to: receiver.phone, date: new Date().toISOString() };
+    const tx = { type: "send", amount, to: receiver.phone, date: new Date().toLocaleString() };
     await addTransaction(user.uid, tx);
-    setTransactions(prev => [tx, ...prev]);
-    setLastTransaction(tx);
-    setScreen("receipt");
 
+    setScreen("receipt");
     sendLocalNotification(`You sent $${amount} to ${receiver.phone}`);
     sendLocalNotification(`You received $${amount} from ${profile.username || profile.phone}`);
 
+    // Add to chat list automatically
     await addChatUser(user.uid, receiver.deviceId, receiver.username || receiver.phone, receiver.phone);
     await addChatUser(receiver.uid, deviceId, profile.username || profile.phone, profile.phone);
   };
 
-  // ---------------- CHAT SEND ----------------
-  const handleSendMessage = async () => {
-    if (!messageText) return;
-    await sendMessage(user.uid, activeChatDevice, messageText);
-    setMessageText("");
-    sendLocalNotification("Message sent");
-  };
-
-  // ---------------- LOGIN SCREEN ----------------
+  // LOGIN SCREEN
   if (!user) {
     return (
       <View style={styles.container}>
@@ -203,7 +205,7 @@ export default function App() {
     );
   }
 
-  // ---------------- CHAT SCREEN ----------------
+  // CHAT SCREEN
   if (screen === "chat") {
     return (
       <KeyboardAvoidingView style={styles.container}>
@@ -212,10 +214,10 @@ export default function App() {
         </TouchableOpacity>
         <ScrollView ref={scrollViewRef}>
           {messages.map(m => (
-            <Text key={m.id} style={{ color: "#fff" }}>{m.text}</Text>
+            <Text key={m.id} style={{ color: "#fff", marginVertical: 2 }}>{m.text}</Text>
           ))}
         </ScrollView>
-        <TextInput style={styles.input} value={messageText} onChangeText={setMessageText} />
+        <TextInput style={styles.input} value={messageText} onChangeText={setMessageText} placeholder="Type a message" />
         <TouchableOpacity style={styles.button} onPress={handleSendMessage}>
           <Text style={styles.btnText}>Send</Text>
         </TouchableOpacity>
@@ -223,7 +225,7 @@ export default function App() {
     );
   }
 
-  // ---------------- CHAT LIST ----------------
+  // CHAT LIST
   if (screen === "chatList") {
     return (
       <ScrollView style={styles.container}>
@@ -231,15 +233,40 @@ export default function App() {
           <Text style={{ color: "#FF6347" }}>Back to Food Menu</Text>
         </TouchableOpacity>
         {chatUsers.map(u => (
-          <TouchableOpacity key={u.deviceId} onPress={() => { setActiveChatDevice(u.deviceId); setScreen("chat"); }}>
-            <Text style={{ color: "#00BFFF", padding: 10 }}>{u.username || u.phone}</Text>
+          <TouchableOpacity
+            key={u.deviceId}
+            onPress={() => { setActiveChatDevice(u.deviceId); setScreen("chat"); }}
+          >
+            <Text style={{ color: "#00BFFF", padding: 10 }}>
+              {u.username || u.phone}
+            </Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
     );
   }
 
-  // ---------------- RECEIPT SCREEN ----------------
+  // HISTORY
+  if (screen === "history") {
+    return (
+      <ScrollView style={styles.container}>
+        <TouchableOpacity onPress={() => setScreen("home")} style={{ marginBottom: 10 }}>
+          <Text style={{ color: "#FF6347" }}>Back</Text>
+        </TouchableOpacity>
+        <Text style={{ color: "#fff", fontSize: 20, marginBottom: 10 }}>Transactions</Text>
+        {transactions.map((tx, i) => (
+          <View key={i} style={styles.card}>
+            <Text style={{ color: "#fff" }}>{tx.type}</Text>
+            {tx.to && <Text style={{ color: "#0ff" }}>To: {tx.to}</Text>}
+            <Text style={{ color: "#0f0" }}>${tx.amount}</Text>
+            <Text style={{ color: "#aaa" }}>{tx.date}</Text>
+          </View>
+        ))}
+      </ScrollView>
+    );
+  }
+
+  // RECEIPT
   if (screen === "receipt") {
     return (
       <View style={styles.container}>
@@ -253,10 +280,27 @@ export default function App() {
     );
   }
 
-  // ---------------- HOME + MENU + NAVIGATION ----------------
+  // PROFILE
+  if (screen === "profile") {
+    const saveProfile = async () => {
+      await updateUserProfile(user.uid, { username, phone: userPhone });
+      setScreen("home");
+      sendLocalNotification("Profile updated");
+    };
+    return (
+      <ScrollView style={styles.container}>
+        <TextInput value={username} onChangeText={setUsername} style={styles.input} placeholder="Username" />
+        <TextInput value={userPhone} onChangeText={setUserPhone} style={styles.input} placeholder="Phone" />
+        <TouchableOpacity style={styles.button} onPress={saveProfile}>
+          <Text style={styles.btnText}>Save</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    );
+  }
+
+  // HOME + MENU + NAVIGATION + ADMIN WALLET EDIT
   return (
     <View style={styles.container}>
-      {/* TOP: Wallet + Username + Admin Wallet Edit */}
       <View style={{ marginBottom: 15 }}>
         <Text style={{ color: "#0f0", fontSize: 16 }}>Wallet: ${walletBalance}</Text>
         <Text style={{ color: "#fff", fontSize: 16 }}>Username: {username}</Text>
@@ -281,7 +325,6 @@ export default function App() {
             if (walletPassword !== "elaijah2013") return Alert.alert("Access Denied");
             const newAmount = parseFloat(walletEdit);
             if (isNaN(newAmount) || newAmount < 0) return Alert.alert("Invalid amount");
-
             await updateWallet(user.uid, newAmount);
             setWalletBalance(newAmount);
             sendLocalNotification(`Wallet updated to $${newAmount}`);
@@ -293,27 +336,24 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* MENU */}
       <ScrollView style={{ flex: 1 }}>
         {menu.map(item => (
           <View key={item.id} style={styles.card}>
-            <TouchableOpacity style={{ position: "absolute", top: 10, right: 10, zIndex: 10 }}
-              onPress={() => { setActiveChatDevice(item.ownerDeviceId); setScreen("chatList"); }}>
-              <Text style={{ color: "#00BFFF" }}>Chat</Text>
-            </TouchableOpacity>
-
             <Image source={{ uri: item.image }} style={styles.image} />
-            <Text style={{ color: "#fff", marginTop: 5 }}>{item.name}</Text>
+            <Text style={{ color: "#fff" }}>{item.name}</Text>
             <Text style={{ color: "#0f0" }}>${item.price}</Text>
-
-            <TouchableOpacity style={styles.button} onPress={() => addToCart(item)}>
-              <Text style={styles.btnText}>Add to Cart</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 5 }}>
+              <TouchableOpacity onPress={() => addToCart(item)}>
+                <Text style={{ color: "#FF6347" }}>Cart</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setActiveChatDevice(item.ownerDeviceId); setScreen("chatList"); }}>
+                <Text style={{ color: "#00BFFF" }}>Chat</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ))}
       </ScrollView>
 
-      {/* BOTTOM NAVIGATION */}
       <View style={{ flexDirection: "row", justifyContent: "space-around", marginTop: 10 }}>
         <TouchableOpacity style={styles.navBtn} onPress={() => setScreen("send")}>
           <Text style={styles.btnText}>Send Money</Text>
@@ -335,6 +375,7 @@ const styles = StyleSheet.create({
   button: { backgroundColor: "#FF6347", padding: 12, marginTop: 10 },
   navBtn: { backgroundColor: "#333", padding: 12, marginTop: 5, flex: 1, marginHorizontal: 5, alignItems: "center" },
   btnText: { color: "#fff", textAlign: "center" },
-  card: { backgroundColor: "#1E1E1E", padding: 10, marginBottom: 10, position: "relative" },
-  image: { width: "100%", height: 150 }
+  card: { backgroundColor: "#1E1E1E", padding: 10, marginBottom: 10 },
+  image: { width: "100%", height: 150 },
+  cart: { backgroundColor: "#FF6347", padding: 10, marginTop: 10 }
 });
