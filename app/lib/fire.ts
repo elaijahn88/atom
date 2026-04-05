@@ -1,79 +1,118 @@
-// fire.ts
+// fire.ts (updated with transactions)
 import { db, auth } from "./firebase";
-import { doc, setDoc, getDoc, updateDoc, collection, getDocs, onSnapshot, addDoc, query, orderBy } from "firebase/firestore";
+import { 
+  doc, setDoc, getDoc, updateDoc, collection, query, orderBy, onSnapshot, addDoc, getDocs 
+} from "firebase/firestore";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
 
-// LOGIN / SIGNUP
-export async function loginOrSignup(email: string, password: string, name: string, deviceId: string) {
+// ---------------- USER AUTH ----------------
+export async function loginOrSignup(email: string, password: string, username: string, deviceId: string) {
   try {
-    let user;
-    try { user = await signInWithEmailAndPassword(auth, email, password); }
-    catch { user = await createUserWithEmailAndPassword(auth, email, password); }
-    return { success: true, uid: user.user.uid };
-  } catch (e: any) { return { success: false, error: e.message }; }
+    let userCredential;
+    try {
+      userCredential = await signInWithEmailAndPassword(auth, email, password);
+    } catch {
+      userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      await setDoc(doc(db, "users", userCredential.user.uid), {
+        uid: userCredential.user.uid,
+        email,
+        username: username || "User",
+        deviceId,
+        wallet: 20,
+        phone: "",
+        pin: ""
+      });
+    }
+    return { success: true, uid: userCredential.user.uid };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
 }
 
-// SAVE DEVICE ID
-export async function saveDeviceIdForUser(uid: string, deviceId: string) {
-  await setDoc(doc(db, "users", uid), { deviceId }, { merge: true });
+// ---------------- WALLET ----------------
+export async function updateWallet(uid: string, newBalance: number) {
+  await updateDoc(doc(db, "users", uid), { wallet: newBalance });
 }
 
-// GET USER BY DEVICE
-export async function getUserByDeviceId(deviceId: string) {
-  const usersCol = collection(db, "users");
-  const snap = await getDocs(usersCol);
-  const docData = snap.docs.map(d => ({ ...d.data(), uid: d.id })).find(d => d.deviceId === deviceId);
-  return docData || null;
-}
-
-// UPDATE WALLET
-export async function updateWallet(uid: string, amount: number) {
-  await updateDoc(doc(db, "users", uid), { wallet: amount });
-}
-
-// GET USER PROFILE
+// ---------------- USER PROFILE ----------------
 export async function getUserProfile(uid: string) {
-  const snap = await getDoc(doc(db, "users", uid));
-  return snap.exists() ? snap.data() : null;
+  const docRef = doc(db, "users", uid);
+  const docSnap = await getDoc(docRef);
+  return docSnap.exists() ? docSnap.data() : null;
 }
 
-// UPDATE USER PROFILE
 export async function updateUserProfile(uid: string, data: any) {
   await updateDoc(doc(db, "users", uid), data);
 }
 
-// GET USER BY PHONE
+export async function getUserByDeviceId(deviceId: string) {
+  const snap = await getDocs(collection(db, "users"));
+  for (const docSnap of snap.docs) {
+    if (docSnap.data().deviceId === deviceId) return docSnap.data();
+  }
+  return null;
+}
+
 export async function getUserByPhone(phone: string) {
-  const usersCol = collection(db, "users");
-  const snap = await getDocs(usersCol);
-  const docData = snap.docs.map(d => ({ ...d.data(), uid: d.id })).find(d => d.phone === phone);
-  return docData || null;
+  const snap = await getDocs(collection(db, "users"));
+  for (const docSnap of snap.docs) {
+    if (docSnap.data().phone === phone) return docSnap.data();
+  }
+  return null;
 }
 
-// CHAT MESSAGES
-export async function sendMessage(senderUid: string, receiverDevice: string, text: string) {
-  const msg = { id: Date.now().toString(), text, date: new Date().toISOString() };
-  await addDoc(collection(db, "messages", senderUid, receiverDevice), msg);
-  await addDoc(collection(db, "messages", receiverDevice, senderUid), msg);
+export async function saveDeviceIdForUser(uid: string, deviceId: string) {
+  await updateDoc(doc(db, "users", uid), { deviceId });
 }
 
-// LISTEN FOR MESSAGES
+// ---------------- CHAT ----------------
+export async function sendMessage(senderUid: string, receiverDeviceId: string, text: string) {
+  const msgRef = collection(db, "messages");
+  await addDoc(msgRef, {
+    senderUid,
+    receiverDeviceId,
+    text,
+    timestamp: new Date().toISOString(),
+    id: Math.random().toString(36).substr(2, 9)
+  });
+}
+
 export function listenForMessages(deviceId: string, callback: (msgs: any[]) => void) {
-  const msgsCol = collection(db, "messages", deviceId);
-  const q = query(msgsCol, orderBy("date"));
-  const unsub = onSnapshot(q, snap => callback(snap.docs.map(d => d.data())));
-  return unsub;
+  const q = query(collection(db, "messages"), orderBy("timestamp", "asc"));
+  const unsubscribe = onSnapshot(q, snap => {
+    const msgs = snap.docs
+      .map(d => d.data())
+      .filter(m => m.receiverDeviceId === deviceId || m.senderUid === deviceId);
+    callback(msgs);
+  });
+  return unsubscribe;
 }
 
-// CHAT LIST USERS
-export async function addChatUser(uid: string, otherDeviceId: string, username: string, phone: string) {
-  const chatRef = doc(db, "users", uid, "chats", otherDeviceId);
-  const snap = await getDoc(chatRef);
-  if (!snap.exists()) await setDoc(chatRef, { username, phone, deviceId: otherDeviceId });
-}
-
+// ---------------- CHAT USERS ----------------
 export async function getChatUsers(uid: string) {
-  const chatsCol = collection(db, "users", uid, "chats");
-  const snap = await getDocs(chatsCol);
+  const docRef = doc(db, "chatLists", uid);
+  const snap = await getDoc(docRef);
+  return snap.exists() ? snap.data()?.users || [] : [];
+}
+
+export async function addChatUser(uid: string, deviceId: string, username: string, phone: string) {
+  const docRef = doc(db, "chatLists", uid);
+  const snap = await getDoc(docRef);
+  let users = snap.exists() ? snap.data()?.users || [] : [];
+  if (!users.find((u: any) => u.deviceId === deviceId)) {
+    users.push({ deviceId, username, phone });
+    await setDoc(docRef, { users });
+  }
+}
+
+// ---------------- TRANSACTIONS ----------------
+export async function addTransaction(uid: string, tx: { type: string; amount: number; to?: string; date: string }) {
+  const txRef = collection(db, "transactions", uid, "txs");
+  await addDoc(txRef, tx);
+}
+
+export async function getTransactions(uid: string) {
+  const q = query(collection(db, "transactions", uid, "txs"), orderBy("date", "desc"));
+  const snap = await getDocs(q);
   return snap.docs.map(d => d.data());
 }
