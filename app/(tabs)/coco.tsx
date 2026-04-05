@@ -19,6 +19,11 @@ import {
 } from "../lib/fire";
 
 import {
+  sendLocalNotification,
+  registerForPushNotifications,
+} from "../lib/noti";
+
+import {
   getFirestore,
   doc,
   updateDoc,
@@ -82,6 +87,8 @@ export default function Marketplace() {
   // ================= INIT =================
   useEffect(() => {
     const init = async () => {
+      await registerForPushNotifications();
+
       const u = await getUserByDeviceId(deviceId);
 
       if (u) {
@@ -91,6 +98,8 @@ export default function Marketplace() {
         setFavorites(u.favorites || []);
         setOrderHistory(u.orderHistory || []);
       }
+
+      sendLocalNotification("Welcome 👋", "Welcome back to Marketplace");
 
       loadMoreProducts(true);
     };
@@ -134,13 +143,14 @@ export default function Marketplace() {
   // ================= FAVORITES =================
   const toggleFavorite = async (product: Product) => {
     let updated;
-
     const exists = favorites.find(f => f.id === product.id);
 
     if (exists) {
       updated = favorites.filter(f => f.id !== product.id);
+      sendLocalNotification("Removed ❌", `${product.name} removed from favorites`);
     } else {
       updated = [...favorites, product];
+      sendLocalNotification("Saved ❤️", `${product.name} added to favorites`);
     }
 
     setFavorites(updated);
@@ -163,16 +173,28 @@ export default function Marketplace() {
     } else {
       setCart([...cart, { ...product, quantity: 1 }]);
     }
+
+    sendLocalNotification("Cart 🛒", `${product.name} added to cart`);
   };
 
   const removeFromCart = (id: string) => {
+    const item = cart.find(i => i.id === id);
+
     setCart(cart.filter(i => i.id !== id));
+
+    if (item) {
+      sendLocalNotification("Removed ❌", `${item.name} removed from cart`);
+    }
   };
 
+  // ================= CHECKOUT =================
   const checkout = async () => {
     const total = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
-    if (total > wallet) return Alert.alert("Error", "Insufficient balance");
+    if (total > wallet) {
+      sendLocalNotification("Failed ❌", "Insufficient balance");
+      return Alert.alert("Error", "Insufficient balance");
+    }
 
     const newWallet = wallet - total;
     const order = { items: cart, total, date: new Date().toISOString() };
@@ -189,6 +211,11 @@ export default function Marketplace() {
         orderHistory: [...orderHistory, order],
       });
     }
+
+    sendLocalNotification(
+      "Payment Successful 💸",
+      `You paid UGX ${total.toLocaleString()}`
+    );
 
     Alert.alert("Success", `Paid UGX ${total.toLocaleString()}`);
   };
