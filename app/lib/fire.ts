@@ -19,6 +19,7 @@ export interface UserProfile {
   orderHistory?: any[];
   pin?: string;
   deviceId?: string;
+  expoPushToken?: string;
 }
 
 // =================== AUTH ===================
@@ -31,7 +32,15 @@ export async function loginOrSignup(email: string, password: string, name: strin
     } catch {
       const res = await createUserWithEmailAndPassword(auth, email, password);
       user = res.user;
-      await setDoc(doc(db, "users", user.uid), { email, name, deviceId, wallet: 5000000, cart: [], favorites: [], orderHistory: [] });
+      await setDoc(doc(db, "users", user.uid), {
+        email,
+        username: name,
+        deviceId,
+        wallet: 5000000,
+        cart: [],
+        favorites: [],
+        orderHistory: [],
+      });
     }
     return { success: true, uid: user.uid };
   } catch (err: any) {
@@ -51,8 +60,11 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 }
 
 export async function updateUserProfile(uid: string, data: Partial<UserProfile>) {
-  try { await updateDoc(doc(db, "users", uid), data); }
-  catch (err) { console.log("updateUserProfile error:", err); }
+  try {
+    await updateDoc(doc(db, "users", uid), data);
+  } catch (err) {
+    console.log("updateUserProfile error:", err);
+  }
 }
 
 // =================== WALLET ===================
@@ -60,13 +72,18 @@ export async function updateWallet(uid: string, amount: number) {
   try {
     await updateDoc(doc(db, "users", uid), { wallet: amount });
     await update(ref(realtime, `users/${uid}`), { wallet: amount });
-  } catch (err) { console.log("updateWallet error:", err); }
+  } catch (err) {
+    console.log("updateWallet error:", err);
+  }
 }
 
 // =================== CART ===================
 export async function addToCart(uid: string, product: any) {
-  try { await updateDoc(doc(db, "users", uid), { cart: arrayUnion(product) }); }
-  catch (err) { console.log("addToCart error:", err); }
+  try {
+    await updateDoc(doc(db, "users", uid), { cart: arrayUnion(product) });
+  } catch (err) {
+    console.log("addToCart error:", err);
+  }
 }
 
 // =================== CHAT ===================
@@ -89,7 +106,7 @@ export async function getChatUsers(uid: string) {
   return snap.docs.map(d => d.data());
 }
 
-// Optimized addChatUser – prevents duplicates
+// Prevent duplicate chat users
 export async function addChatUser(uid: string, deviceId: string, username: string, phone: string) {
   try {
     const q = query(collection(db, "chatUsers"), where("uid", "==", uid), where("deviceId", "==", deviceId));
@@ -130,4 +147,14 @@ export async function getUserByPhone(phone: string) {
 
 export async function saveDeviceIdForUser(uid: string, deviceId: string) {
   await updateDoc(doc(db, "users", uid), { deviceId });
+}
+
+// =================== EXPO PUSH TOKENS ===================
+export async function saveExpoPushToken(uid: string, token: string) {
+  await updateDoc(doc(db, "users", uid), { expoPushToken: token });
+}
+
+export async function getAllUsers() {
+  const snapshot = await getDocs(collection(db, "users"));
+  return snapshot.docs.map(d => ({ uid: d.id, ...d.data() }));
 }
