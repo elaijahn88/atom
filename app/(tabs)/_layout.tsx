@@ -9,10 +9,10 @@ import { useColorScheme } from '../hooks/use-color-scheme';
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const activeColor = Colors[colorScheme ?? 'light'].tint;
-  const inactiveColor = Colors[colorScheme ?? 'light'].tabIconDefault ?? '#999';
+  const inactiveColor =
+    Colors[colorScheme ?? 'light'].tabIconDefault ?? '#999';
 
-  // Set the dark background color
-  const darkBackground = '#121212'; // Dark gray/black
+  const darkBackground = '#121212';
 
   return (
     <Tabs
@@ -31,52 +31,99 @@ export default function TabLayout() {
           fontSize: 12,
           fontWeight: '600',
           marginBottom: 5,
-          color: '#fff', // Ensure label is visible on dark background
+          color: '#fff',
         },
         tabBarButton: HapticTab,
       }}
     >
+      {/* FOOD */}
       <Tabs.Screen
         name="index"
         options={{
           title: 'Food',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="takeoutbag.and.cup.and.straw.fill" color={color} />,
+          tabBarIcon: ({ color }) => (
+            <IconSymbol
+              size={28}
+              name="fork.knife"
+              color={color}
+            />
+          ),
         }}
       />
+
+      {/* IPHONES */}
       <Tabs.Screen
         name="phones"
         options={{
           title: 'Iphones',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="cart.fill" color={color} />,
+          tabBarIcon: ({ color }) => (
+            <IconSymbol
+              size={28}
+              name="iphone"
+              color={color}
+            />
+          ),
         }}
       />
+
+      {/* STORE */}
       <Tabs.Screen
         name="store"
         options={{
           title: 'Store',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="cart.fill" color={color} />,
+          tabBarIcon: ({ color }) => (
+            <IconSymbol
+              size={28}
+              name="storefront.fill"
+              color={color}
+            />
+          ),
         }}
       />
+
+      {/* MUSIC */}
       <Tabs.Screen
         name="music"
         options={{
           title: 'Music',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
-          contentStyle: { backgroundColor: "green" },
+          tabBarIcon: ({ color }) => (
+            <IconSymbol
+              size={28}
+              name="music.note"
+              color={color}
+            />
+          ),
+          contentStyle: { backgroundColor: 'green' },
         }}
       />
+
+      {/* ADS */}
       <Tabs.Screen
         name="plug"
         options={{
           title: 'Ads',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
+          tabBarIcon: ({ color }) => (
+            <IconSymbol
+              size={28}
+              name="megaphone.fill"
+              color={color}
+            />
+          ),
         }}
       />
+
+      {/* ACCOUNT */}
       <Tabs.Screen
         name="account"
         options={{
           title: 'Account',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
+          tabBarIcon: ({ color }) => (
+            <IconSymbol
+              size={28}
+              name="person.circle.fill"
+              color={color}
+            />
+          ),
         }}
       />
     </Tabs>
