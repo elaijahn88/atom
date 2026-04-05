@@ -55,7 +55,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="phones"
         options={{
-          title: 'Iphones',
+          title: 'store',
           tabBarIcon: ({ color }) => (
             <IconSymbol
               size={28}
