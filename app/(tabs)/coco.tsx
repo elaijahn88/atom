@@ -115,7 +115,7 @@ export default function Marketplace({ userId }: { userId: string }) {
       }
 
       await registerForPushNotifications();
-      sendLocalNotification("Welcome!", "Marketplace ready!");
+      sendLocalNotification("Welcome!", "Elijah!");
     };
 
     initUser();
@@ -227,7 +227,7 @@ export default function Marketplace({ userId }: { userId: string }) {
         />
 
         <TextInput
-          placeholder="Admin password"
+          placeholder="Admin"
           style={styles.input}
           value={walletPassword}
           onChangeText={setWalletPassword}
@@ -235,7 +235,7 @@ export default function Marketplace({ userId }: { userId: string }) {
         />
 
         <TouchableOpacity style={styles.btn} onPress={handleWalletUpdate}>
-          <Text style={{ color: "#fff", textAlign: "center" }}>Update Wallet</Text>
+          <Text style={{ color: "#fff", textAlign: "center" }}>ACC</Text>
         </TouchableOpacity>
       </View>
 
