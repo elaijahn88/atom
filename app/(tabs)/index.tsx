@@ -56,17 +56,23 @@ export default function App() {
   const [messageText, setMessageText] = useState("");
   const [activeChatDevice, setActiveChatDevice] = useState("");
   const [chatUsers, setChatUsers] = useState<any[]>([]);
-
   const scrollViewRef = useRef<ScrollView>(null);
-  const deviceId = useMemo(() => Device.modelName || Device.brand + "-id", []);
 
-  // ADMIN WALLET EDIT
-  const [walletEdit, setWalletEdit] = useState("");
-  const [walletPassword, setWalletPassword] = useState("");
+  const deviceId = useMemo(() => Device.modelName || Device.brand + "-id", []);
 
   // LOGIN
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  // SEND MONEY
+  const [receiverPhone, setReceiverPhone] = useState("");
+  const [sendAmount, setSendAmount] = useState("");
+  const [sendPin, setSendPin] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+
+  // ADMIN WALLET EDIT
+  const [walletEdit, setWalletEdit] = useState("");
+  const [walletPassword, setWalletPassword] = useState("");
 
   useEffect(() => {
     registerForPushNotifications().catch(console.log);
@@ -85,9 +91,10 @@ export default function App() {
   // CHAT LISTENER
   useEffect(() => {
     if (!user) return;
-    const unsubscribe = listenForMessages(deviceId, (msgs) => {
+    const unsubscribe = listenForMessages(deviceId, user.uid, (msgs) => {
       setMessages(msgs);
       if (msgs.length) sendLocalNotification("New message received");
+      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
     });
     return unsubscribe;
   }, [user]);
@@ -119,21 +126,17 @@ export default function App() {
 
   // ADD TO CART
   const addToCart = async (item: FoodItem) => {
-    if (walletBalance < item.price) return Alert.alert("No balance");
     setCart(prev => {
       const exist = prev.find(c => c.id === item.id);
       if (exist) return prev.map(c => c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c);
       return [...prev, { ...item, quantity: 1 }];
     });
-    const newBalance = walletBalance - item.price;
-    setWalletBalance(newBalance);
-    await updateWallet(user.uid, newBalance);
   };
 
   // CHECKOUT
   const handleCheckout = async () => {
     const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-    if (walletBalance < total) return Alert.alert("Not enough");
+    if (walletBalance < total) return Alert.alert("Not enough balance");
     const newBalance = walletBalance - total;
     setWalletBalance(newBalance);
     await updateWallet(user.uid, newBalance);
@@ -141,8 +144,23 @@ export default function App() {
     const tx = { type: "purchase", amount: total, date: new Date().toLocaleString() };
     await addTransaction(user.uid, tx);
     setCart([]);
+    setLastTransaction(tx);
     setScreen("receipt");
     sendLocalNotification(`Purchase successful: $${total}`);
+  };
+
+  // OPEN DIRECT CHAT WITH SELLER
+  const openChatWithSeller = async (item: FoodItem) => {
+    if (!user) return;
+    const profile = await getUserProfile(user.uid);
+    const seller = await getUserByDeviceId(item.ownerDeviceId);
+    if (!seller) return Alert.alert("Seller not found");
+
+    await addChatUser(seller.uid, deviceId, profile?.username || profile?.phone || "User", profile?.phone || "");
+    await addChatUser(user.uid, seller.deviceId, seller.username || seller.phone, seller.phone);
+
+    setActiveChatDevice(item.ownerDeviceId);
+    setScreen("chat");
   };
 
   // CHAT SEND
@@ -154,11 +172,6 @@ export default function App() {
   };
 
   // SEND MONEY
-  const [receiverPhone, setReceiverPhone] = useState("");
-  const [sendAmount, setSendAmount] = useState("");
-  const [sendPin, setSendPin] = useState("");
-  const [adminPassword, setAdminPassword] = useState("");
-
   const handleSendMoney = async () => {
     const amount = parseFloat(sendAmount);
     if (!amount || amount <= 0) return Alert.alert("Invalid amount");
@@ -177,12 +190,10 @@ export default function App() {
 
     await updateWallet(user.uid, senderNew);
     await updateWallet(receiver.uid, receiverNew);
-
     setWalletBalance(senderNew);
 
     const tx = { type: "send", amount, to: receiver.phone, date: new Date().toLocaleString() };
     await addTransaction(user.uid, tx);
-
     setScreen("receipt");
     sendLocalNotification(`You sent $${amount} to ${receiver.phone}`);
     sendLocalNotification(`You received $${amount} from ${profile.username || profile.phone}`);
@@ -346,7 +357,7 @@ export default function App() {
               <TouchableOpacity onPress={() => addToCart(item)}>
                 <Text style={{ color: "#FF6347" }}>Cart</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => { setActiveChatDevice(item.ownerDeviceId); setScreen("chatList"); }}>
+              <TouchableOpacity onPress={() => openChatWithSeller(item)}>
                 <Text style={{ color: "#00BFFF" }}>Chat</Text>
               </TouchableOpacity>
             </View>
@@ -377,5 +388,4 @@ const styles = StyleSheet.create({
   btnText: { color: "#fff", textAlign: "center" },
   card: { backgroundColor: "#1E1E1E", padding: 10, marginBottom: 10 },
   image: { width: "100%", height: 150 },
-  cart: { backgroundColor: "#FF6347", padding: 10, marginTop: 10 }
 });
