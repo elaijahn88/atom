@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
-  Image, TextInput, KeyboardAvoidingView, Alert
+  Image, TextInput, Alert
 } from "react-native";
 import * as Device from "expo-device";
 
@@ -9,16 +9,9 @@ import {
   loginOrSignup,
   updateWallet,
   updateUserProfile,
-  getUserProfile,
   getUserByDeviceId,
   saveDeviceIdForUser,
-  sendMessage,
-  listenForMessages,
-  getUserByPhone,
-  getChatUsers,
-  addChatUser,
-  addTransaction,
-  listenForTransactions
+  addTransaction
 } from "../lib/fire";
 
 import { sendLocalNotification, registerForPushNotifications } from "../lib/noti";
@@ -47,18 +40,16 @@ export default function App() {
   const [walletBalance, setWalletBalance] = useState(200000);
   const [username, setUsername] = useState("");
   const [userPhone, setUserPhone] = useState("");
+  const [userLocation, setUserLocation] = useState("");
   const [activeScreen, setActiveScreen] = useState<"home"|"send"|"history"|"profile">("home");
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [lastTransaction, setLastTransaction] = useState<any>(null);
 
-  // ACC/UPDATE WALLET
   const [showUpdateWallet, setShowUpdateWallet] = useState(false);
   const [walletEdit, setWalletEdit] = useState("");
   const [walletPassword, setWalletPassword] = useState("");
 
-  // SEND MONEY
   const [receiverPhone, setReceiverPhone] = useState("");
   const [sendAmount, setSendAmount] = useState("");
   const [sendPin, setSendPin] = useState("");
@@ -76,6 +67,7 @@ export default function App() {
         setWalletBalance(u.wallet || 200000);
         setUsername(u.username || "User");
         setUserPhone(u.phone || "");
+        setUserLocation(u.location || "");
       }
     };
     init();
@@ -111,6 +103,39 @@ export default function App() {
   else if (walletBalance > 2000000) accColor = "#00f";
 
   // ====================== HOME SCREEN ======================
+  const handleAddToCart = (item: FoodItem) => {
+    setCart(prev => {
+      const existing = prev.find(c => c.id === item.id);
+      if (existing) return prev.map(c => c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c);
+      return [...prev, { ...item, quantity: 1 }];
+    });
+    sendLocalNotification(`Added ${item.name} to cart`);
+  };
+
+  const handlePurchase = () => {
+    const total = cart.reduce((sum, c) => sum + c.price * c.quantity, 0);
+    if (total > walletBalance) {
+      return Alert.alert("Insufficient Balance", "You do not have enough UGX to complete this purchase.");
+    }
+
+    cart.forEach(c => {
+      sendLocalNotification(`Purchased ${c.quantity}x ${c.name} from ${c.ownerPhone} for ${c.price * c.quantity} UGX`);
+      addTransaction(user.uid, {
+        type: "purchase",
+        item: c.name,
+        quantity: c.quantity,
+        amount: c.price * c.quantity,
+        seller: c.ownerPhone,
+        date: new Date().toISOString()
+      });
+    });
+
+    setWalletBalance(prev => prev - total);
+    updateWallet(user.uid, walletBalance - total);
+    setCart([]);
+    Alert.alert("Success", `You purchased items worth ${total} UGX`);
+  };
+
   const renderHome = () => (
     <ScrollView style={styles.scrollContainer}>
       <Text style={{ color: "#fff", fontSize: 22, marginBottom: 10 }}>{username}</Text>
@@ -132,7 +157,7 @@ export default function App() {
               if (isNaN(newAmount) || newAmount < 0) return Alert.alert("Invalid amount");
               await updateWallet(user.uid, newAmount);
               setWalletBalance(newAmount);
-              sendLocalNotification(`Acc Ac13****/ updated to ${newAmount}`);
+              sendLocalNotification(`Acc updated to ${newAmount}`);
               setWalletEdit("");
               setWalletPassword("");
             }}
@@ -143,44 +168,18 @@ export default function App() {
       )}
 
       {menu.map(item => (
-        <View key={item.id} style={styles.card}>
+        <TouchableOpacity key={item.id} style={styles.card} onPress={() => handleAddToCart(item)}>
           <Image source={{ uri: item.image }} style={styles.image} />
           <Text style={{ color: "#fff", fontSize: 16 }}>{item.name}</Text>
           <Text style={{ color: "#0f0", fontSize: 14 }}>{item.price} ugx</Text>
-        </View>
+        </TouchableOpacity>
       ))}
-    </ScrollView>
-  );
 
-  // ====================== SEND MONEY SCREEN ======================
-  const renderSendMoney = () => (
-    <ScrollView style={styles.scrollContainer}>
-      <Text style={{ color: "#fff", fontSize: 22, marginBottom: 10 }}>Send Money</Text>
-      <Text style={{ color: accColor, fontSize: 20, marginBottom: 20 }}>Wallet: {walletBalance} ugx</Text>
-
-      <TextInput placeholder="Receiver Phone" style={styles.input} value={receiverPhone} onChangeText={setReceiverPhone} keyboardType="phone-pad" />
-      <TextInput placeholder="Amount" style={styles.input} value={sendAmount} onChangeText={setSendAmount} keyboardType="numeric" />
-      <TextInput placeholder="PIN" style={styles.input} value={sendPin} onChangeText={setSendPin} secureTextEntry />
-      <TextInput placeholder="Admin Password (optional)" style={styles.input} value={adminPassword} onChangeText={setAdminPassword} secureTextEntry />
-
-      <TouchableOpacity style={[styles.button, { backgroundColor: "#008000" }]} onPress={async () => await handleSendMoney()}>
-        <Text style={styles.btnText}>Send</Text>
-      </TouchableOpacity>
-    </ScrollView>
-  );
-
-  // ====================== HISTORY SCREEN ======================
-  const renderHistory = () => (
-    <ScrollView style={styles.scrollContainer}>
-      <Text style={{ color: "#fff", fontSize: 22, marginBottom: 10 }}>Transaction History</Text>
-      {transactions.map((tx, i) => (
-        <View key={i} style={styles.card}>
-          <Text style={{ color: "#fff" }}>{tx.type}</Text>
-          {tx.to && <Text style={{ color: "#0ff" }}>To: {tx.to}</Text>}
-          <Text style={{ color: "#0f0" }}>{tx.amount} ugx</Text>
-          <Text style={{ color: "#aaa" }}>{tx.date}</Text>
-        </View>
-      ))}
+      {cart.length > 0 && (
+        <TouchableOpacity style={[styles.button, { backgroundColor: "#ff9900" }]} onPress={handlePurchase}>
+          <Text style={styles.btnText}>Purchase Cart ({cart.length} items)</Text>
+        </TouchableOpacity>
+      )}
     </ScrollView>
   );
 
@@ -189,15 +188,21 @@ export default function App() {
     <ScrollView style={styles.scrollContainer}>
       <Text style={{ color: "#fff", fontSize: 22, marginBottom: 10 }}>Profile</Text>
       <TextInput style={styles.input} placeholder="Username" value={username} onChangeText={setUsername} />
-      <TextInput style={styles.input} placeholder="Phone" value={userPhone} onChangeText={setUserPhone} />
+      <TextInput style={styles.input} placeholder="Phone" value={userPhone} onChangeText={setUserPhone} keyboardType="phone-pad" />
+      <TextInput style={styles.input} placeholder="Location" value={userLocation} onChangeText={setUserLocation} />
+
       <TouchableOpacity
         style={[styles.button, { backgroundColor: "#008000" }]}
         onPress={async () => {
-          await updateUserProfile(user.uid, { username, phone: userPhone });
+          await updateUserProfile(user.uid, { username, phone: userPhone, location: userLocation });
           sendLocalNotification("Profile updated");
+          setUsername("");
+          setUserPhone("");
+          setUserLocation("");
+          setActiveScreen("home");
         }}
       >
-        <Text style={styles.btnText}>Save</Text>
+        <Text style={styles.btnText}>Save & Return Home</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -214,7 +219,6 @@ export default function App() {
   return (
     <View style={{ flex: 1 }}>
       {renderActiveScreen()}
-      {/* Bottom Navigation */}
       <View style={styles.navBar}>
         <TouchableOpacity style={styles.navBtn} onPress={() => setActiveScreen("home")}><Text style={styles.btnText}>Home</Text></TouchableOpacity>
         <TouchableOpacity style={styles.navBtn} onPress={() => setActiveScreen("send")}><Text style={styles.btnText}>Send</Text></TouchableOpacity>
