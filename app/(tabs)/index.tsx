@@ -10,9 +10,9 @@ import {
   updateWallet,
   getUserByDeviceId,
   saveDeviceIdForUser
-} from "./fire";
+} from "..lib/fire";
 
-import { sendLocalNotification, registerForPushNotifications, notifyAllUsers } from "./noti";
+import { sendLocalNotification, registerForPushNotifications, notifyAllUsers } from "..lib/noti";
 
 type ScreenType = "login" | "foodMenu" | "moneySystem" | "profile";
 
