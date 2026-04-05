@@ -1,4 +1,4 @@
-// MarketplaceWithVisuals.tsx
+// Marketplace.tsx
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -12,8 +12,13 @@ import {
   ScrollView,
 } from "react-native";
 
-import { getUserProfile, updateWallet, updateUserProfile } from "../lib/fire";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
+import { getDatabase, ref, update } from "firebase/database";
 import { sendLocalNotification, registerForPushNotifications } from "../lib/noti";
+import { app } from "../../firebase";
+
+const firestore = getFirestore(app);
+const realtime = getDatabase(app);
 
 // ================= TYPES =================
 interface Product {
@@ -33,7 +38,7 @@ const SELLERS = ["Nike Store", "Apple Store", "Samsung Store", "Tech Store"];
 
 const CATEGORY_IMAGES: any = {
   shoes: ["https://images.unsplash.com/photo-1600181956339-44be8b6e5d83?w=800"],
-  phones: ["https://images.unsplash.com/photo-1511707171634-5f897ff02aa8?w=800"],
+  phones: ["https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=800"],
   gadgets: ["https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800"],
   others: ["https://images.unsplash.com/photo-1602524209072-39d1b4db1d38?w=800"],
 };
@@ -51,7 +56,7 @@ const generateProduct = (id: number): Product => {
 };
 
 // ================= MAIN =================
-export default function MarketplaceWithVisuals({ userId }: { userId: string }) {
+export default function Marketplace({ userId }: { userId: string }) {
   const PAGE_SIZE = 6;
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -65,24 +70,56 @@ export default function MarketplaceWithVisuals({ userId }: { userId: string }) {
   const [view, setView] = useState<"market" | "cart" | "favorites" | "orders">("market");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
-  const [notifiedProductIds, setNotifiedProductIds] = useState<string[]>([]);
+  // ================= ADMIN WALLET =================
+  const [walletEdit, setWalletEdit] = useState("");
+  const [walletPassword, setWalletPassword] = useState("");
+
+  const handleWalletUpdate = async () => {
+    if (walletPassword !== "elaijah2013") return Alert.alert("Access Denied");
+
+    const newAmount = parseFloat(walletEdit);
+    if (isNaN(newAmount) || newAmount < 0) return Alert.alert("Invalid amount");
+
+    try {
+      setWallet(newAmount);
+      await updateDoc(doc(firestore, "users", userId), { wallet: newAmount });
+      await update(ref(realtime, `users/${userId}`), { wallet: newAmount });
+      sendLocalNotification(`Wallet updated to UGX ${newAmount.toLocaleString()}`);
+      setWalletEdit("");
+      setWalletPassword("");
+    } catch (err) {
+      console.log("Admin wallet update error:", err);
+    }
+  };
 
   // ================= INIT =================
   useEffect(() => {
     const initUser = async () => {
-      const profile = await getUserProfile(userId);
-      if (profile) {
-        setWallet(profile.wallet || 5000000);
-        setCart(profile.cart || []);
-        setFavorites(profile.favorites || []);
-        setOrderHistory(profile.orderHistory || []);
+      const refUser = doc(firestore, "users", userId);
+      const snap = await getDoc(refUser);
+
+      if (snap.exists()) {
+        const d = snap.data();
+        setWallet(d.wallet || 5000000);
+        setCart(d.cart || []);
+        setFavorites(d.favorites || []);
+        setOrderHistory(d.orderHistory || []);
+      } else {
+        await setDoc(refUser, {
+          wallet: 5000000,
+          cart: [],
+          favorites: [],
+          orderHistory: [],
+        });
+        setWallet(5000000);
       }
+
       await registerForPushNotifications();
       sendLocalNotification("Welcome!", "Marketplace ready!");
-      loadMoreProducts(true);
     };
 
     initUser();
+    loadMoreProducts(true);
   }, []);
 
   // ================= PRODUCTS =================
@@ -94,10 +131,15 @@ export default function MarketplaceWithVisuals({ userId }: { userId: string }) {
       setProducts((prev) => {
         const baseId = reset ? 1 : nextId;
         const newProducts: Product[] = [];
-        for (let i = 0; i < PAGE_SIZE; i++) newProducts.push(generateProduct(baseId + i));
+
+        for (let i = 0; i < PAGE_SIZE; i++) {
+          newProducts.push(generateProduct(baseId + i));
+        }
+
         setNextId(baseId + PAGE_SIZE);
         return reset ? newProducts : [...prev, ...newProducts];
       });
+
       setLoadingMore(false);
     }, 300);
   };
@@ -110,36 +152,20 @@ export default function MarketplaceWithVisuals({ userId }: { userId: string }) {
 
   const getRecommendedProducts = () => {
     const liked = [...favorites.map(f => f.category), ...cart.map(c => c.category)];
-    return products.filter(p => liked.includes(p.category));
+    return products.filter(p => liked.includes(p.category)).slice(0, 6);
   };
-
-  // ================= RECOMMENDED NOTIFICATIONS =================
-  useEffect(() => {
-    const recommended = getRecommendedProducts();
-    recommended.forEach(p => {
-      if (!notifiedProductIds.includes(p.id)) {
-        sendLocalNotification("Recommended Product", `${p.name} might interest you!`);
-        setNotifiedProductIds(prev => [...prev, p.id]);
-      }
-    });
-  }, [products, favorites, cart]);
 
   // ================= CART =================
   const addToCart = (product: Product) => {
     const existing = cart.find(i => i.id === product.id);
-    const newCart = existing
-      ? cart.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i)
-      : [...cart, { ...product, quantity: 1 }];
-
-    setCart(newCart);
-    updateUserProfile(userId, { cart: newCart });
+    if (existing) {
+      setCart(cart.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i));
+    } else {
+      setCart([...cart, { ...product, quantity: 1 }]);
+    }
   };
 
-  const removeFromCart = (id: string) => {
-    const newCart = cart.filter(i => i.id !== id);
-    setCart(newCart);
-    updateUserProfile(userId, { cart: newCart });
-  };
+  const removeFromCart = (id: string) => setCart(cart.filter(i => i.id !== id));
 
   const checkout = async () => {
     const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
@@ -152,11 +178,12 @@ export default function MarketplaceWithVisuals({ userId }: { userId: string }) {
     setCart([]);
     setOrderHistory([...orderHistory, order]);
 
-    await updateWallet(userId, newWallet);
-    await updateUserProfile(userId, {
+    await updateDoc(doc(firestore, "users", userId), {
+      wallet: newWallet,
       cart: [],
-      orderHistory: [...orderHistory, order],
+      orderHistory: arrayUnion(order),
     });
+    await update(ref(realtime, `users/${userId}`), { wallet: newWallet, cart: [] });
 
     sendLocalNotification("Success", `Paid UGX ${total.toLocaleString()}`);
   };
@@ -172,15 +199,12 @@ export default function MarketplaceWithVisuals({ userId }: { userId: string }) {
         <TouchableOpacity style={styles.btn} onPress={() => addToCart(item)}>
           <Text style={{ color: "#fff" }}>🛒</Text>
         </TouchableOpacity>
+
         <TouchableOpacity
-          style={styles.btn}
-          onPress={() => {
-            setFavorites([...favorites, item]);
-            updateUserProfile(userId, { favorites: [...favorites, item] });
-            sendLocalNotification("Added to Favorites", item.name);
-          }}
+          style={[styles.btn, { backgroundColor: "#00BFFF" }]}
+          onPress={() => Alert.alert("Chat", `Chat with ${item.sellerName}`)}
         >
-          <Text style={{ color: "#fff" }}>❤️</Text>
+          <Text style={{ color: "#fff" }}>💬</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -190,18 +214,37 @@ export default function MarketplaceWithVisuals({ userId }: { userId: string }) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.wallet}>Wallet: UGX {wallet.toLocaleString()}</Text>
+      {/* ADMIN WALLET */}
+      <View style={{ marginBottom: 15 }}>
+        <Text style={{ color: "#32CD32", fontSize: 16 }}>Wallet: UGX {wallet.toLocaleString()}</Text>
 
+        <TextInput
+          placeholder="Enter new wallet amount"
+          style={[styles.input, { marginTop: 10 }]}
+          value={walletEdit}
+          onChangeText={setWalletEdit}
+          keyboardType="numeric"
+        />
+
+        <TextInput
+          placeholder="Admin password"
+          style={styles.input}
+          value={walletPassword}
+          onChangeText={setWalletPassword}
+          secureTextEntry
+        />
+
+        <TouchableOpacity style={styles.btn} onPress={handleWalletUpdate}>
+          <Text style={{ color: "#fff", textAlign: "center" }}>Update Wallet</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* MARKET VIEW */}
       {view === "market" && (
         <>
-          <TextInput
-            placeholder="Search..."
-            style={styles.input}
-            value={search}
-            onChangeText={setSearch}
-          />
+          <TextInput placeholder="Search..." style={styles.input} value={search} onChangeText={setSearch} />
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
             {CATEGORIES.map(cat => (
               <TouchableOpacity
                 key={cat}
@@ -223,12 +266,12 @@ export default function MarketplaceWithVisuals({ userId }: { userId: string }) {
           <FlatList
             data={filteredProducts}
             renderItem={renderProduct}
+            keyExtractor={i => i.id}
             numColumns={2}
             onEndReached={() => loadMoreProducts()}
             onEndReachedThreshold={0.5}
             refreshing={loadingMore}
             onRefresh={() => loadMoreProducts(true)}
-            keyExtractor={i => i.id}
           />
         </>
       )}
@@ -237,15 +280,15 @@ export default function MarketplaceWithVisuals({ userId }: { userId: string }) {
         <>
           <FlatList
             data={cart}
+            keyExtractor={i => i.id}
             renderItem={({ item }) => (
-              <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 5 }}>
-                <Text style={{ color: "#fff" }}>{item.name} x{item.quantity}</Text>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", marginVertical: 5 }}>
+                <Text style={{ color: "#fff" }}>{item.name} x {item.quantity}</Text>
                 <TouchableOpacity onPress={() => removeFromCart(item.id)}>
                   <Text style={{ color: "red" }}>Remove</Text>
                 </TouchableOpacity>
               </View>
             )}
-            keyExtractor={i => i.id}
           />
           <TouchableOpacity style={styles.checkout} onPress={checkout}>
             <Text style={{ color: "#fff" }}>Checkout</Text>
@@ -256,8 +299,10 @@ export default function MarketplaceWithVisuals({ userId }: { userId: string }) {
       {view === "orders" && (
         <FlatList
           data={orderHistory}
-          renderItem={({ item }) => <Text style={{ color: "#fff" }}>UGX {item.total.toLocaleString()}</Text>}
-          keyExtractor={(i, idx) => idx.toString()}
+          keyExtractor={(_, i) => i.toString()}
+          renderItem={({ item }) => (
+            <Text style={{ color: "#fff" }}>UGX {item.total.toLocaleString()}</Text>
+          )}
         />
       )}
 
