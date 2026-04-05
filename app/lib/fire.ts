@@ -1,12 +1,25 @@
 // fire.ts
-import { db, auth } from "./firebase";
-import {
-  doc, setDoc, getDoc, updateDoc,
-  collection, query, orderBy, onSnapshot, addDoc, getDocs
-} from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion, collection, query, orderBy, onSnapshot, addDoc, getDocs } from "firebase/firestore";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+import { app, auth, db } from "../../firebase"; // adjust path as needed
 
-// ---------------- USER AUTH ----------------
+const firestore = getFirestore(app);
+
+// =================== TYPES ===================
+export interface UserProfile {
+  uid: string;
+  username?: string;
+  phone?: string;
+  wallet?: number;
+  cart?: any[];
+  favorites?: any[];
+  orderHistory?: any[];
+  pin?: string;
+  deviceId?: string;
+  email?: string;
+}
+
+// =================== AUTH ===================
 export async function loginOrSignup(email: string, password: string, name: string, deviceId: string) {
   try {
     let user;
@@ -16,7 +29,7 @@ export async function loginOrSignup(email: string, password: string, name: strin
     } catch {
       const res = await createUserWithEmailAndPassword(auth, email, password);
       user = res.user;
-      await setDoc(doc(db, "users", user.uid), { email, name, deviceId, wallet: 20 });
+      await setDoc(doc(db, "users", user.uid), { email, name, deviceId, wallet: 20, cart: [], favorites: [], orderHistory: [] });
     }
     return { success: true, uid: user.uid };
   } catch (err: any) {
@@ -24,26 +37,21 @@ export async function loginOrSignup(email: string, password: string, name: strin
   }
 }
 
-// ---------------- WALLET ----------------
-export async function updateWallet(uid: string, amount: number) {
-  await updateDoc(doc(db, "users", uid), { wallet: amount });
-}
-
-export async function getUserProfile(uid: string) {
-  const docSnap = await getDoc(doc(db, "users", uid));
-  return docSnap.exists() ? docSnap.data() : null;
+// =================== USER PROFILE ===================
+export async function getUserProfile(uid: string): Promise<UserProfile | null> {
+  const snap = await getDoc(doc(db, "users", uid));
+  return snap.exists() ? { uid, ...snap.data() } : null;
 }
 
 export async function getUserByDeviceId(deviceId: string) {
-  const q = query(collection(db, "users"));
-  const snapshot = await getDocs(q);
-  const u = snapshot.docs.find(d => d.data().deviceId === deviceId);
+  const snap = await getDocs(collection(db, "users"));
+  const u = snap.docs.find(d => d.data().deviceId === deviceId);
   return u ? { uid: u.id, ...u.data() } : null;
 }
 
 export async function getUserByPhone(phone: string) {
-  const snapshot = await getDocs(collection(db, "users"));
-  const u = snapshot.docs.find(d => d.data().phone === phone);
+  const snap = await getDocs(collection(db, "users"));
+  const u = snap.docs.find(d => d.data().phone === phone);
   return u ? { uid: u.id, ...u.data() } : null;
 }
 
@@ -51,14 +59,35 @@ export async function saveDeviceIdForUser(uid: string, deviceId: string) {
   await updateDoc(doc(db, "users", uid), { deviceId });
 }
 
-// ---------------- CHAT ----------------
+// =================== WALLET / CART / FAVORITES ===================
+export async function updateWallet(uid: string, amount: number) {
+  await updateDoc(doc(db, "users", uid), { wallet: amount });
+}
+
+export async function updateUserProfile(uid: string, data: Partial<UserProfile>) {
+  await updateDoc(doc(db, "users", uid), data);
+}
+
+export async function addToFavorites(uid: string, product: any) {
+  await updateDoc(doc(db, "users", uid), { favorites: arrayUnion(product) });
+}
+
+export async function addToCart(uid: string, product: any) {
+  await updateDoc(doc(db, "users", uid), { cart: arrayUnion(product) });
+}
+
+export async function addOrderHistory(uid: string, order: any) {
+  await updateDoc(doc(db, "users", uid), { orderHistory: arrayUnion(order) });
+}
+
+// =================== CHAT ===================
 export async function sendMessage(senderUid: string, receiverDeviceId: string, text: string) {
   await addDoc(collection(db, "messages"), { senderUid, receiverDeviceId, text, date: new Date().toISOString() });
 }
 
 export function listenForMessages(deviceId: string, callback: (msgs: any[]) => void) {
   const q = query(collection(db, "messages"), orderBy("date", "asc"));
-  return onSnapshot(q, (snap) => {
+  return onSnapshot(q, snap => {
     const msgs = snap.docs.filter(d => d.data().receiverDeviceId === deviceId || d.data().senderUid === deviceId)
       .map(d => ({ id: d.id, ...d.data() }));
     callback(msgs);
@@ -74,7 +103,7 @@ export async function addChatUser(uid: string, deviceId: string, username: strin
   await addDoc(collection(db, "chatUsers"), { uid, deviceId, username, phone });
 }
 
-// ---------------- TRANSACTIONS ----------------
+// =================== TRANSACTIONS ===================
 export async function addTransaction(uid: string, tx: { type: string, amount: number, date: string, to?: string }) {
   await addDoc(collection(db, "transactions"), { uid, ...tx });
 }
@@ -86,8 +115,17 @@ export async function getTransactions(uid: string) {
 
 export function listenForTransactions(uid: string, callback: (txs: any[]) => void) {
   const q = query(collection(db, "transactions"), orderBy("date", "desc"));
-  return onSnapshot(q, (snap) => {
+  return onSnapshot(q, snap => {
     const txs = snap.docs.filter(d => d.data().uid === uid).map(d => d.data());
     callback(txs);
   });
+}
+
+// =================== CREATE USER IF NOT EXISTS ===================
+export async function createUserIfNotExists(uid: string, data: Partial<UserProfile>) {
+  const refUser = doc(db, "users", uid);
+  const snap = await getDoc(refUser);
+  if (!snap.exists()) {
+    await setDoc(refUser, { wallet: 5000000, cart: [], favorites: [], orderHistory: [], ...data });
+  }
 }
