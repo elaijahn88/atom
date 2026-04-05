@@ -218,7 +218,7 @@ export default function App() {
     return (
       <KeyboardAvoidingView style={styles.container}>
         <TouchableOpacity onPress={() => setScreen("chatList")} style={{ marginBottom: 10 }}>
-          <Text style={{ color: "#FF6347" }}>Back to Chats</Text>
+          <Text style={{ color: "#FF6347" }}>Foodmenu</Text>
         </TouchableOpacity>
         <ScrollView ref={scrollViewRef}>
           {messages.map(m => (
@@ -238,7 +238,7 @@ export default function App() {
     return (
       <ScrollView style={styles.container}>
         <TouchableOpacity onPress={() => setScreen("home")} style={{ marginBottom: 10 }}>
-          <Text style={{ color: "#FF6347" }}>Back to Food Menu</Text>
+          <Text style={{ color: "#FF6347" }}>Food Menu</Text>
         </TouchableOpacity>
         {chatUsers.map(u => (
           <TouchableOpacity
