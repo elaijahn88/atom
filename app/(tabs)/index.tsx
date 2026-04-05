@@ -310,8 +310,8 @@ export default function App() {
   return (
     <View style={styles.container}>
       <View style={{ marginBottom: 15 }}>
-        <Text style={{ color: "#0f0", fontSize: 16 }}>Wallet: ${walletBalance}</Text>
-        <Text style={{ color: "#fff", fontSize: 16 }}>Username: {username}</Text>
+        <Text style={{ color: "#0f0", fontSize: 16 }}>ACC: {walletBalance}ugx</Text>
+        <Text style={{ color: "#fff", fontSize: 16 }}> {username}</Text>
 
         <TextInput
           placeholder="Enter new wallet amount"
