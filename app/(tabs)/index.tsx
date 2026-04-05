@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet,
-  Image, TextInput, Alert
+  View, Text, TouchableOpacity, ScrollView,
+  StyleSheet, TextInput, Alert
 } from "react-native";
 import * as Device from "expo-device";
+import * as Notifications from "expo-notifications";
 
 import {
   loginOrSignup,
@@ -14,229 +15,316 @@ import {
   addTransaction
 } from "../lib/fire";
 
-import { sendLocalNotification, registerForPushNotifications } from "../lib/noti";
+// ================= TYPES =================
+type ScreenType =
+  | "home"
+  | "send"
+  | "history"
+  | "withdraw"
+  | "deposit"
+  | "agentDashboard"
+  | "agentTransactions"
+  | "agentFund"
+  | "agentStats";
 
-interface FoodItem {
-  id: number;
-  name: string;
-  price: number;
-  image: string;
-  ownerPhone: string;
-  ownerDeviceId: string;
-}
-
-type CartItem = FoodItem & { quantity: number };
-
-const menu: FoodItem[] = [
-  { id: 1, name: "Burger", price: 6000, image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800", ownerPhone: "+256700000001", ownerDeviceId: "seller-1" },
-  { id: 2, name: "Pizza", price: 10000, image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800", ownerPhone: "+256700000002", ownerDeviceId: "seller-2" },
-  { id: 3, name: "Chai", price: 2000, image: "https://images.unsplash.com/photo-1511920170033-f8396924c348?w=800", ownerPhone: "+256700000003", ownerDeviceId: "seller-3" },
-  { id: 4, name: "Beer", price: 5000, image: "https://images.unsplash.com/photo-1604908177231-3d8e1b5b0c6b?w=800", ownerPhone: "+256700000004", ownerDeviceId: "seller-4" },
-  { id: 5, name: "Grilled Chicken", price: 12000, image: "https://images.unsplash.com/photo-1600891964599-f61ba0e24092?w=800", ownerPhone: "+256700000005", ownerDeviceId: "seller-5" }
-];
-
+// ================= APP =================
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [walletBalance, setWalletBalance] = useState(200000);
-  const [username, setUsername] = useState("");
-  const [userPhone, setUserPhone] = useState("");
-  const [userLocation, setUserLocation] = useState("");
-  const [activeScreen, setActiveScreen] = useState<"home"|"send"|"history"|"profile">("home");
-
-  const [cart, setCart] = useState<CartItem[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
-
-  const [showUpdateWallet, setShowUpdateWallet] = useState(false);
-  const [walletEdit, setWalletEdit] = useState("");
-  const [walletPassword, setWalletPassword] = useState("");
+  const [activeScreen, setActiveScreen] = useState<ScreenType>("home");
 
   const [receiverPhone, setReceiverPhone] = useState("");
   const [sendAmount, setSendAmount] = useState("");
-  const [sendPin, setSendPin] = useState("");
-  const [adminPassword, setAdminPassword] = useState("");
+  const [pin, setPin] = useState("");
+  const [savedPin] = useState("1234");
 
-  const deviceId = useMemo(() => Device.modelName || Device.brand + "-id", []);
+  const [agentNumber, setAgentNumber] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawPin, setWithdrawPin] = useState("");
 
-  // ====================== INITIALIZE USER ======================
+  const [depositAgent, setDepositAgent] = useState("");
+  const [depositAmount, setDepositAmount] = useState("");
+  const [depositPin, setDepositPin] = useState("");
+
+  const [agentPhone, setAgentPhone] = useState("");
+  const [fundAmount, setFundAmount] = useState("");
+
+  const [receipt, setReceipt] = useState<any>(null);
+
+  const deviceId = useMemo(() => Device.modelName || "device-id", []);
+
+  const isSuperAgent = user?.isSuperAgent === true;
+
+  // ================= INIT =================
   useEffect(() => {
-    registerForPushNotifications().catch(console.log);
     const init = async () => {
       const u = await getUserByDeviceId(deviceId);
       if (u) {
         setUser(u);
         setWalletBalance(u.wallet || 200000);
-        setUsername(u.username || "User");
-        setUserPhone(u.phone || "");
-        setUserLocation(u.location || "");
+        setTransactions(u.transactions || []);
       }
     };
     init();
   }, []);
 
-  // ====================== LOGIN ======================
+  // ================= AUTO REFRESH =================
+  useEffect(() => {
+    const i = setInterval(async () => {
+      if (!user) return;
+      const u = await getUserByDeviceId(deviceId);
+      if (u) {
+        setWalletBalance(u.wallet || 0);
+        setTransactions(u.transactions || []);
+      }
+    }, 5000);
+
+    return () => clearInterval(i);
+  }, [user]);
+
+  // ================= LOGIN =================
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  const registerPush = async (uid: string) => {
+    const { status } = await Notifications.requestPermissionsAsync();
+    if (status !== "granted") return;
+    const token = (await Notifications.getExpoPushTokenAsync()).data;
+    await updateUserProfile(uid, { pushToken: token });
+  };
 
   const handleLogin = async () => {
     const res = await loginOrSignup(email, password, "", deviceId);
     if (res.success) {
       await saveDeviceIdForUser(res.uid, deviceId);
+      await registerPush(res.uid);
       setUser({ uid: res.uid });
-    } else Alert.alert("Error", res.error);
+    }
   };
 
+  const findUser = async (phone: string) => {
+    return await getUserByDeviceId(phone); // replace with phone query later
+  };
+
+  // ================= SEND =================
+  const handleSend = async () => {
+    const amount = parseFloat(sendAmount);
+
+    if (!receiverPhone || isNaN(amount)) return Alert.alert("Invalid");
+    if (pin !== savedPin) return Alert.alert("Wrong PIN");
+    if (amount > walletBalance) return Alert.alert("No balance");
+
+    const receiver = await findUser(receiverPhone);
+    if (!receiver) return Alert.alert("User not found");
+
+    const newBalance = walletBalance - amount;
+    await updateWallet(user.uid, newBalance);
+    setWalletBalance(newBalance);
+
+    await updateWallet(receiver.uid, (receiver.wallet || 0) + amount);
+
+    const tx = { type: "send", amount, to: receiverPhone, date: new Date().toISOString() };
+    await addTransaction(user.uid, tx);
+    setTransactions(prev => [tx, ...prev]);
+
+    if (receiver.pushToken) {
+      await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: receiver.pushToken,
+          title: "Money Received",
+          body: `UGX ${amount} received`
+        })
+      });
+    }
+
+    setReceipt({ type: "Send", amount, to: receiverPhone });
+    setReceiverPhone(""); setSendAmount(""); setPin("");
+  };
+
+  // ================= WITHDRAW =================
+  const handleWithdraw = async () => {
+    const amount = parseFloat(withdrawAmount);
+
+    if (withdrawPin !== savedPin) return Alert.alert("Wrong PIN");
+
+    const agent = await findUser(agentNumber);
+    if (!agent || !agent.isAgent) return Alert.alert("Invalid agent");
+
+    if (amount > walletBalance) return Alert.alert("No balance");
+
+    await updateWallet(user.uid, walletBalance - amount);
+    await updateWallet(agent.uid, (agent.wallet || 0) + amount);
+
+    const tx = { type: "withdraw", amount, agent: agentNumber, date: new Date().toISOString() };
+    await addTransaction(user.uid, tx);
+    setTransactions(prev => [tx, ...prev]);
+
+    setReceipt({ type: "Withdraw", amount, to: agentNumber });
+
+    setAgentNumber(""); setWithdrawAmount(""); setWithdrawPin("");
+  };
+
+  // ================= DEPOSIT =================
+  const handleDeposit = async () => {
+    const amount = parseFloat(depositAmount);
+
+    if (depositPin !== savedPin) return Alert.alert("Wrong PIN");
+
+    const agent = await findUser(depositAgent);
+    if (!agent || !agent.isAgent) return Alert.alert("Invalid agent");
+
+    if ((agent.wallet || 0) < amount) return Alert.alert("Agent no float");
+
+    await updateWallet(user.uid, walletBalance + amount);
+    await updateWallet(agent.uid, agent.wallet - amount);
+
+    const tx = { type: "deposit", amount, agent: depositAgent, date: new Date().toISOString() };
+    await addTransaction(user.uid, tx);
+    setTransactions(prev => [tx, ...prev]);
+
+    setReceipt({ type: "Deposit", amount, to: depositAgent });
+
+    setDepositAgent(""); setDepositAmount(""); setDepositPin("");
+  };
+
+  // ================= FUND AGENT =================
+  const handleFundAgent = async () => {
+    const amount = parseFloat(fundAmount);
+    const agent = await findUser(agentPhone);
+
+    if (!agent || !agent.isAgent) return Alert.alert("Invalid agent");
+
+    await updateWallet(user.uid, walletBalance - amount);
+    await updateWallet(agent.uid, (agent.wallet || 0) + amount);
+
+    Alert.alert("Funded");
+  };
+
+  // ================= UI SCREENS =================
+  const renderHome = () => (
+    <View style={styles.screen}>
+      <Text style={styles.title}>UGX {walletBalance}</Text>
+
+      <TouchableOpacity onPress={() => setActiveScreen("send")} style={styles.btn}><Text>Send</Text></TouchableOpacity>
+      <TouchableOpacity onPress={() => setActiveScreen("deposit")} style={styles.btn}><Text>Deposit</Text></TouchableOpacity>
+      <TouchableOpacity onPress={() => setActiveScreen("withdraw")} style={styles.btn}><Text>Withdraw</Text></TouchableOpacity>
+      <TouchableOpacity onPress={() => setActiveScreen("history")} style={styles.btn}><Text>History</Text></TouchableOpacity>
+
+      {isSuperAgent && (
+        <TouchableOpacity onPress={() => setActiveScreen("agentDashboard")} style={styles.btn}>
+          <Text>Agent Dashboard</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
+  const renderSend = () => (
+    <View style={styles.screen}>
+      <TextInput style={styles.input} placeholder="Phone" value={receiverPhone} onChangeText={setReceiverPhone}/>
+      <TextInput style={styles.input} placeholder="Amount" value={sendAmount} onChangeText={setSendAmount}/>
+      <TextInput style={styles.input} placeholder="PIN" secureTextEntry value={pin} onChangeText={setPin}/>
+      <TouchableOpacity style={styles.btn} onPress={handleSend}><Text>Send</Text></TouchableOpacity>
+    </View>
+  );
+
+  const renderHistory = () => (
+    <ScrollView style={styles.screen}>
+      {transactions.map((t, i) => (
+        <View key={i} style={styles.card}>
+          <Text>{t.type}</Text>
+          <Text>{t.amount}</Text>
+        </View>
+      ))}
+    </ScrollView>
+  );
+
+  const renderWithdraw = () => (
+    <View style={styles.screen}>
+      <TextInput style={styles.input} placeholder="Agent" value={agentNumber} onChangeText={setAgentNumber}/>
+      <TextInput style={styles.input} placeholder="Amount" value={withdrawAmount} onChangeText={setWithdrawAmount}/>
+      <TextInput style={styles.input} placeholder="PIN" secureTextEntry value={withdrawPin} onChangeText={setWithdrawPin}/>
+      <TouchableOpacity style={styles.btn} onPress={handleWithdraw}><Text>Withdraw</Text></TouchableOpacity>
+    </View>
+  );
+
+  const renderDeposit = () => (
+    <View style={styles.screen}>
+      <TextInput style={styles.input} placeholder="Agent" value={depositAgent} onChangeText={setDepositAgent}/>
+      <TextInput style={styles.input} placeholder="Amount" value={depositAmount} onChangeText={setDepositAmount}/>
+      <TextInput style={styles.input} placeholder="PIN" secureTextEntry value={depositPin} onChangeText={setDepositPin}/>
+      <TouchableOpacity style={styles.btn} onPress={handleDeposit}><Text>Deposit</Text></TouchableOpacity>
+    </View>
+  );
+
+  const renderAgentDashboard = () => (
+    <View style={styles.screen}>
+      <TouchableOpacity style={styles.btn} onPress={() => setActiveScreen("agentTransactions")}><Text>Transactions</Text></TouchableOpacity>
+      <TouchableOpacity style={styles.btn} onPress={() => setActiveScreen("agentFund")}><Text>Fund Agent</Text></TouchableOpacity>
+      <TouchableOpacity style={styles.btn} onPress={() => setActiveScreen("agentStats")}><Text>Stats</Text></TouchableOpacity>
+    </View>
+  );
+
+  const renderAgentTransactions = () => renderHistory();
+
+  const renderAgentFund = () => (
+    <View style={styles.screen}>
+      <TextInput style={styles.input} placeholder="Agent Phone" value={agentPhone} onChangeText={setAgentPhone}/>
+      <TextInput style={styles.input} placeholder="Amount" value={fundAmount} onChangeText={setFundAmount}/>
+      <TouchableOpacity style={styles.btn} onPress={handleFundAgent}><Text>Fund</Text></TouchableOpacity>
+    </View>
+  );
+
+  const renderAgentStats = () => (
+    <View style={styles.screen}>
+      <Text>Total TX: {transactions.length}</Text>
+      <Text>Total Volume: {transactions.reduce((s, t) => s + (t.amount || 0), 0)}</Text>
+    </View>
+  );
+
+  // ================= MAIN =================
   if (!user) {
     return (
-      <View style={styles.container}>
-        <TextInput placeholder="Email" style={styles.input} onChangeText={setEmail} />
-        <TextInput placeholder="Password" style={styles.input} secureTextEntry onChangeText={setPassword} />
-        <TouchableOpacity style={styles.button} onPress={handleLogin}>
-          <Text style={styles.btnText}>Login</Text>
-        </TouchableOpacity>
+      <View style={styles.screen}>
+        <TextInput style={styles.input} placeholder="Email" onChangeText={setEmail}/>
+        <TextInput style={styles.input} placeholder="Password" secureTextEntry onChangeText={setPassword}/>
+        <TouchableOpacity style={styles.btn} onPress={handleLogin}><Text>Login</Text></TouchableOpacity>
       </View>
     );
   }
 
-  // ====================== WALLET COLOR LOGIC ======================
-  let accColor = "#0f0";
-  if (walletBalance < 500000) accColor = "#f00";
-  else if (walletBalance > 2000000) accColor = "#00f";
-
-  // ====================== HOME SCREEN ======================
-  const handleAddToCart = (item: FoodItem) => {
-    setCart(prev => {
-      const existing = prev.find(c => c.id === item.id);
-      if (existing) return prev.map(c => c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c);
-      return [...prev, { ...item, quantity: 1 }];
-    });
-    sendLocalNotification(`Added ${item.name} to cart`);
-  };
-
-  const handlePurchase = () => {
-    const total = cart.reduce((sum, c) => sum + c.price * c.quantity, 0);
-    if (total > walletBalance) {
-      return Alert.alert("Insufficient Balance", "You do not have enough UGX to complete this purchase.");
-    }
-
-    cart.forEach(c => {
-      sendLocalNotification(`Purchased ${c.quantity}x ${c.name} from ${c.ownerPhone} for ${c.price * c.quantity} UGX`);
-      addTransaction(user.uid, {
-        type: "purchase",
-        item: c.name,
-        quantity: c.quantity,
-        amount: c.price * c.quantity,
-        seller: c.ownerPhone,
-        date: new Date().toISOString()
-      });
-    });
-
-    setWalletBalance(prev => prev - total);
-    updateWallet(user.uid, walletBalance - total);
-    setCart([]);
-    Alert.alert("Success", `You purchased items worth ${total} UGX`);
-  };
-
-  const renderHome = () => (
-    <ScrollView style={styles.scrollContainer}>
-      <Text style={{ color: "#fff", fontSize: 22, marginBottom: 10 }}>{username}</Text>
-      <Text style={{ color: accColor, fontSize: 20, marginBottom: 15 }}>Acc©: {walletBalance} ugx</Text>
-
-      <TouchableOpacity style={[styles.button, { backgroundColor: "#008000" }]} onPress={() => setShowUpdateWallet(prev => !prev)}>
-        <Text style={styles.btnText}>{showUpdateWallet ? "off" : "Acc"}</Text>
-      </TouchableOpacity>
-
-      {showUpdateWallet && (
-        <>
-          <TextInput placeholder="Update Acc Amount" style={styles.input} value={walletEdit} onChangeText={setWalletEdit} keyboardType="numeric" />
-          <TextInput placeholder="Admin Password" style={styles.input} value={walletPassword} onChangeText={setWalletPassword} secureTextEntry />
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: "#0f0" }]}
-            onPress={async () => {
-              if (walletPassword !== "elaijah2013") return Alert.alert("Access Denied");
-              const newAmount = parseFloat(walletEdit);
-              if (isNaN(newAmount) || newAmount < 0) return Alert.alert("Invalid amount");
-              await updateWallet(user.uid, newAmount);
-              setWalletBalance(newAmount);
-              sendLocalNotification(`Acc updated to ${newAmount}`);
-              setWalletEdit("");
-              setWalletPassword("");
-            }}
-          >
-            <Text style={styles.btnText}>Acc+</Text>
-          </TouchableOpacity>
-        </>
-      )}
-
-      {menu.map(item => (
-        <TouchableOpacity key={item.id} style={styles.card} onPress={() => handleAddToCart(item)}>
-          <Image source={{ uri: item.image }} style={styles.image} />
-          <Text style={{ color: "#fff", fontSize: 16 }}>{item.name}</Text>
-          <Text style={{ color: "#0f0", fontSize: 14 }}>{item.price} ugx</Text>
-        </TouchableOpacity>
-      ))}
-
-      {cart.length > 0 && (
-        <TouchableOpacity style={[styles.button, { backgroundColor: "#ff9900" }]} onPress={handlePurchase}>
-          <Text style={styles.btnText}>Purchase Cart ({cart.length} items)</Text>
-        </TouchableOpacity>
-      )}
-    </ScrollView>
-  );
-
-  // ====================== PROFILE SCREEN ======================
-  const renderProfile = () => (
-    <ScrollView style={styles.scrollContainer}>
-      <Text style={{ color: "#fff", fontSize: 22, marginBottom: 10 }}>Profile</Text>
-      <TextInput style={styles.input} placeholder="Username" value={username} onChangeText={setUsername} />
-      <TextInput style={styles.input} placeholder="Phone" value={userPhone} onChangeText={setUserPhone} keyboardType="phone-pad" />
-      <TextInput style={styles.input} placeholder="Location" value={userLocation} onChangeText={setUserLocation} />
-
-      <TouchableOpacity
-        style={[styles.button, { backgroundColor: "#008000" }]}
-        onPress={async () => {
-          await updateUserProfile(user.uid, { username, phone: userPhone, location: userLocation });
-          sendLocalNotification("Profile updated");
-          setUsername("");
-          setUserPhone("");
-          setUserLocation("");
-          setActiveScreen("home");
-        }}
-      >
-        <Text style={styles.btnText}>Save & Return Home</Text>
-      </TouchableOpacity>
-    </ScrollView>
-  );
-
-  const renderActiveScreen = () => {
-    switch (activeScreen) {
-      case "home": return renderHome();
-      case "send": return renderSendMoney();
-      case "history": return renderHistory();
-      case "profile": return renderProfile();
-    }
-  };
-
   return (
     <View style={{ flex: 1 }}>
-      {renderActiveScreen()}
-      <View style={styles.navBar}>
-        <TouchableOpacity style={styles.navBtn} onPress={() => setActiveScreen("home")}><Text style={styles.btnText}>Home</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.navBtn} onPress={() => setActiveScreen("send")}><Text style={styles.btnText}>Send</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.navBtn} onPress={() => setActiveScreen("history")}><Text style={styles.btnText}>History</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.navBtn} onPress={() => setActiveScreen("profile")}><Text style={styles.btnText}>Profile</Text></TouchableOpacity>
-      </View>
+      {activeScreen === "home" && renderHome()}
+      {activeScreen === "send" && renderSend()}
+      {activeScreen === "history" && renderHistory()}
+      {activeScreen === "withdraw" && renderWithdraw()}
+      {activeScreen === "deposit" && renderDeposit()}
+      {activeScreen === "agentDashboard" && renderAgentDashboard()}
+      {activeScreen === "agentTransactions" && renderAgentTransactions()}
+      {activeScreen === "agentFund" && renderAgentFund()}
+      {activeScreen === "agentStats" && renderAgentStats()}
+
+      {receipt && (
+        <View style={styles.receipt}>
+          <Text>{receipt.type}</Text>
+          <Text>UGX {receipt.amount}</Text>
+          <Text>{receipt.to}</Text>
+          <TouchableOpacity onPress={() => setReceipt(null)}><Text>Close</Text></TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
 
+// ================= STYLES =================
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#121212", padding: 15 },
-  scrollContainer: { flex: 1, backgroundColor: "#121212", padding: 15 },
-  input: { backgroundColor: "#1E1E1E", color: "#fff", padding: 10, marginVertical: 8, borderRadius: 6 },
-  button: { backgroundColor: "#008000", padding: 12, marginVertical: 8, alignItems: "center", borderRadius: 6 },
-  navBar: { flexDirection: "row", justifyContent: "space-around", paddingVertical: 10, backgroundColor: "#222" },
-  navBtn: { flex: 1, alignItems: "center" },
-  btnText: { color: "#fff", fontWeight: "bold" },
-  card: { backgroundColor: "#1E1E1E", padding: 10, marginBottom: 10, borderRadius: 8 },
-  image: { width: "100%", height: 150, borderRadius: 8 }
+  screen: { flex: 1, padding: 20, backgroundColor: "#FFCC00" },
+  input: { backgroundColor: "#fff", padding: 10, marginVertical: 8 },
+  btn: { backgroundColor: "#000", padding: 15, marginVertical: 5 },
+  card: { backgroundColor: "#fff", padding: 10, marginBottom: 10 },
+  title: { fontSize: 24, fontWeight: "bold" },
+  receipt: { position: "absolute", top: 100, left: 20, right: 20, backgroundColor: "#fff", padding: 20 }
 });
