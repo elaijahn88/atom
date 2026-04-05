@@ -1,8 +1,8 @@
+// App.tsx
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   View, Text, TouchableOpacity, ScrollView, StyleSheet,
-  Linking, Alert, TextInput, Image,
-  KeyboardAvoidingView
+  Image, TextInput, KeyboardAvoidingView, Alert
 } from "react-native";
 import * as Device from "expo-device";
 
@@ -15,13 +15,14 @@ import {
   saveDeviceIdForUser,
   sendMessage,
   listenForMessages,
-  getUserByPhone
+  getUserByPhone,
+  getChatUsers,
+  addChatUser,
+  addTransaction,
+  getTransactions
 } from "../lib/fire";
 
-import {
-  sendLocalNotification,
-  registerForPushNotifications
-} from "../lib/noti";
+import { sendLocalNotification, registerForPushNotifications } from "../lib/noti";
 
 interface FoodItem {
   id: number;
@@ -35,50 +36,18 @@ interface FoodItem {
 type CartItem = FoodItem & { quantity: number };
 
 const menu: FoodItem[] = [
-  {
-    id: 1,
-    name: "Burger",
-    price: 6,
-    image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800",
-    ownerPhone: "+256700000001",
-    ownerDeviceId: "seller-1"
-  },
-  {
-    id: 2,
-    name: "Pizza",
-    price: 10,
-    image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800",
-    ownerPhone: "+256700000002",
-    ownerDeviceId: "seller-2"
-  }
+  { id: 1, name: "Burger", price: 6, image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800", ownerPhone: "+256700000001", ownerDeviceId: "seller-1" },
+  { id: 2, name: "Pizza", price: 10, image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800", ownerPhone: "+256700000002", ownerDeviceId: "seller-2" }
 ];
 
 export default function App() {
-  const [screen, setScreen] = useState<
-    "home" | "chat" | "profile" | "send" | "history" | "receipt"
-  >("home");
-
   const [user, setUser] = useState<any>(null);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
   const [walletBalance, setWalletBalance] = useState(20);
-
-  // PROFILE
   const [username, setUsername] = useState("");
   const [userPhone, setUserPhone] = useState("");
-  const [pin, setPin] = useState("");
+  const [screen, setScreen] = useState<"home"|"profile"|"send"|"history"|"receipt"|"chat"|"chatList">("home");
 
-  // CART
   const [cart, setCart] = useState<CartItem[]>([]);
-
-  // SEND
-  const [receiverPhone, setReceiverPhone] = useState("");
-  const [sendAmount, setSendAmount] = useState("");
-  const [sendPin, setSendPin] = useState("");
-  const [adminPassword, setAdminPassword] = useState("");
-
-  // TRANSACTIONS
   const [transactions, setTransactions] = useState<any[]>([]);
   const [lastTransaction, setLastTransaction] = useState<any>(null);
 
@@ -86,18 +55,28 @@ export default function App() {
   const [messages, setMessages] = useState<any[]>([]);
   const [messageText, setMessageText] = useState("");
   const [activeChatDevice, setActiveChatDevice] = useState("");
+  const [chatUsers, setChatUsers] = useState<any[]>([]);
 
   const scrollViewRef = useRef<ScrollView>(null);
+  const deviceId = useMemo(() => Device.modelName || Device.brand + "-id", []);
 
-  const deviceId = useMemo(
-    () => Device.modelName || Device.brand + "-id",
-    []
-  );
+  // ADMIN WALLET EDIT
+  const [walletEdit, setWalletEdit] = useState("");
+  const [walletPassword, setWalletPassword] = useState("");
 
-  // INIT
+  // LOGIN
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  // SEND MONEY
+  const [receiverPhone, setReceiverPhone] = useState("");
+  const [sendAmount, setSendAmount] = useState("");
+  const [sendPin, setSendPin] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+
+  // ---------------- INIT ----------------
   useEffect(() => {
     registerForPushNotifications().catch(console.log);
-
     const init = async () => {
       const u = await getUserByDeviceId(deviceId);
       if (u) {
@@ -105,80 +84,79 @@ export default function App() {
         setWalletBalance(u.wallet || 20);
         setUsername(u.username || "User");
         setUserPhone(u.phone || "");
+        const txs = await getTransactions(u.uid);
+        setTransactions(txs);
       }
     };
-
     init();
   }, []);
 
-  // CHAT LISTENER
+  // ---------------- CHAT LISTENER ----------------
   useEffect(() => {
     if (!user) return;
-    return listenForMessages(deviceId, setMessages);
+    const unsubscribe = listenForMessages(deviceId, (msgs) => {
+      setMessages(msgs);
+      if (msgs.length) sendLocalNotification("New message received");
+    });
+    return unsubscribe;
   }, [user]);
 
-  // LOGIN
+  // ---------------- CHAT LIST ----------------
+  useEffect(() => {
+    if (!user) return;
+    getChatUsers(user.uid).then(setChatUsers);
+  }, [user]);
+
+  // ---------------- LOGIN ----------------
   const handleLogin = async () => {
     const res = await loginOrSignup(email, password, "", deviceId);
     if (res.success) {
       await saveDeviceIdForUser(res.uid, deviceId);
       setUser({ uid: res.uid });
-    } else {
-      Alert.alert("Error", res.error);
-    }
+      const txs = await getTransactions(res.uid);
+      setTransactions(txs);
+    } else Alert.alert("Error", res.error);
   };
 
-  // CART
+  // ---------------- CART ----------------
   const addToCart = async (item: FoodItem) => {
     if (walletBalance < item.price) return Alert.alert("No balance");
-
     setCart(prev => {
       const exist = prev.find(c => c.id === item.id);
       if (exist) return prev.map(c => c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c);
       return [...prev, { ...item, quantity: 1 }];
     });
-
     const newBalance = walletBalance - item.price;
     setWalletBalance(newBalance);
     await updateWallet(user.uid, newBalance);
   };
 
-  // CHECKOUT
   const handleCheckout = async () => {
     const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-    if (walletBalance < total) return Alert.alert("Not enough");
-
+    if (walletBalance < total) return Alert.alert("Not enough balance");
     const newBalance = walletBalance - total;
     setWalletBalance(newBalance);
     await updateWallet(user.uid, newBalance);
 
-    const tx = {
-      type: "purchase",
-      amount: total,
-      date: new Date().toLocaleString()
-    };
-
+    const tx = { type: "purchase", amount: total, date: new Date().toISOString() };
+    await addTransaction(user.uid, tx);
     setTransactions(prev => [tx, ...prev]);
     setLastTransaction(tx);
-
     setCart([]);
     setScreen("receipt");
+    sendLocalNotification(`Purchase successful: $${total}`);
   };
 
-  // SEND MONEY
+  // ---------------- SEND MONEY ----------------
   const handleSendMoney = async () => {
     const amount = parseFloat(sendAmount);
-    if (!amount || amount <= 0) return Alert.alert("Invalid");
-    if (walletBalance < amount) return Alert.alert("Insufficient");
+    if (!amount || amount <= 0) return Alert.alert("Invalid amount");
+    if (walletBalance < amount) return Alert.alert("Insufficient funds");
 
     const profile = await getUserProfile(user.uid);
-
     const isPinValid = profile?.pin === sendPin;
     const isAdmin = adminPassword === "elaijah2013";
-
-    if (!isPinValid && !isAdmin) {
-      return Alert.alert("Access Denied");
-    }
+    if (!isPinValid && !isAdmin) return Alert.alert("Access Denied");
 
     const receiver = await getUserByPhone(receiverPhone);
     if (!receiver) return Alert.alert("User not found");
@@ -191,27 +169,28 @@ export default function App() {
 
     setWalletBalance(senderNew);
 
-    const tx = {
-      type: "send",
-      amount,
-      to: receiver.phone,
-      date: new Date().toLocaleString()
-    };
-
+    const tx = { type: "send", amount, to: receiver.phone, date: new Date().toISOString() };
+    await addTransaction(user.uid, tx);
     setTransactions(prev => [tx, ...prev]);
     setLastTransaction(tx);
-
     setScreen("receipt");
+
+    sendLocalNotification(`You sent $${amount} to ${receiver.phone}`);
+    sendLocalNotification(`You received $${amount} from ${profile.username || profile.phone}`);
+
+    await addChatUser(user.uid, receiver.deviceId, receiver.username || receiver.phone, receiver.phone);
+    await addChatUser(receiver.uid, deviceId, profile.username || profile.phone, profile.phone);
   };
 
-  // CHAT SEND
+  // ---------------- CHAT SEND ----------------
   const handleSendMessage = async () => {
     if (!messageText) return;
     await sendMessage(user.uid, activeChatDevice, messageText);
     setMessageText("");
+    sendLocalNotification("Message sent");
   };
 
-  // LOGIN SCREEN
+  // ---------------- LOGIN SCREEN ----------------
   if (!user) {
     return (
       <View style={styles.container}>
@@ -224,57 +203,43 @@ export default function App() {
     );
   }
 
-  // PROFILE
-  if (screen === "profile") {
-    const save = async () => {
-      await updateUserProfile(user.uid, { username, phone: userPhone, pin });
-      setScreen("home");
-    };
-
+  // ---------------- CHAT SCREEN ----------------
+  if (screen === "chat") {
     return (
-      <ScrollView style={styles.container}>
-        <TextInput value={username} onChangeText={setUsername} style={styles.input} placeholder="Username" />
-        <TextInput value={userPhone} onChangeText={setUserPhone} style={styles.input} placeholder="Phone" />
-        <TextInput value={pin} onChangeText={setPin} style={styles.input} placeholder="PIN" secureTextEntry />
-        <TouchableOpacity style={styles.button} onPress={save}>
-          <Text style={styles.btnText}>Save</Text>
+      <KeyboardAvoidingView style={styles.container}>
+        <TouchableOpacity onPress={() => setScreen("chatList")} style={{ marginBottom: 10 }}>
+          <Text style={{ color: "#FF6347" }}>Back to Chats</Text>
         </TouchableOpacity>
-      </ScrollView>
-    );
-  }
-
-  // SEND SCREEN
-  if (screen === "send") {
-    return (
-      <ScrollView style={styles.container}>
-        <TextInput placeholder="Phone" style={styles.input} value={receiverPhone} onChangeText={setReceiverPhone} />
-        <TextInput placeholder="Amount" style={styles.input} value={sendAmount} onChangeText={setSendAmount} />
-        <TextInput placeholder="PIN" style={styles.input} secureTextEntry value={sendPin} onChangeText={setSendPin} />
-        <TextInput placeholder="Admin Password" style={styles.input} secureTextEntry value={adminPassword} onChangeText={setAdminPassword} />
-        <TouchableOpacity style={styles.button} onPress={handleSendMoney}>
+        <ScrollView ref={scrollViewRef}>
+          {messages.map(m => (
+            <Text key={m.id} style={{ color: "#fff" }}>{m.text}</Text>
+          ))}
+        </ScrollView>
+        <TextInput style={styles.input} value={messageText} onChangeText={setMessageText} />
+        <TouchableOpacity style={styles.button} onPress={handleSendMessage}>
           <Text style={styles.btnText}>Send</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </KeyboardAvoidingView>
     );
   }
 
-  // HISTORY
-  if (screen === "history") {
+  // ---------------- CHAT LIST ----------------
+  if (screen === "chatList") {
     return (
       <ScrollView style={styles.container}>
-        <Text style={{ color: "#fff", fontSize: 20 }}>Transactions</Text>
-        {transactions.map((tx, i) => (
-          <View key={i} style={styles.card}>
-            <Text style={{ color: "#fff" }}>{tx.type}</Text>
-            <Text style={{ color: "#0f0" }}>${tx.amount}</Text>
-            <Text style={{ color: "#aaa" }}>{tx.date}</Text>
-          </View>
+        <TouchableOpacity onPress={() => setScreen("home")} style={{ marginBottom: 10 }}>
+          <Text style={{ color: "#FF6347" }}>Back to Food Menu</Text>
+        </TouchableOpacity>
+        {chatUsers.map(u => (
+          <TouchableOpacity key={u.deviceId} onPress={() => { setActiveChatDevice(u.deviceId); setScreen("chat"); }}>
+            <Text style={{ color: "#00BFFF", padding: 10 }}>{u.username || u.phone}</Text>
+          </TouchableOpacity>
         ))}
       </ScrollView>
     );
   }
 
-  // RECEIPT
+  // ---------------- RECEIPT SCREEN ----------------
   if (screen === "receipt") {
     return (
       <View style={styles.container}>
@@ -288,64 +253,79 @@ export default function App() {
     );
   }
 
-  // CHAT
-  if (screen === "chat") {
-    return (
-      <KeyboardAvoidingView style={styles.container}>
-        <ScrollView ref={scrollViewRef}>
-          {messages.map((m) => (
-            <Text key={m.id} style={{ color: "#fff" }}>{m.text}</Text>
-          ))}
-        </ScrollView>
-        <TextInput style={styles.input} value={messageText} onChangeText={setMessageText} />
-        <TouchableOpacity style={styles.button} onPress={handleSendMessage}>
-          <Text style={styles.btnText}>Send</Text>
-        </TouchableOpacity>
-      </KeyboardAvoidingView>
-    );
-  }
-
-  // HOME
+  // ---------------- HOME + MENU + NAVIGATION ----------------
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.wallet}>Wallet: ${walletBalance}</Text>
+    <View style={styles.container}>
+      {/* TOP: Wallet + Username + Admin Wallet Edit */}
+      <View style={{ marginBottom: 15 }}>
+        <Text style={{ color: "#0f0", fontSize: 16 }}>Wallet: ${walletBalance}</Text>
+        <Text style={{ color: "#fff", fontSize: 16 }}>Username: {username}</Text>
 
-      <TouchableOpacity style={styles.button} onPress={() => setScreen("send")}>
-        <Text style={styles.btnText}>Send Money</Text>
-      </TouchableOpacity>
+        <TextInput
+          placeholder="Enter new wallet amount"
+          style={[styles.input, { marginTop: 10 }]}
+          value={walletEdit}
+          onChangeText={setWalletEdit}
+          keyboardType="numeric"
+        />
+        <TextInput
+          placeholder="Admin password"
+          style={styles.input}
+          value={walletPassword}
+          onChangeText={setWalletPassword}
+          secureTextEntry
+        />
+        <TouchableOpacity
+          style={styles.button}
+          onPress={async () => {
+            if (walletPassword !== "elaijah2013") return Alert.alert("Access Denied");
+            const newAmount = parseFloat(walletEdit);
+            if (isNaN(newAmount) || newAmount < 0) return Alert.alert("Invalid amount");
 
-      <TouchableOpacity style={styles.button} onPress={() => setScreen("history")}>
-        <Text style={styles.btnText}>History</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.button} onPress={() => setScreen("profile")}>
-        <Text style={styles.btnText}>Profile</Text>
-      </TouchableOpacity>
-
-      {menu.map(item => (
-        <View key={item.id} style={styles.card}>
-          <Image source={{ uri: item.image }} style={styles.image} />
-          <Text style={{ color: "#fff" }}>{item.name}</Text>
-
-          <TouchableOpacity onPress={() => addToCart(item)}>
-            <Text style={{ color: "#FF6347" }}>Add</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => {
-            setActiveChatDevice(item.ownerDeviceId);
-            setScreen("chat");
-          }}>
-            <Text style={{ color: "#00BFFF" }}>Chat</Text>
-          </TouchableOpacity>
-        </View>
-      ))}
-
-      {cart.length > 0 && (
-        <TouchableOpacity style={styles.cart} onPress={handleCheckout}>
-          <Text style={{ color: "#fff" }}>Checkout</Text>
+            await updateWallet(user.uid, newAmount);
+            setWalletBalance(newAmount);
+            sendLocalNotification(`Wallet updated to $${newAmount}`);
+            setWalletEdit("");
+            setWalletPassword("");
+          }}
+        >
+          <Text style={styles.btnText}>Update Wallet</Text>
         </TouchableOpacity>
-      )}
-    </ScrollView>
+      </View>
+
+      {/* MENU */}
+      <ScrollView style={{ flex: 1 }}>
+        {menu.map(item => (
+          <View key={item.id} style={styles.card}>
+            <TouchableOpacity style={{ position: "absolute", top: 10, right: 10, zIndex: 10 }}
+              onPress={() => { setActiveChatDevice(item.ownerDeviceId); setScreen("chatList"); }}>
+              <Text style={{ color: "#00BFFF" }}>Chat</Text>
+            </TouchableOpacity>
+
+            <Image source={{ uri: item.image }} style={styles.image} />
+            <Text style={{ color: "#fff", marginTop: 5 }}>{item.name}</Text>
+            <Text style={{ color: "#0f0" }}>${item.price}</Text>
+
+            <TouchableOpacity style={styles.button} onPress={() => addToCart(item)}>
+              <Text style={styles.btnText}>Add to Cart</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+      </ScrollView>
+
+      {/* BOTTOM NAVIGATION */}
+      <View style={{ flexDirection: "row", justifyContent: "space-around", marginTop: 10 }}>
+        <TouchableOpacity style={styles.navBtn} onPress={() => setScreen("send")}>
+          <Text style={styles.btnText}>Send Money</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navBtn} onPress={() => setScreen("history")}>
+          <Text style={styles.btnText}>History</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navBtn} onPress={() => setScreen("profile")}>
+          <Text style={styles.btnText}>Profile</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
@@ -353,9 +333,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#121212", padding: 15 },
   input: { backgroundColor: "#1E1E1E", color: "#fff", padding: 10, marginTop: 10 },
   button: { backgroundColor: "#FF6347", padding: 12, marginTop: 10 },
+  navBtn: { backgroundColor: "#333", padding: 12, marginTop: 5, flex: 1, marginHorizontal: 5, alignItems: "center" },
   btnText: { color: "#fff", textAlign: "center" },
-  wallet: { color: "#0f0", marginBottom: 10 },
-  card: { backgroundColor: "#1E1E1E", padding: 10, marginBottom: 10 },
-  image: { width: "100%", height: 150 },
-  cart: { backgroundColor: "#FF6347", padding: 10, marginTop: 20 }
+  card: { backgroundColor: "#1E1E1E", padding: 10, marginBottom: 10, position: "relative" },
+  image: { width: "100%", height: 150 }
 });
