@@ -7,20 +7,21 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   Image,
   ScrollView,
 } from "react-native";
-
 import * as Device from "expo-device";
-import { getFirestore, doc, updateDoc } from "firebase/firestore";
-import { app } from "../../firebase";
 
-import { getUserByDeviceId, updateWallet } from "../lib/fire";
+import {
+  getUserByDevice,
+  updateUserWallet,
+  updateUserCart,
+  updateUserFavorites,
+  addUserOrder,
+  notifyAllUsers,
+  UserAccount,
+} from "../lib/acc";
 import { sendLocalNotification } from "../lib/noti";
-import { registerDevicePushToken, sendPushToAllUsers } from "../lib/push";
-
-const firestore = getFirestore(app);
 
 interface Product {
   id: string;
@@ -37,14 +38,12 @@ export default function Marketplace() {
   const PAGE_SIZE = 6;
   const deviceId = useMemo(() => Device.modelName || Device.brand + "-id", []);
 
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<UserAccount | null>(null);
   const [wallet, setWallet] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [favorites, setFavorites] = useState<Product[]>([]);
-  const [orderHistory, setOrderHistory] = useState<any[]>([]);
   const [search, setSearch] = useState("");
-  const [view, setView] = useState<"market" | "cart" | "favorites" | "orders">("market");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [nextId, setNextId] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -72,19 +71,14 @@ export default function Marketplace() {
   // ================= INIT =================
   useEffect(() => {
     const init = async () => {
-      const u = await getUserByDeviceId(deviceId);
+      const u = await getUserByDevice(deviceId);
       if (u) {
         setUser(u);
-        setWallet(u.wallet || 200000);
+        setWallet(u.wallet);
         setCart(u.cart || []);
         setFavorites(u.favorites || []);
-        setOrderHistory(u.orderHistory || []);
-
-        // Automatically register push token
-        await registerDevicePushToken(u.uid);
+        sendLocalNotification("Welcome 👋", "Welcome back to Marketplace");
       }
-
-      sendLocalNotification("Welcome 👋", "Welcome back to Marketplace");
       loadMoreProducts(true);
     };
     init();
@@ -115,32 +109,42 @@ export default function Marketplace() {
 
   // ================= FAVORITES =================
   const toggleFavorite = async (product: Product) => {
+    if (!user) return;
     let updated;
     const exists = favorites.find(f => f.id === product.id);
     if (exists) updated = favorites.filter(f => f.id !== product.id);
     else updated = [...favorites, product];
 
     setFavorites(updated);
-    if (user) await updateDoc(doc(firestore, "users", user.uid), { favorites: updated });
+    await updateUserFavorites(user.uid, updated);
     sendLocalNotification(exists ? "Removed ❌" : "Saved ❤️", `${product.name}`);
   };
 
   // ================= CART =================
-  const addToCart = (product: Product) => {
+  const addToCart = async (product: Product) => {
+    if (!user) return;
     const existing = cart.find(i => i.id === product.id);
-    if (existing) setCart(cart.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i));
-    else setCart([...cart, { ...product, quantity: 1 }]);
+    let updatedCart: CartItem[];
+    if (existing) updatedCart = cart.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
+    else updatedCart = [...cart, { ...product, quantity: 1 }];
+
+    setCart(updatedCart);
+    await updateUserCart(user.uid, updatedCart);
     sendLocalNotification("Cart 🛒", `${product.name} added to cart`);
   };
 
-  const removeFromCart = (id: string) => {
+  const removeFromCart = async (id: string) => {
+    if (!user) return;
     const item = cart.find(i => i.id === id);
-    setCart(cart.filter(i => i.id !== id));
+    const updatedCart = cart.filter(i => i.id !== id);
+    setCart(updatedCart);
+    await updateUserCart(user.uid, updatedCart);
     if (item) sendLocalNotification("Removed ❌", `${item.name} removed from cart`);
   };
 
   // ================= CHECKOUT =================
   const checkout = async () => {
+    if (!user) return;
     const total = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
     if (total > wallet) return sendLocalNotification("Failed ❌", "Insufficient balance");
 
@@ -148,17 +152,12 @@ export default function Marketplace() {
     const order = { items: cart, total, date: new Date().toISOString() };
     setWallet(newWallet);
     setCart([]);
-    setOrderHistory([...orderHistory, order]);
 
-    if (user) {
-      await updateWallet(user.uid, newWallet);
-      await updateDoc(doc(firestore, "users", user.uid), { cart: [], orderHistory: [...orderHistory, order] });
-    }
+    await updateUserWallet(user.uid, newWallet);
+    await addUserOrder(user.uid, order);
 
     sendLocalNotification("Payment Successful 💸", `Paid UGX ${total.toLocaleString()}`);
-
-    // Push notification to all other users
-    await sendPushToAllUsers("Marketplace Purchase", `Someone bought items worth UGX ${total.toLocaleString()}`);
+    await notifyAllUsers("Marketplace Purchase", `Someone bought items worth UGX ${total.toLocaleString()}`);
   };
 
   // ================= RENDER =================
