@@ -1,0 +1,15 @@
+users (collection)
+  └── {deviceId} (document)
+        ├── deviceId: string
+        ├── username: string
+        ├── balance: number
+        ├── frozenBalance: number
+        ├── totalDeposited: number
+        ├── totalWithdrawn: number
+        ├── createdAt: timestamp
+
+        └── transactions (subcollection)
+              └── {transactionId}
+                    ├── type: "deposit" | "withdraw" | "freeze" | "unfreeze"
+                    ├── amount: number
+                    ├── date: timestamp
