@@ -9,8 +9,11 @@ import {
   StyleSheet,
   Image,
   ScrollView,
+  Animated,
+  Dimensions,
 } from "react-native";
 import * as Device from "expo-device";
+import Video from "react-native-video";
 
 import {
   getUserByDevice,
@@ -34,6 +37,8 @@ interface Product {
 
 type CartItem = Product & { quantity: number };
 
+const { width, height } = Dimensions.get("window");
+
 export default function Marketplace() {
   const PAGE_SIZE = 6;
   const deviceId = useMemo(() => Device.modelName || Device.brand + "-id", []);
@@ -47,6 +52,12 @@ export default function Marketplace() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [nextId, setNextId] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: "", visible: false });
+  const toastAnim = useMemo(() => new Animated.Value(0), []);
+
+  // ===== VIDEO PLAYING =====
+  const [videoVisible, setVideoVisible] = useState(false);
+  const [videoKey, setVideoKey] = useState(0); // re-render video each click
 
   const CATEGORIES = ["shoes", "phones", "gadgets", "others"];
   const CATEGORY_IMAGES: any = {
@@ -77,7 +88,7 @@ export default function Marketplace() {
         setWallet(u.wallet);
         setCart(u.cart || []);
         setFavorites(u.favorites || []);
-        sendLocalNotification("Welcome 👋", "Welcome back to Marketplace");
+        showToast(`Welcome ${u.username || "Guest"}!`);
       }
       loadMoreProducts(true);
     };
@@ -107,30 +118,58 @@ export default function Marketplace() {
     return matchSearch && matchCat;
   });
 
+  // ================= TOAST =================
+  const showToast = (message: string) => {
+    setToast({ message, visible: true });
+    Animated.timing(toastAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start(() => {
+      setTimeout(() => {
+        Animated.timing(toastAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => setToast({ message: "", visible: false }));
+      }, 2000);
+    });
+  };
+
   // ================= FAVORITES =================
   const toggleFavorite = async (product: Product) => {
     if (!user) return;
-    let updated;
     const exists = favorites.find(f => f.id === product.id);
-    if (exists) updated = favorites.filter(f => f.id !== product.id);
-    else updated = [...favorites, product];
+    const updated = exists ? favorites.filter(f => f.id !== product.id) : [...favorites, product];
 
     setFavorites(updated);
     await updateUserFavorites(user.uid, updated);
-    sendLocalNotification(exists ? "Removed ❌" : "Saved ❤️", `${product.name}`);
+    showToast(exists ? `Removed ${product.name}` : `Saved ${product.name}`);
+    playVideo();
   };
 
   // ================= CART =================
+  const playVideo = () => {
+    setVideoKey(prev => prev + 1);
+    setVideoVisible(true);
+    setTimeout(() => setVideoVisible(false), 50000); // 50 seconds
+  };
+
   const addToCart = async (product: Product) => {
     if (!user) return;
+    playVideo();
+
+    if (wallet < product.price) {
+      showToast(`Insufficient UGX ${product.price.toLocaleString()}`);
+      return;
+    }
+
     const existing = cart.find(i => i.id === product.id);
-    let updatedCart: CartItem[];
-    if (existing) updatedCart = cart.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
-    else updatedCart = [...cart, { ...product, quantity: 1 }];
+    const updatedCart: CartItem[] = existing
+      ? cart.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i)
+      : [...cart, { ...product, quantity: 1 }];
+
+    const newWallet = wallet - product.price;
 
     setCart(updatedCart);
+    setWallet(newWallet);
+
     await updateUserCart(user.uid, updatedCart);
-    sendLocalNotification("Cart 🛒", `${product.name} added to cart`);
+    await updateUserWallet(user.uid, newWallet);
+
+    showToast(`Added ${product.name} • Remaining UGX ${newWallet.toLocaleString()}`);
   };
 
   const removeFromCart = async (id: string) => {
@@ -139,25 +178,33 @@ export default function Marketplace() {
     const updatedCart = cart.filter(i => i.id !== id);
     setCart(updatedCart);
     await updateUserCart(user.uid, updatedCart);
-    if (item) sendLocalNotification("Removed ❌", `${item.name} removed from cart`);
+    if (item) showToast(`Removed ${item.name}`);
+    playVideo();
   };
 
   // ================= CHECKOUT =================
   const checkout = async () => {
     if (!user) return;
+    if (cart.length === 0) return showToast("Cart Empty");
+    playVideo();
+
     const total = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
-    if (total > wallet) return sendLocalNotification("Failed ❌", "Insufficient balance");
+    if (total > wallet) {
+      showToast("Insufficient balance");
+      return;
+    }
 
     const newWallet = wallet - total;
     const order = { items: cart, total, date: new Date().toISOString() };
+
     setWallet(newWallet);
     setCart([]);
 
     await updateUserWallet(user.uid, newWallet);
     await addUserOrder(user.uid, order);
 
-    sendLocalNotification("Payment Successful 💸", `Paid UGX ${total.toLocaleString()}`);
-    await notifyAllUsers("Marketplace Purchase", `Someone bought items worth UGX ${total.toLocaleString()}`);
+    showToast(`Payment Successful! Remaining UGX ${newWallet.toLocaleString()}`);
+    await notifyAllUsers("Marketplace Purchase", `User ${user.username} bought items worth UGX ${total.toLocaleString()}`);
   };
 
   // ================= RENDER =================
@@ -179,7 +226,9 @@ export default function Marketplace() {
 
   return (
     <View style={styles.container}>
-      <Text style={{ color: "#32CD32", fontSize: 18, marginBottom: 10 }}>Wallet: UGX {wallet.toLocaleString()}</Text>
+      <Text style={{ color: "#32CD32", fontSize: 16, marginBottom: 5 }}>
+        Wallet: UGX {wallet.toLocaleString()} • Device: {deviceId} • User: {user?.username || "Guest"}
+      </Text>
       <TextInput placeholder="Search..." style={styles.input} value={search} onChangeText={setSearch} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
         {CATEGORIES.map(cat => (
@@ -199,6 +248,32 @@ export default function Marketplace() {
         numColumns={2}
         onEndReached={() => loadMoreProducts()}
       />
+      {cart.length > 0 && (
+        <TouchableOpacity style={styles.checkoutBtn} onPress={checkout}>
+          <Text style={{ color: "#fff", fontWeight: "bold" }}>Checkout 🛒</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* MINI POPUP VIDEO */}
+      {videoVisible && (
+        <View style={styles.videoContainer}>
+          <Video
+            key={videoKey}
+            source={{ uri: "https://www.w3schools.com/html/mov_bbb.mp4" }} // online video
+            style={styles.video}
+            resizeMode="cover"
+            repeat={false}
+            onEnd={() => setVideoVisible(false)}
+          />
+        </View>
+      )}
+
+      {/* TOAST */}
+      {toast.visible && (
+        <Animated.View style={[styles.toast, { opacity: toastAnim }]}>
+          <Text style={{ color: "#fff" }}>{toast.message}</Text>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -212,4 +287,18 @@ const styles = StyleSheet.create({
   price: { color: "#32CD32", marginTop: 2 },
   btn: { backgroundColor: "#32CD32", padding: 6, marginTop: 5, borderRadius: 6 },
   cat: { backgroundColor: "#333", padding: 8, marginRight: 5, borderRadius: 10 },
+  checkoutBtn: { backgroundColor: "#32CD32", padding: 14, borderRadius: 12, alignItems: "center", marginVertical: 10 },
+  toast: { position: "absolute", bottom: 100, left: 20, right: 20, backgroundColor: "#333", padding: 12, borderRadius: 10, alignItems: "center" },
+  videoContainer: {
+    position: "absolute",
+    top: height / 4,
+    left: width / 8,
+    width: width * 0.75,
+    height: 200,
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "#32CD32",
+  },
+  video: { width: "100%", height: "100%" },
 });
