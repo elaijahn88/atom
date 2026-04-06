@@ -79,7 +79,7 @@ export default function AgentScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0f172a" }}>
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>💼 Agent Panel</Text>
+        <Text style={styles.title}>💼 </Text>
 
         {/* USER CARD */}
         <View style={styles.card}>
