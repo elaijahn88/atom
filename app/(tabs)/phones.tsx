@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   ScrollView,
   Dimensions,
   StatusBar,
+  SafeAreaView,          // ←←← THIS WAS MISSING → caused the crash
 } from "react-native";
 
 import * as Device from "expo-device";
@@ -44,11 +45,11 @@ interface Product {
   sellerName: string;
 }
 
-type CartItem = Product & { quantity: number };
+type CartItem = Product & { quantity: number; addedAt?: string };
 
 const CATEGORIES = ["phones", "vehicles", "electronics", "fashion", "others"];
 
-const CATEGORY_IMAGES: any = {
+const CATEGORY_IMAGES: Record<string, string> = {
   phones: "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=800",
   vehicles: "https://images.unsplash.com/photo-1558981406-2e9d6e8c0f0a?w=800",
   electronics: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800",
@@ -64,13 +65,13 @@ const generateProduct = (id: number): Product => {
     price: Math.floor(Math.random() * 3500000) + 150000,
     category,
     sellerName: "Verified Seller",
-    image: CATEGORY_IMAGES[category],
+    image: CATEGORY_IMAGES[category] || CATEGORY_IMAGES.others,
   };
 };
 
 export default function JijiMarketplace() {
   const PAGE_SIZE = 8;
-  const deviceId = useMemo(() => Device.modelName || "device-id", []);
+  const deviceId = useMemo(() => Device.modelName || "unknown-device", []);
 
   const [user, setUser] = useState<any>(null);
   const [wallet, setWallet] = useState(2000000);
@@ -87,25 +88,30 @@ export default function JijiMarketplace() {
   // Initialize
   useEffect(() => {
     const init = async () => {
-      await registerForPushNotifications();
+      try {
+        await registerForPushNotifications();
 
-      const u = await getUserByDeviceId(deviceId);
-      if (u) {
-        setUser(u);
-        setWallet(u.wallet || 2000000);
-        setCart(u.cart || []);
-        setFavorites(u.favorites || []);
-        setOrderHistory(u.orderHistory || []);
+        const u = await getUserByDeviceId(deviceId);
+        if (u) {
+          setUser(u);
+          setWallet(u.wallet || 2000000);
+          setCart(u.cart || []);
+          setFavorites(u.favorites || []);
+          setOrderHistory(u.orderHistory || []);
+        }
+
+        sendLocalNotification("👋 Welcome to Jiji Uganda", "Find great deals near you!");
+        loadMoreProducts(true);
+      } catch (error) {
+        console.error("Init error:", error);
+        sendLocalNotification("⚠️ Warning", "Some features may be limited");
       }
-
-      sendLocalNotification("👋 Welcome to Jiji Uganda", "Find great deals near you!");
-      loadMoreProducts(true);
     };
 
     init();
-  }, []);
+  }, [deviceId]);
 
-  const loadMoreProducts = (reset = false) => {
+  const loadMoreProducts = useCallback((reset = false) => {
     if (loadingMore) return;
     setLoadingMore(true);
 
@@ -121,21 +127,27 @@ export default function JijiMarketplace() {
       });
       setLoadingMore(false);
     }, 400);
-  };
+  }, [nextId, loadingMore]);
 
-  const filteredProducts = products.filter((p) => {
-    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
-    const matchCat = selectedCategory ? p.category === selectedCategory : true;
-    return matchSearch && matchCat;
-  });
+  const filteredProducts = useMemo(() => {
+    return products.filter((p) => {
+      const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
+      const matchCat = selectedCategory ? p.category === selectedCategory : true;
+      return matchSearch && matchCat;
+    });
+  }, [products, search, selectedCategory]);
 
   // Add to Cart (Firebase synced)
   const handleAddToCart = async (product: Product) => {
-    const cartItem = { ...product, quantity: 1, addedAt: new Date().toISOString() };
+    const cartItem: CartItem = {
+      ...product,
+      quantity: 1,
+      addedAt: new Date().toISOString(),
+    };
 
-    // Local state
     const existing = cart.find((i) => i.id === product.id);
-    let newCart;
+    let newCart: CartItem[];
+
     if (existing) {
       newCart = cart.map((i) =>
         i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
@@ -143,20 +155,24 @@ export default function JijiMarketplace() {
     } else {
       newCart = [...cart, cartItem];
     }
+
     setCart(newCart);
 
-    // Firebase
     if (user?.uid) {
-      await addToCartFire(user.uid, cartItem);
+      try {
+        await addToCartFire(user.uid, cartItem);
+      } catch (e) {
+        console.error("Firebase add to cart failed", e);
+      }
     }
 
     sendLocalNotification("🛒 Added!", `${product.name} added to cart`);
   };
 
-  // Toggle Favorite (Firebase synced)
+  // Toggle Favorite
   const toggleFavorite = async (product: Product) => {
-    const exists = favorites.find((f) => f.id === product.id);
-    let updated;
+    const exists = favorites.some((f) => f.id === product.id);
+    let updated: Product[];
 
     if (exists) {
       updated = favorites.filter((f) => f.id !== product.id);
@@ -169,13 +185,19 @@ export default function JijiMarketplace() {
     setFavorites(updated);
 
     if (user?.uid) {
-      await updateDoc(doc(firestore, "users", user.uid), { favorites: updated });
+      try {
+        await updateDoc(doc(firestore, "users", user.uid), { favorites: updated });
+      } catch (e) {
+        console.error("Firebase favorite update failed", e);
+      }
     }
   };
 
-  // Checkout with notification broadcast
+  // Checkout
   const handleCheckout = async () => {
-    if (cart.length === 0) return Alert.alert("Empty Cart", "Add items first");
+    if (cart.length === 0) {
+      return Alert.alert("Empty Cart", "Add items first");
+    }
 
     const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
@@ -189,17 +211,20 @@ export default function JijiMarketplace() {
 
     setWallet(newWallet);
     setCart([]);
-    setOrderHistory([...orderHistory, order]);
+    setOrderHistory((prev) => [...prev, order]);
 
     if (user?.uid) {
-      await updateWallet(user.uid, newWallet);
-      await updateDoc(doc(firestore, "users", user.uid), {
-        cart: [],
-        orderHistory: [...orderHistory, order],
-      });
+      try {
+        await updateWallet(user.uid, newWallet);
+        await updateDoc(doc(firestore, "users", user.uid), {
+          cart: [],
+          orderHistory: [...orderHistory, order],
+        });
+      } catch (e) {
+        console.error("Checkout Firebase update failed", e);
+      }
     }
 
-    // Local + Global notifications
     await sendLocalNotification("💸 Payment Successful!", `You paid USh ${total.toLocaleString()}`);
     await notifyAllUsers("🛒 New Sale on Jiji!", `Someone just bought items worth USh ${total.toLocaleString()}`);
 
@@ -207,16 +232,21 @@ export default function JijiMarketplace() {
   };
 
   const removeFromCart = (id: string) => {
-    setCart(cart.filter((i) => i.id !== id));
+    setCart((prev) => prev.filter((i) => i.id !== id));
     sendLocalNotification("🗑️ Removed", "Item removed from cart");
   };
 
-  // Render Product Card (Jiji Style)
   const renderProduct = ({ item }: { item: Product }) => (
     <View style={styles.productCard}>
-      <Image source={{ uri: item.image }} style={styles.productImage} />
+      <Image
+        source={{ uri: item.image }}
+        style={styles.productImage}
+        onError={() => console.log(`Image failed to load: ${item.name}`)}
+      />
       <View style={styles.productInfo}>
-        <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
+        <Text style={styles.productName} numberOfLines={2}>
+          {item.name}
+        </Text>
         <Text style={styles.productPrice}>USh {item.price.toLocaleString()}</Text>
         <Text style={styles.seller}>{item.sellerName}</Text>
       </View>
@@ -226,13 +256,21 @@ export default function JijiMarketplace() {
           <Text style={styles.btnText}>🛒</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.favBtn, favorites.some(f => f.id === item.id) && styles.favActive]}
+          style={[
+            styles.favBtn,
+            favorites.some((f) => f.id === item.id) && styles.favActive,
+          ]}
           onPress={() => toggleFavorite(item)}
         >
           <Text style={styles.btnText}>❤️</Text>
         </TouchableOpacity>
       </View>
     </View>
+  );
+
+  const cartTotal = useMemo(
+    () => cart.reduce((sum, i) => sum + i.price * i.quantity, 0),
+    [cart]
   );
 
   return (
@@ -243,7 +281,10 @@ export default function JijiMarketplace() {
       <View style={styles.greenHeader}>
         <Text style={styles.headerTitle}>Jiji Uganda</Text>
         <Text style={styles.walletHeader}>
-          Wallet: <Text style={{ color: wallet < 500000 ? '#FF3B30' : '#4ADE80' }}>USh {wallet.toLocaleString()}</Text>
+          Wallet:{" "}
+          <Text style={{ color: wallet < 500000 ? "#FF3B30" : "#4ADE80" }}>
+            USh {wallet.toLocaleString()}
+          </Text>
         </Text>
       </View>
 
@@ -261,14 +302,29 @@ export default function JijiMarketplace() {
       {view === "market" && (
         <>
           {/* Categories */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.categoryScroll}
+          >
             {CATEGORIES.map((cat) => (
               <TouchableOpacity
                 key={cat}
-                onPress={() => setSelectedCategory(cat === selectedCategory ? null : cat)}
-                style={[styles.categoryChip, selectedCategory === cat && styles.activeChip]}
+                onPress={() =>
+                  setSelectedCategory(cat === selectedCategory ? null : cat)
+                }
+                style={[
+                  styles.categoryChip,
+                  selectedCategory === cat && styles.activeChip,
+                ]}
               >
-                <Text style={selectedCategory === cat ? styles.activeChipText : styles.chipText}>
+                <Text
+                  style={
+                    selectedCategory === cat
+                      ? styles.activeChipText
+                      : styles.chipText
+                  }
+                >
                   {cat}
                 </Text>
               </TouchableOpacity>
@@ -284,6 +340,9 @@ export default function JijiMarketplace() {
             contentContainerStyle={styles.grid}
             onEndReached={() => loadMoreProducts()}
             onEndReachedThreshold={0.5}
+            ListFooterComponent={
+              loadingMore ? <Text style={{ textAlign: "center", padding: 20, color: "#888" }}>Loading more...</Text> : null
+            }
           />
         </>
       )}
@@ -300,21 +359,30 @@ export default function JijiMarketplace() {
                 keyExtractor={(i) => i.id}
                 renderItem={({ item }) => (
                   <View style={styles.cartItem}>
-                    <Image source={{ uri: item.image }} style={styles.cartImage} />
+                    <Image
+                      source={{ uri: item.image }}
+                      style={styles.cartImage}
+                      onError={() => console.log("Cart image failed")}
+                    />
                     <View style={styles.cartInfo}>
                       <Text style={styles.cartName}>{item.name}</Text>
-                      <Text style={styles.cartPrice}>USh {(item.price * item.quantity).toLocaleString()}</Text>
+                      <Text style={styles.cartPrice}>
+                        USh {(item.price * item.quantity).toLocaleString()}
+                      </Text>
                       <Text>Qty: {item.quantity}</Text>
                     </View>
                     <TouchableOpacity onPress={() => removeFromCart(item.id)}>
-                      <Text style={{ color: "red", fontSize: 18 }}>✕</Text>
+                      <Text style={{ color: "red", fontSize: 22 }}>✕</Text>
                     </TouchableOpacity>
                   </View>
                 )}
               />
-              <TouchableOpacity style={styles.checkoutButton} onPress={handleCheckout}>
+              <TouchableOpacity
+                style={styles.checkoutButton}
+                onPress={handleCheckout}
+              >
                 <Text style={styles.checkoutText}>
-                  Checkout - USh {cart.reduce((sum, i) => sum + i.price * i.quantity, 0).toLocaleString()}
+                  Checkout - USh {cartTotal.toLocaleString()}
                 </Text>
               </TouchableOpacity>
             </>
@@ -322,7 +390,7 @@ export default function JijiMarketplace() {
         </View>
       )}
 
-      {/* Favorites & Orders Views (simplified for now) */}
+      {/* Favorites */}
       {view === "favorites" && (
         <FlatList
           data={favorites}
@@ -333,13 +401,14 @@ export default function JijiMarketplace() {
         />
       )}
 
+      {/* Orders */}
       {view === "orders" && (
         <View style={styles.ordersView}>
           <Text style={styles.emptyText}>Order history coming soon 📦</Text>
         </View>
       )}
 
-      {/* Bottom Navigation - Jiji Style */}
+      {/* Bottom Navigation */}
       <View style={styles.bottomNav}>
         <TouchableOpacity style={styles.navItem} onPress={() => setView("market")}>
           <Text style={[styles.navIcon, view === "market" && styles.activeNav]}>🏠</Text>
@@ -351,7 +420,9 @@ export default function JijiMarketplace() {
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem} onPress={() => setView("cart")}>
           <Text style={[styles.navIcon, view === "cart" && styles.activeNav]}>🛒</Text>
-          <Text style={[styles.navLabel, view === "cart" && styles.activeNav]}>Cart ({cart.length})</Text>
+          <Text style={[styles.navLabel, view === "cart" && styles.activeNav]}>
+            Cart ({cart.length})
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem} onPress={() => setView("orders")}>
           <Text style={[styles.navIcon, view === "orders" && styles.activeNav]}>📦</Text>
@@ -362,8 +433,9 @@ export default function JijiMarketplace() {
   );
 }
 
-// ================= STYLES (Modern Jiji-inspired) =================
+// Styles remain the same (unchanged)
 const styles = StyleSheet.create({
+  // ... (your original styles - no changes needed)
   container: { flex: 1, backgroundColor: "#000" },
   greenHeader: { backgroundColor: "#00B140", paddingTop: 50, paddingBottom: 16, paddingHorizontal: 16, alignItems: "center" },
   headerTitle: { color: "#fff", fontSize: 22, fontWeight: "700" },
@@ -409,7 +481,6 @@ const styles = StyleSheet.create({
   navLabel: { fontSize: 11, color: "#888", marginTop: 2 },
   activeNav: { color: "#00B140" },
 
-  // Cart Styles
   cartView: { flex: 1, padding: 16 },
   cartItem: { flexDirection: "row", backgroundColor: "#1A1A1A", marginBottom: 12, borderRadius: 12, padding: 12 },
   cartImage: { width: 70, height: 70, borderRadius: 8 },
