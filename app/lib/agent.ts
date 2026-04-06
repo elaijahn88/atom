@@ -7,6 +7,7 @@ import {
   collection,
   addDoc,
   serverTimestamp,
+  increment,
 } from "firebase/firestore";
 
 import { app } from "../../firebase";
@@ -18,140 +19,118 @@ const db = getFirestore(app);
 export interface Transaction {
   type: "deposit" | "withdraw" | "freeze" | "unfreeze";
   amount: number;
-  createdAt: any;
-  status: "success" | "pending";
+  date: any;
 }
 
 // ================= HELPERS =================
-const getUserRef = (uid: string) => doc(db, "users", uid);
+const getUserRef = (deviceId: string) => doc(db, "users", deviceId);
 
 // ================= ADD TRANSACTION =================
-const addTransaction = async (uid: string, tx: Transaction) => {
-  await addDoc(collection(db, "users", uid, "transactions"), {
+const addTransaction = async (deviceId: string, tx: Transaction) => {
+  await addDoc(collection(db, "users", deviceId, "transactions"), {
     ...tx,
-    createdAt: serverTimestamp(),
+    date: serverTimestamp(),
   });
 };
 
 // ================= DEPOSIT =================
-export const depositMoney = async (uid: string, amount: number) => {
-  const userRef = getUserRef(uid);
-  const snap = await getDoc(userRef);
+export const depositMoney = async (deviceId: string, amount: number) => {
+  const userRef = getUserRef(deviceId);
 
-  if (!snap.exists()) return;
-
-  const user = snap.data();
-
-  const newBalance = (user.wallet || 0) + amount;
-
-  await updateDoc(userRef, { wallet: newBalance });
-
-  await addTransaction(uid, {
-    type: "deposit",
-    amount,
-    createdAt: null,
-    status: "success",
+  await updateDoc(userRef, {
+    balance: increment(amount),
+    totalDeposited: increment(amount),
   });
 
-  sendLocalNotification(
-    "Deposit Successful 💰",
-    `UGX ${amount.toLocaleString()} added`
-  );
+  await addTransaction(deviceId, {
+    type: "deposit",
+    amount,
+    date: null,
+  });
+
+  sendLocalNotification("Deposit 💰", `UGX ${amount.toLocaleString()} added`);
 };
 
 // ================= WITHDRAW =================
-export const withdrawMoney = async (uid: string, amount: number) => {
-  const userRef = getUserRef(uid);
+export const withdrawMoney = async (deviceId: string, amount: number) => {
+  const userRef = getUserRef(deviceId);
   const snap = await getDoc(userRef);
 
   if (!snap.exists()) return;
 
   const user = snap.data();
 
-  if ((user.wallet || 0) < amount) {
+  if ((user.balance || 0) < amount) {
     sendLocalNotification("Failed ❌", "Insufficient balance");
     return;
   }
 
-  const newBalance = user.wallet - amount;
-
-  await updateDoc(userRef, { wallet: newBalance });
-
-  await addTransaction(uid, {
-    type: "withdraw",
-    amount,
-    createdAt: null,
-    status: "success",
+  await updateDoc(userRef, {
+    balance: increment(-amount),
+    totalWithdrawn: increment(amount),
   });
 
-  sendLocalNotification(
-    "Withdraw Successful 💸",
-    `UGX ${amount.toLocaleString()} withdrawn`
-  );
+  await addTransaction(deviceId, {
+    type: "withdraw",
+    amount,
+    date: null,
+  });
+
+  sendLocalNotification("Withdraw 💸", `UGX ${amount.toLocaleString()} withdrawn`);
 };
 
-// ================= FREEZE MONEY =================
-export const freezeMoney = async (uid: string, amount: number) => {
-  const userRef = getUserRef(uid);
+// ================= FREEZE =================
+export const freezeMoney = async (deviceId: string, amount: number) => {
+  const userRef = getUserRef(deviceId);
   const snap = await getDoc(userRef);
 
   if (!snap.exists()) return;
 
   const user = snap.data();
 
-  if ((user.wallet || 0) < amount) {
+  if ((user.balance || 0) < amount) {
     sendLocalNotification("Freeze Failed ❌", "Not enough balance");
     return;
   }
 
-  const frozen = user.frozen || 0;
-
   await updateDoc(userRef, {
-    wallet: user.wallet - amount,
-    frozen: frozen + amount,
+    balance: increment(-amount),
+    frozenBalance: increment(amount),
   });
 
-  await addTransaction(uid, {
+  await addTransaction(deviceId, {
     type: "freeze",
     amount,
-    createdAt: null,
-    status: "success",
+    date: null,
   });
 
-  sendLocalNotification(
-    "Money Frozen ❄️",
-    `UGX ${amount.toLocaleString()} frozen`
-  );
+  sendLocalNotification("Frozen ❄️", `UGX ${amount.toLocaleString()} frozen`);
 };
 
 // ================= UNFREEZE =================
-export const unfreezeMoney = async (uid: string, amount: number) => {
-  const userRef = getUserRef(uid);
+export const unfreezeMoney = async (deviceId: string, amount: number) => {
+  const userRef = getUserRef(deviceId);
   const snap = await getDoc(userRef);
 
   if (!snap.exists()) return;
 
   const user = snap.data();
 
-  if ((user.frozen || 0) < amount) {
+  if ((user.frozenBalance || 0) < amount) {
     sendLocalNotification("Error ❌", "Not enough frozen balance");
     return;
   }
 
   await updateDoc(userRef, {
-    wallet: user.wallet + amount,
-    frozen: user.frozen - amount,
+    balance: increment(amount),
+    frozenBalance: increment(-amount),
   });
 
-  await addTransaction(uid, {
+  await addTransaction(deviceId, {
     type: "unfreeze",
     amount,
-    createdAt: null,
-    status: "success",
+    date: null,
   });
 
-  sendLocalNotification(
-    "Unfrozen ✅",
-    `UGX ${amount.toLocaleString()} returned to wallet`
-  );
+  sendLocalNotification("Unfrozen ✅", `UGX ${amount.toLocaleString()} returned`);
 };
