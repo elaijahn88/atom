@@ -1,91 +1,152 @@
 // acc.ts
-import { getFirestore, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  collection,
+  addDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { app } from "../../firebase";
 import * as Device from "expo-device";
-import { sendLocalNotification } from "./noti";
-import { registerDevicePushToken, sendPushToAllUsers } from "./push";
 
-const firestore = getFirestore(app);
+const db = getFirestore(app);
 
 export interface UserAccount {
-  uid: string;
   deviceId: string;
   username: string;
-  wallet: number;
-  cart: any[];
-  favorites: any[];
-  orderHistory: any[];
+  balance: number;
+  frozenBalance: number;
+  totalDeposited: number;
+  totalWithdrawn: number;
+  createdAt: any;
 }
 
+// ================= GET DEVICE ID =================
+export const getDeviceId = () =>
+  Device.modelName || Device.brand + "-id";
+
 // ================= GET USER =================
-export const getUserByDevice = async (deviceId?: string): Promise<UserAccount | null> => {
-  const devId = deviceId || Device.modelName || Device.brand + "-id";
-  const q = doc(firestore, "users", devId);
-  const snap = await getDoc(q);
+export const getUser = async (): Promise<UserAccount | null> => {
+  const deviceId = getDeviceId();
+  const ref = doc(db, "users", deviceId);
+  const snap = await getDoc(ref);
+
   if (snap.exists()) return snap.data() as UserAccount;
   return null;
 };
 
-// ================= CREATE OR LOGIN USER =================
-export const loginOrCreateUser = async (username?: string): Promise<UserAccount> => {
-  const deviceId = Device.modelName || Device.brand + "-id";
-  let user = await getUserByDevice(deviceId);
+// ================= CREATE USER =================
+export const createUser = async (username: string) => {
+  const deviceId = getDeviceId();
 
-  if (!user) {
-    const uid = deviceId; // simple UID by device for demo
-    user = {
-      uid,
-      deviceId,
-      username: username || "User",
-      wallet: 2000000,
-      cart: [],
-      favorites: [],
-      orderHistory: [],
-    };
-    await setDoc(doc(firestore, "users", uid), user);
-    sendLocalNotification("Welcome 👋", `Account created for ${user.username}`);
-  } else {
-    sendLocalNotification("Welcome Back 👋", `${user.username}`);
-  }
+  const user: UserAccount = {
+    deviceId,
+    username,
+    balance: 0,
+    frozenBalance: 0,
+    totalDeposited: 0,
+    totalWithdrawn: 0,
+    createdAt: serverTimestamp(),
+  };
 
-  // Register push token
-  await registerDevicePushToken(user.uid);
-
+  await setDoc(doc(db, "users", deviceId), user);
   return user;
 };
 
-// ================= UPDATE WALLET =================
-export const updateUserWallet = async (uid: string, amount: number) => {
-  await updateDoc(doc(firestore, "users", uid), { wallet: amount });
-  sendLocalNotification("Wallet Updated 💰", `New balance: UGX ${amount.toLocaleString()}`);
+// ================= LOGIN =================
+export const loginOrCreateUser = async (username: string) => {
+  let user = await getUser();
+  if (!user) {
+    user = await createUser(username);
+  }
+  return user;
 };
 
-// ================= UPDATE CART =================
-export const updateUserCart = async (uid: string, cart: any[]) => {
-  await updateDoc(doc(firestore, "users", uid), { cart });
+// ================= TRANSACTION LOGGER =================
+const addTransaction = async (
+  deviceId: string,
+  type: "deposit" | "withdraw" | "freeze" | "unfreeze",
+  amount: number
+) => {
+  const ref = collection(db, "users", deviceId, "transactions");
+
+  await addDoc(ref, {
+    type,
+    amount,
+    date: serverTimestamp(),
+  });
 };
 
-// ================= UPDATE FAVORITES =================
-export const updateUserFavorites = async (uid: string, favorites: any[]) => {
-  await updateDoc(doc(firestore, "users", uid), { favorites });
+// ================= WALLET ACTIONS =================
+export const depositMoney = async (amount: number) => {
+  const deviceId = getDeviceId();
+  const ref = doc(db, "users", deviceId);
+  const snap = await getDoc(ref);
+  const data = snap.data() as UserAccount;
+
+  const newBalance = data.balance + amount;
+
+  await updateDoc(ref, {
+    balance: newBalance,
+    totalDeposited: data.totalDeposited + amount,
+  });
+
+  await addTransaction(deviceId, "deposit", amount);
+
+  return newBalance;
 };
 
-// ================= ADD ORDER =================
-export const addUserOrder = async (uid: string, order: any) => {
-  const userRef = doc(firestore, "users", uid);
-  const snap = await getDoc(userRef);
-  let orderHistory: any[] = [];
-  if (snap.exists()) orderHistory = snap.data()?.orderHistory || [];
-  orderHistory.push(order);
-  await updateDoc(userRef, { orderHistory });
+export const withdrawMoney = async (amount: number) => {
+  const deviceId = getDeviceId();
+  const ref = doc(db, "users", deviceId);
+  const snap = await getDoc(ref);
+  const data = snap.data() as UserAccount;
+
+  if (data.balance < amount) throw new Error("Insufficient balance");
+
+  const newBalance = data.balance - amount;
+
+  await updateDoc(ref, {
+    balance: newBalance,
+    totalWithdrawn: data.totalWithdrawn + amount,
+  });
+
+  await addTransaction(deviceId, "withdraw", amount);
+
+  return newBalance;
 };
 
-// ================= SEND GLOBAL NOTIFICATION =================
-export const notifyAllUsers = async (title: string, body: string) => {
-  await sendPushToAllUsers(title, body);
+export const freezeMoney = async (amount: number) => {
+  const deviceId = getDeviceId();
+  const ref = doc(db, "users", deviceId);
+  const snap = await getDoc(ref);
+  const data = snap.data() as UserAccount;
+
+  if (data.balance < amount) throw new Error("Insufficient balance");
+
+  await updateDoc(ref, {
+    balance: data.balance - amount,
+    frozenBalance: data.frozenBalance + amount,
+  });
+
+  await addTransaction(deviceId, "freeze", amount);
 };
 
-// ================= HELPER: CHECK ACCOUNT MATCH =================
-export const isSameAccount = (user1: UserAccount, user2: UserAccount) => {
-  return user1.uid === user2.uid;
+export const unfreezeMoney = async (amount: number) => {
+  const deviceId = getDeviceId();
+  const ref = doc(db, "users", deviceId);
+  const snap = await getDoc(ref);
+  const data = snap.data() as UserAccount;
+
+  if (data.frozenBalance < amount) throw new Error("Not enough frozen");
+
+  await updateDoc(ref, {
+    balance: data.balance + amount,
+    frozenBalance: data.frozenBalance - amount,
+  });
+
+  await addTransaction(deviceId, "unfreeze", amount);
 };
