@@ -1,7 +1,17 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
-  View, Text, TouchableOpacity, ScrollView, StyleSheet,
-  TextInput, Alert, Image, Animated, Linking
+  View,
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  ScrollView,
+  TouchableOpacity,
+  Image,
+  StatusBar,
+  Dimensions,
+  Alert,
+  Animated,
+  Linking,
 } from "react-native";
 import * as Device from "expo-device";
 
@@ -9,19 +19,20 @@ import {
   loginOrSignup,
   updateWallet,
   getUserByDeviceId,
-  saveDeviceIdForUser
+  saveDeviceIdForUser,
 } from "../lib/fire";
 
 import { sendLocalNotification, registerForPushNotifications, notifyAllUsers } from "../lib/noti";
 
-type ScreenType = "login" | "foodMenu" | "moneySystem" | "profile";
+const { width } = Dimensions.get("window");
+
+type ScreenType = "login" | "foodMenu";
 
 interface FoodItem {
   id: number;
   name: string;
   price: number;
   image: string;
-  category: "meal" | "chai";
   ownerName: string;
   ownerPhone: string;
   ownerLocation: string;
@@ -29,29 +40,56 @@ interface FoodItem {
 
 type CartItem = FoodItem & { quantity: number };
 
-const menu: FoodItem[] = [
-  { id: 1, name: "Classic Burger", price: 600000, image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800", category: "meal", ownerName: "Restaurant One", ownerPhone: "+256700000001", ownerLocation: "Kampala" },
-  { id: 2, name: "Pepperoni Pizza", price: 1000000, image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800", category: "meal", ownerName: "Pizza Hub", ownerPhone: "+256700000002", ownerLocation: "Ntinda" },
-  { id: 3, name: "Grilled Chicken", price: 900000, image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800", category: "meal", ownerName: "Chicken Spot", ownerPhone: "+256700000003", ownerLocation: "Kawempe" },
-  { id: 4, name: "African Milk Tea", price: 200000, image: "https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=800", category: "chai", ownerName: "Tea Corner", ownerPhone: "+256700000004", ownerLocation: "Mukono" },
+const menuItems: FoodItem[] = [
+  {
+    id: 1,
+    name: "Classic Burger",
+    price: 600000,
+    image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800",
+    ownerName: "Restaurant One",
+    ownerPhone: "+256700000001",
+    ownerLocation: "Kampala",
+  },
+  {
+    id: 2,
+    name: "Pepperoni Pizza",
+    price: 1000000,
+    image: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=800",
+    ownerName: "Pizza Hub",
+    ownerPhone: "+256700000002",
+    ownerLocation: "Ntinda",
+  },
+  {
+    id: 3,
+    name: "Grilled Chicken",
+    price: 900000,
+    image: "https://images.unsplash.com/photo-1599486092146-4d4c7e3c7d3e?w=800",
+    ownerName: "Chicken Spot",
+    ownerPhone: "+256700000003",
+    ownerLocation: "Kawempe",
+  },
+  {
+    id: 4,
+    name: "African Milk Tea (Chai)",
+    price: 200000,
+    image: "https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=800",
+    ownerName: "Tea Corner",
+    ownerPhone: "+256700000004",
+    ownerLocation: "Mukono",
+  },
 ];
 
-export default function App() {
+export default function FoodOrderingApp() {
   const [activeScreen, setActiveScreen] = useState<ScreenType>("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [phone, setPhone] = useState("");
   const [user, setUser] = useState<any>(null);
   const [walletBalance, setWalletBalance] = useState(2000000);
-  const [username, setUsername] = useState("");
-  const [userPhone, setUserPhone] = useState("");
+  const [username, setUsername] = useState("User");
   const [cart, setCart] = useState<CartItem[]>([]);
-  const cartScale = useRef(new Animated.Value(1)).current;
-  const [showWallet, setShowWallet] = useState(false);
-  const walletAnim = useRef(new Animated.Value(0)).current;
 
+  const cartScale = useRef(new Animated.Value(1)).current;
   const deviceId = useMemo(() => Device.modelName || "device-id", []);
 
+  // Initialize user from device
   useEffect(() => {
     const init = async () => {
       const existingUser = await getUserByDeviceId(deviceId);
@@ -59,8 +97,6 @@ export default function App() {
         setUser(existingUser);
         setWalletBalance(existingUser.wallet || 2000000);
         setUsername(existingUser.username || "User");
-        setUserPhone(existingUser.phone || "");
-        sendLocalNotification("Welcome back!", `Hello ${existingUser.username || "User"}`);
         setActiveScreen("foodMenu");
         await registerForPushNotifications(existingUser.uid);
       }
@@ -69,153 +105,360 @@ export default function App() {
   }, []);
 
   const handleLogin = async () => {
-    if (!email || !password) return Alert.alert("Error", "Email and password are required");
-    const res = await loginOrSignup(email, password, phone, deviceId);
-    if (res.success) {
-      await saveDeviceIdForUser(res.uid, deviceId);
-      setUser(res);
-      setWalletBalance(res.wallet);
-      setUsername(res.username);
-      setUserPhone(res.phone);
-      sendLocalNotification("Welcome!", `Hello ${res.username}`);
-      await registerForPushNotifications(res.uid);
-      setActiveScreen("foodMenu");
-    } else {
-      Alert.alert("Error", res.error || "Login failed");
-    }
+    // Simplified for demo - in real app use proper form
+    Alert.alert("Demo Mode", "Login skipped for demo. Going to menu...");
+    setActiveScreen("foodMenu");
   };
 
   const addToCart = async (item: FoodItem) => {
-    if (walletBalance < item.price) return Alert.alert("Error", "Insufficient balance");
+    if (walletBalance < item.price) {
+      return Alert.alert("Insufficient Balance", "You don't have enough money in your wallet.");
+    }
+
+    // Animation
     Animated.sequence([
-      Animated.timing(cartScale, { toValue: 1.2, duration: 150, useNativeDriver: true }),
-      Animated.timing(cartScale, { toValue: 1, duration: 150, useNativeDriver: true }),
+      Animated.timing(cartScale, { toValue: 1.3, duration: 120, useNativeDriver: true }),
+      Animated.timing(cartScale, { toValue: 1, duration: 120, useNativeDriver: true }),
     ]).start();
-    setCart(prev => {
-      const exist = prev.find(c => c.id === item.id);
-      if (exist) return prev.map(c => c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c);
+
+    setCart((prev) => {
+      const exist = prev.find((c) => c.id === item.id);
+      if (exist) {
+        return prev.map((c) =>
+          c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c
+        );
+      }
       return [...prev, { ...item, quantity: 1 }];
     });
+
     const newBalance = walletBalance - item.price;
     setWalletBalance(newBalance);
     if (user?.uid) await updateWallet(user.uid, newBalance);
   };
 
   const handleCheckout = async () => {
-    if (!user?.uid) return Alert.alert("Error", "You must be logged in to checkout");
-    if (cart.length === 0) return Alert.alert("Cart empty", "Add items first");
+    if (cart.length === 0) return Alert.alert("Cart Empty", "Add items first");
+
     const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    if (walletBalance < totalAmount) return Alert.alert("Insufficient balance");
+    if (walletBalance < totalAmount) {
+      return Alert.alert("Insufficient Balance");
+    }
+
     const newBalance = walletBalance - totalAmount;
     setWalletBalance(newBalance);
-    await updateWallet(user.uid, newBalance);
-    sendLocalNotification("Checkout Complete", `You have paid UGX ${totalAmount} successfully!`);
-    await notifyAllUsers("New Order", `${username} just purchased UGX ${totalAmount}!`);
+    if (user?.uid) await updateWallet(user.uid, newBalance);
+
+    sendLocalNotification("Order Placed!", `You paid UGX ${totalAmount}`);
+    await notifyAllUsers("New Order", `${username} just ordered UGX ${totalAmount}!`);
+
     setCart([]);
+    Alert.alert("Success", "Order placed successfully!");
   };
 
-  const callOwner = (number: string) => Linking.openURL(`tel:${number}`);
-  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const callOwner = (phone: string) => Linking.openURL(`tel:${phone}`);
 
-  const WalletDisplay = () => {
-    const walletColor = walletBalance < 500000 ? "#ff4d4d" : walletBalance > 2000000 ? "#4d94ff" : "#00cc44";
-    useEffect(() => {
-      Animated.timing(walletAnim, { toValue: showWallet ? 1 : 0, duration: 300, useNativeDriver: true }).start();
-    }, [showWallet]);
+  const totalCartAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-    return (
-      <View style={{ marginBottom: 10 }}>
-        <Animated.View style={{ opacity: walletAnim }}>
-          <Text style={[styles.wallet, { color: walletColor }]}>Wallet: UGX {walletBalance}</Text>
-        </Animated.View>
-        <TouchableOpacity style={[styles.button, { marginBottom: 10 }]} onPress={() => setShowWallet(prev => !prev)}>
-          <Text style={styles.btnText}>{showWallet ? "Hide Balance" : "Show Balance"}</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  if (activeScreen === "login") {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Login / Signup</Text>
-        <TextInput placeholder="Email" style={styles.input} value={email} onChangeText={setEmail} />
-        <TextInput placeholder="Password" style={styles.input} value={password} onChangeText={setPassword} secureTextEntry />
-        <TextInput placeholder="Phone" style={styles.input} value={phone} onChangeText={setPhone} />
-        <TouchableOpacity style={styles.button} onPress={handleLogin}><Text style={styles.btnText}>Login / Signup</Text></TouchableOpacity>
-      </View>
-    );
-  }
-
+  // ==================== MAIN FOOD MENU SCREEN ====================
   if (activeScreen === "foodMenu") {
     return (
-      <ScrollView style={styles.container}>
-        <Text style={styles.title}>Hello, {username}</Text>
-        <WalletDisplay />
-        <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 10 }}>
-          <TouchableOpacity style={[styles.button, { flex: 0.48 }]} onPress={() => setActiveScreen("moneySystem")}><Text style={styles.btnText}>Load Money</Text></TouchableOpacity>
-          <TouchableOpacity style={[styles.button, { flex: 0.48 }]} onPress={() => setActiveScreen("profile")}><Text style={styles.btnText}>Profile</Text></TouchableOpacity>
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#050505" />
+
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.welcomeText}>Welcome, {username}</Text>
+          <Text style={styles.walletText}>
+            Wallet:{" "}
+            <Text style={styles.walletAmount}>UGX {walletBalance.toLocaleString()}</Text>
+          </Text>
         </View>
-        {menu.map(item => (
-          <View key={item.id} style={styles.card}>
-            <Image source={{ uri: item.image }} style={styles.image} />
-            <Text style={styles.cardTitle}>{item.name}</Text>
-            <Text style={styles.price}>UGX {item.price}</Text>
-            <View style={styles.cardButtons}>
-              <TouchableOpacity onPress={() => addToCart(item)}><Text style={styles.add}>Add</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => callOwner(item.ownerPhone)}><Text style={styles.call}>Call</Text></TouchableOpacity>
-            </View>
-          </View>
-        ))}
+
+        {/* Acc/Update Button */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity style={styles.updateButton} activeOpacity={0.85}>
+            <Text style={styles.updateButtonText}>Acc/Update</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Menu Items */}
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {menuItems.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              style={styles.menuItem}
+              activeOpacity={0.92}
+              onPress={() => addToCart(item)}
+            >
+              <View style={styles.imageContainer}>
+                <Image source={{ uri: item.image }} style={styles.foodImage} />
+              </View>
+
+              <View style={styles.itemInfo}>
+                <Text style={styles.itemName}>{item.name}</Text>
+                <Text style={styles.itemPrice}>UGX {item.price.toLocaleString()}</Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => addToCart(item)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.addButtonText}>+</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* Floating Cart Summary */}
         {cart.length > 0 && (
-          <View style={styles.cart}>
-            <Text style={{ color: "#fff" }}>🛒 {cart.length} | UGX {total}</Text>
-            <TouchableOpacity onPress={handleCheckout}><Text style={{ color: "#fff", marginTop: 5, fontWeight: "bold" }}>Checkout</Text></TouchableOpacity>
-          </View>
+          <Animated.View style={[styles.cartContainer, { transform: [{ scale: cartScale }] }]}>
+            <Text style={styles.cartText}>
+              🛒 {cart.length} items • UGX {totalCartAmount.toLocaleString()}
+            </Text>
+            <TouchableOpacity style={styles.checkoutButton} onPress={handleCheckout}>
+              <Text style={styles.checkoutText}>Checkout</Text>
+            </TouchableOpacity>
+          </Animated.View>
         )}
-      </ScrollView>
+
+        {/* Bottom Navigation */}
+        <View style={styles.bottomNav}>
+          <TouchableOpacity style={styles.navItem} activeOpacity={0.7}>
+            <View style={styles.activeDot} />
+            <Text style={[styles.navIcon, styles.activeNav]}>🏠</Text>
+            <Text style={[styles.navLabel, styles.activeNav]}>Home</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.navItem} activeOpacity={0.7}>
+            <Text style={styles.navIcon}>📤</Text>
+            <Text style={styles.navLabel}>Send</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.navItem} activeOpacity={0.7}>
+            <Text style={styles.navIcon}>🕒</Text>
+            <Text style={styles.navLabel}>History</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.navItem} activeOpacity={0.7}>
+            <Text style={styles.navIcon}>👤</Text>
+            <Text style={styles.navLabel}>Profile</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
-  if (activeScreen === "moneySystem") {
-    return (
-      <ScrollView style={styles.container}>
-        <Text style={styles.title}>Load Money</Text>
-        <WalletDisplay />
-        <TouchableOpacity style={styles.button} onPress={() => setWalletBalance(walletBalance + 500000)}><Text style={styles.btnText}>+UGX 500,000</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={() => setActiveScreen("foodMenu")}><Text style={styles.btnText}>Back</Text></TouchableOpacity>
-      </ScrollView>
-    );
-  }
+  // Login Screen (Simple)
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.loginContainer}>
+        <Text style={styles.welcomeText}>Welcome</Text>
+        <Text style={styles.subtitle}>Food & Wallet App</Text>
 
-  if (activeScreen === "profile") {
-    return (
-      <ScrollView style={styles.container}>
-        <Text style={styles.title}>Profile</Text>
-        <WalletDisplay />
-        <Text style={styles.wallet}>Name: {username}</Text>
-        <Text style={styles.wallet}>Phone: {userPhone}</Text>
-        <TouchableOpacity style={styles.button} onPress={() => setActiveScreen("foodMenu")}><Text style={styles.btnText}>Back</Text></TouchableOpacity>
-      </ScrollView>
-    );
-  }
-
-  return <View><Text>Loading...</Text></View>;
+        <TouchableOpacity style={styles.updateButton} onPress={handleLogin}>
+          <Text style={styles.updateButtonText}>Continue as Guest / Login</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#121212", padding: 15 },
-  input: { backgroundColor: "#1E1E1E", color: "#fff", padding: 10, marginBottom: 10 },
-  button: { backgroundColor: "#FF6347", padding: 12, borderRadius: 8, marginBottom: 10 },
-  btnText: { color: "#fff", textAlign: "center", fontWeight: "bold" },
-  title: { color: "#fff", fontSize: 24, marginBottom: 10, fontWeight: "bold" },
-  wallet: { fontSize: 18, marginBottom: 5 },
-  card: { backgroundColor: "#1E1E1E", padding: 10, marginBottom: 10, borderRadius: 10 },
-  image: { width: "100%", height: 150, borderRadius: 10 },
-  cardTitle: { color: "#fff", fontSize: 18, marginTop: 5 },
-  price: { color: "#0f0", marginTop: 2 },
-  cardButtons: { flexDirection: "row", justifyContent: "space-between", marginTop: 5 },
-  add: { color: "#FF6347", fontWeight: "bold" },
-  call: { color: "#32CD32", fontWeight: "bold" },
-  cart: { position: "absolute", bottom: 20, right: 20, backgroundColor: "#FF6347", padding: 10, borderRadius: 8 },
+  container: {
+    flex: 1,
+    backgroundColor: "#050505",
+  },
+  loginContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
+  },
+  subtitle: {
+    fontSize: 18,
+    color: "#888",
+    marginBottom: 60,
+  },
+  header: {
+    paddingTop: 50,
+    paddingBottom: 30,
+    alignItems: "center",
+  },
+  welcomeText: {
+    fontSize: 32,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  walletText: {
+    fontSize: 19,
+    color: "#AAAAAA",
+    marginTop: 6,
+  },
+  walletAmount: {
+    color: "#4ADE80",
+    fontWeight: "700",
+  },
+  buttonContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 28,
+  },
+  updateButton: {
+    backgroundColor: "#10B981",
+    paddingVertical: 18,
+    borderRadius: 20,
+    alignItems: "center",
+    shadowColor: "#10B981",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 12,
+  },
+  updateButtonText: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  scrollView: { flex: 1 },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 180,
+  },
+  menuItem: {
+    backgroundColor: "#121212",
+    borderRadius: 24,
+    marginBottom: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingRight: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 15,
+    borderWidth: 0.5,
+    borderColor: "#1F1F1F",
+  },
+  imageContainer: {
+    width: 135,
+    height: 135,
+    borderTopLeftRadius: 24,
+    borderBottomLeftRadius: 24,
+    overflow: "hidden",
+  },
+  foodImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+  itemInfo: {
+    flex: 1,
+    paddingLeft: 20,
+  },
+  itemName: {
+    fontSize: 21,
+    fontWeight: "600",
+    color: "#F0F0F0",
+    marginBottom: 6,
+  },
+  itemPrice: {
+    fontSize: 19,
+    color: "#4ADE80",
+    fontWeight: "700",
+  },
+  addButton: {
+    backgroundColor: "#10B981",
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#10B981",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  addButtonText: {
+    color: "#FFFFFF",
+    fontSize: 30,
+    fontWeight: "300",
+  },
+  cartContainer: {
+    position: "absolute",
+    bottom: 90,
+    left: 20,
+    right: 20,
+    backgroundColor: "#1A1A1A",
+    borderRadius: 20,
+    padding: 16,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.6,
+    shadowRadius: 20,
+    elevation: 20,
+    borderWidth: 1,
+    borderColor: "#10B981",
+  },
+  cartText: {
+    color: "#FFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  checkoutButton: {
+    backgroundColor: "#10B981",
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  checkoutText: {
+    color: "#FFF",
+    fontWeight: "bold",
+  },
+  bottomNav: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#0A0A0A",
+    borderTopWidth: 1,
+    borderTopColor: "#1F1F1F",
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingVertical: 12,
+    paddingBottom: 28,
+  },
+  navItem: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: width / 5,
+  },
+  activeDot: {
+    position: "absolute",
+    top: -6,
+    width: 7,
+    height: 7,
+    backgroundColor: "#4ADE80",
+    borderRadius: 4,
+  },
+  navIcon: {
+    fontSize: 26,
+    marginBottom: 4,
+    color: "#777777",
+  },
+  navLabel: {
+    fontSize: 11.5,
+    fontWeight: "500",
+    color: "#777777",
+  },
+  activeNav: {
+    color: "#4ADE80",
+  },
 });
