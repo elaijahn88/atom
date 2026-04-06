@@ -1,3 +1,4 @@
+// AgentScreen.tsx
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -10,6 +11,7 @@ import {
   SafeAreaView,
 } from "react-native";
 
+import * as Device from "expo-device";
 import { loginOrCreateUser } from "../lib/acc";
 import {
   depositMoney,
@@ -21,11 +23,28 @@ import {
 export default function AgentScreen() {
   const [user, setUser] = useState<any>(null);
   const [amount, setAmount] = useState("");
+  const [loading, setLoading] = useState(true);
 
   // LOAD USER
   const loadUser = async () => {
-    const u = await loginOrCreateUser("AgentUser");
-    setUser(u);
+    setLoading(true);
+    try {
+      console.log("Loading user...");
+      const u = await loginOrCreateUser("AgentUser");
+
+      if (!u) throw new Error("User not found");
+
+      console.log("User loaded:", u);
+      setUser(u);
+    } catch (e) {
+      console.log("Load user error:", e);
+      Alert.alert("Error", "Failed to load user. Using fallback.");
+
+      // fallback user so screen shows
+      setUser({ uid: "test", username: "AgentUser", wallet: 0, frozen: 0 });
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -42,26 +61,28 @@ export default function AgentScreen() {
     const value = Number(amount);
 
     try {
+      if (!user?.uid) throw new Error("User ID missing");
+
       if (type === "deposit") await depositMoney(user.uid, value);
       if (type === "withdraw") await withdrawMoney(user.uid, value);
       if (type === "freeze") await freezeMoney(user.uid, value);
       if (type === "unfreeze") await unfreezeMoney(user.uid, value);
 
       Alert.alert("Success", `${type} completed`);
-
       setAmount("");
 
-      // 🔥 REFRESH USER DATA
+      // refresh user
       await loadUser();
     } catch (e) {
+      console.log("Action error:", e);
       Alert.alert("Error", "Something went wrong");
     }
   };
 
-  if (!user) {
+  if (loading) {
     return (
       <SafeAreaView style={styles.center}>
-        <Text style={{ fontSize: 18 }}>Loading user...</Text>
+        <Text style={{ fontSize: 18, color: "#fff" }}>Loading user...</Text>
       </SafeAreaView>
     );
   }
