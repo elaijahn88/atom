@@ -1,5 +1,5 @@
 // FoodOrderingApp.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -8,10 +8,10 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  Alert,
   TextInput,
   Animated,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
   loginOrCreateUser,
@@ -24,7 +24,7 @@ interface FoodItem {
   name: string;
   price: number;
   image: string;
-  description?: string;   // Added for better UI
+  description?: string;
 }
 
 type CartItem = FoodItem & { quantity: number };
@@ -67,75 +67,127 @@ export default function FoodOrderingApp() {
   const [inputUsername, setInputUsername] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
 
-  // ================= LOGIN =================
+  // Toast Notification System
+  const [toast, setToast] = useState({ message: "", visible: false, type: "success" as "success" | "error" });
+  const toastAnim = useMemo(() => new Animated.Value(0), []);
+
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, visible: true, type });
+    Animated.timing(toastAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start(() => {
+      setTimeout(() => {
+        Animated.timing(toastAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => setToast({ message: "", visible: false, type }));
+      }, 2500);
+    });
+  };
+
+  // ================= PERSISTENT LOGIN =================
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const savedUsername = await AsyncStorage.getItem("savedUsername");
+        if (savedUsername) {
+          const u = await loginOrCreateUser(savedUsername);
+          setUser(u);
+          setUsername(u.username);
+          setBalance(u.balance);
+        }
+      } catch (e) {
+        console.log("No saved user found");
+      }
+    };
+    loadUser();
+  }, []);
+
   const handleLogin = async () => {
-    if (!inputUsername) {
-      Alert.alert("Enter username");
+    if (!inputUsername.trim()) {
+      showToast("Please enter a username", "error");
       return;
     }
 
-    const u = await loginOrCreateUser(inputUsername);
-    setUser(u);
-    setUsername(u.username);
-    setBalance(u.balance);
+    try {
+      const u = await loginOrCreateUser(inputUsername.trim());
+      setUser(u);
+      setUsername(u.username);
+      setBalance(u.balance);
+
+      // Save username for future auto-login
+      await AsyncStorage.setItem("savedUsername", u.username);
+
+      showToast(`Welcome back, ${u.username}!`);
+    } catch (err: any) {
+      showToast("Login failed. Try again.", "error");
+    }
+  };
+
+  const logout = async () => {
+    await AsyncStorage.removeItem("savedUsername");
+    setUser(null);
+    setUsername("");
+    setBalance(0);
+    setCart([]);
+    showToast("Logged out successfully");
   };
 
   // ================= CART FUNCTIONS =================
   const addToCart = (item: FoodItem) => {
     const exists = cart.find((c) => c.id === item.id);
-
     const updated = exists
       ? cart.map((c) =>
-          c.id === item.id
-            ? { ...c, quantity: c.quantity + 1 }
-            : c
+          c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c
         )
       : [...cart, { ...item, quantity: 1 }];
 
     setCart(updated);
+    showToast(`Added ${item.name}`);
   };
 
   const decreaseQuantity = (id: number) => {
-    setCart(cart.map((item) =>
-      item.id === id && item.quantity > 1
-        ? { ...item, quantity: item.quantity - 1 }
-        : item
-    ).filter(item => item.quantity > 0));
+    setCart((prev) =>
+      prev
+        .map((item) =>
+          item.id === id && item.quantity > 1
+            ? { ...item, quantity: item.quantity - 1 }
+            : item
+        )
+        .filter((item) => item.quantity > 0)
+    );
   };
 
   const removeFromCart = (id: number) => {
+    const item = cart.find((c) => c.id === id);
     setCart(cart.filter((c) => c.id !== id));
+    if (item) showToast(`Removed ${item.name}`);
   };
 
   // ================= CHECKOUT =================
   const checkout = async () => {
     if (!user || cart.length === 0) return;
 
-    const subtotal = cart.reduce(
-      (sum, item) => sum + item.price * item.quantity,
-      0
-    );
-
-    const tax = Math.round(subtotal * 0.05); // 5% tax
+    const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const tax = Math.round(subtotal * 0.05);
     const grandTotal = subtotal + tax;
 
     if (grandTotal > balance) {
-      Alert.alert("Insufficient Balance", `You need UGX ${grandTotal.toLocaleString()}`);
+      showToast(`Insufficient balance! You need UGX ${grandTotal.toLocaleString()}`, "error");
       return;
     }
 
     try {
       const newBalance = await withdrawMoney(grandTotal);
-
       setBalance(newBalance);
       setCart([]);
 
-      Alert.alert(
-        "Order Successful",
-        `Paid UGX ${grandTotal.toLocaleString()}\n\nEnjoy your meal!`
-      );
+      showToast(`🎉 Order placed successfully! Paid UGX ${grandTotal.toLocaleString()}`);
     } catch (err: any) {
-      Alert.alert("Error", err.message);
+      showToast(err.message || "Checkout failed", "error");
     }
   };
 
@@ -147,16 +199,22 @@ export default function FoodOrderingApp() {
   if (!user) {
     return (
       <SafeAreaView style={styles.container}>
-        <Text style={styles.title}>Food App Login</Text>
-        <TextInput
-          placeholder="Enter username"
-          style={styles.input}
-          value={inputUsername}
-          onChangeText={setInputUsername}
-        />
-        <TouchableOpacity style={styles.loginBtn} onPress={handleLogin}>
-          <Text style={{ color: "#fff", fontWeight: "bold" }}>Login</Text>
-        </TouchableOpacity>
+        <View style={styles.loginContainer}>
+          <Text style={styles.title}>🍔 Food Delivery</Text>
+          <Text style={styles.subtitle}>Order delicious meals instantly</Text>
+
+          <TextInput
+            placeholder="Enter your username"
+            style={styles.input}
+            value={inputUsername}
+            onChangeText={setInputUsername}
+            autoCapitalize="none"
+          />
+
+          <TouchableOpacity style={styles.loginBtn} onPress={handleLogin}>
+            <Text style={styles.loginBtnText}>Login / Create Account</Text>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
@@ -165,13 +223,19 @@ export default function FoodOrderingApp() {
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
-      <Text style={styles.header}>
-        {username} • UGX {balance.toLocaleString()}
-      </Text>
+      <View style={styles.headerContainer}>
+        <View>
+          <Text style={styles.welcomeText}>Hello, {username} 👋</Text>
+          <Text style={styles.balanceText}>Balance: UGX {balance.toLocaleString()}</Text>
+        </View>
+        <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
+          <Text style={styles.logoutText}>Logout</Text>
+        </TouchableOpacity>
+      </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 200 }}>
-        {/* Menu Items */}
-        <Text style={styles.sectionTitle}>Menu</Text>
+      <ScrollView contentContainerStyle={{ paddingBottom: 220 }}>
+        <Text style={styles.sectionTitle}>Popular Menu</Text>
+
         {menuItems.map((item) => (
           <TouchableOpacity
             key={item.id}
@@ -190,17 +254,20 @@ export default function FoodOrderingApp() {
             </View>
             <TouchableOpacity
               style={styles.addBtn}
-              onPress={() => addToCart(item)}
+              onPress={(e) => {
+                e.stopPropagation();
+                addToCart(item);
+              }}
             >
               <Text style={styles.addBtnText}>+</Text>
             </TouchableOpacity>
           </TouchableOpacity>
         ))}
 
-        {/* Cart Section - Like in the screenshot */}
+        {/* Cart Section */}
         {cart.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>Orders ({cart.length} items)</Text>
+            <Text style={styles.sectionTitle}>Your Orders ({cart.length})</Text>
             {cart.map((item) => (
               <View key={item.id} style={styles.cartItem}>
                 <Image source={{ uri: item.image }} style={styles.cartImage} />
@@ -222,7 +289,7 @@ export default function FoodOrderingApp() {
                 </View>
 
                 <TouchableOpacity onPress={() => removeFromCart(item.id)}>
-                  <Text style={{ color: "#ff4444", fontSize: 18 }}>✕</Text>
+                  <Text style={styles.removeIcon}>✕</Text>
                 </TouchableOpacity>
               </View>
             ))}
@@ -230,7 +297,7 @@ export default function FoodOrderingApp() {
         )}
       </ScrollView>
 
-      {/* Payment Summary & Process Order Button */}
+      {/* Fixed Payment Summary */}
       {cart.length > 0 && (
         <View style={styles.paymentContainer}>
           <View style={styles.paymentSummary}>
@@ -250,10 +317,25 @@ export default function FoodOrderingApp() {
 
           <TouchableOpacity style={styles.processBtn} onPress={checkout}>
             <Text style={styles.processBtnText}>
-              Process Order ({cart.length} Items)
+              Process Order • {cart.length} Items
             </Text>
           </TouchableOpacity>
         </View>
+      )}
+
+      {/* Toast Notification */}
+      {toast.visible && (
+        <Animated.View
+          style={[
+            styles.toast,
+            {
+              opacity: toastAnim,
+              backgroundColor: toast.type === "success" ? "#32CD32" : "#ff4444",
+            },
+          ]}
+        >
+          <Text style={styles.toastText}>{toast.message}</Text>
+        </Animated.View>
       )}
     </SafeAreaView>
   );
@@ -261,20 +343,40 @@ export default function FoodOrderingApp() {
 
 // ================= STYLES =================
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0B0B0B", padding: 16 },
-  title: { color: "#fff", fontSize: 28, marginBottom: 20, textAlign: "center" },
-  header: { color: "#32CD32", fontSize: 18, marginBottom: 15, fontWeight: "bold" },
+  container: { flex: 1, backgroundColor: "#0B0B0B" },
+
+  loginContainer: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 30,
+  },
+  title: { color: "#fff", fontSize: 32, fontWeight: "bold", textAlign: "center", marginBottom: 8 },
+  subtitle: { color: "#aaa", fontSize: 16, textAlign: "center", marginBottom: 40 },
+
+  headerContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "#1E1E1E",
+  },
+  welcomeText: { color: "#fff", fontSize: 20, fontWeight: "bold" },
+  balanceText: { color: "#32CD32", fontSize: 16, marginTop: 2 },
+  logoutBtn: { padding: 8 },
+  logoutText: { color: "#ff6666", fontWeight: "600" },
 
   sectionTitle: {
     color: "#fff",
     fontSize: 20,
     fontWeight: "bold",
     marginVertical: 15,
+    paddingHorizontal: 16,
   },
 
   card: {
     flexDirection: "row",
     backgroundColor: "#1E1E1E",
+    marginHorizontal: 16,
     marginBottom: 12,
     borderRadius: 12,
     overflow: "hidden",
@@ -297,10 +399,11 @@ const styles = StyleSheet.create({
   },
   addBtnText: { color: "#fff", fontSize: 24, fontWeight: "bold" },
 
-  // Cart Item
+  // Cart
   cartItem: {
     flexDirection: "row",
     backgroundColor: "#1E1E1E",
+    marginHorizontal: 16,
     padding: 12,
     borderRadius: 12,
     marginBottom: 10,
@@ -323,6 +426,8 @@ const styles = StyleSheet.create({
   qtyText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
   quantity: { color: "#fff", fontSize: 16, marginHorizontal: 8, fontWeight: "600" },
 
+  removeIcon: { color: "#ff4444", fontSize: 20, padding: 8 },
+
   // Payment
   paymentContainer: {
     position: "absolute",
@@ -333,6 +438,10 @@ const styles = StyleSheet.create({
     padding: 16,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
   },
   paymentSummary: {
     flexDirection: "row",
@@ -369,11 +478,39 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 10,
     marginBottom: 15,
+    fontSize: 16,
   },
   loginBtn: {
     backgroundColor: "#32CD32",
     padding: 16,
     borderRadius: 12,
     alignItems: "center",
+  },
+  loginBtnText: {
+    color: "#000",
+    fontSize: 17,
+    fontWeight: "bold",
+  },
+
+  // Toast Notification
+  toast: {
+    position: "absolute",
+    bottom: 100,
+    left: 20,
+    right: 20,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    zIndex: 1000,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  toastText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 16,
+    textAlign: "center",
   },
 });
