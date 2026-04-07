@@ -11,7 +11,6 @@ import {
   TextInput,
   Animated,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
   loginOrCreateUser,
@@ -88,23 +87,9 @@ export default function FoodOrderingApp() {
     });
   };
 
-  // ================= PERSISTENT LOGIN =================
-  useEffect(() => {
-    const loadUser = async () => {
-      try {
-        const savedUsername = await AsyncStorage.getItem("savedUsername");
-        if (savedUsername) {
-          const u = await loginOrCreateUser(savedUsername);
-          setUser(u);
-          setUsername(u.username);
-          setBalance(u.balance);
-        }
-      } catch (e) {
-        console.log("No saved user found");
-      }
-    };
-    loadUser();
-  }, []);
+  // Note: Persistent login removed (no AsyncStorage).
+  // User must log in every time the app restarts.
+  // If you need persistence later, install expo-secure-store or react-native-mmkv.
 
   const handleLogin = async () => {
     if (!inputUsername.trim()) {
@@ -118,21 +103,18 @@ export default function FoodOrderingApp() {
       setUsername(u.username);
       setBalance(u.balance);
 
-      // Save username for future auto-login
-      await AsyncStorage.setItem("savedUsername", u.username);
-
       showToast(`Welcome back, ${u.username}!`);
     } catch (err: any) {
       showToast("Login failed. Try again.", "error");
     }
   };
 
-  const logout = async () => {
-    await AsyncStorage.removeItem("savedUsername");
+  const logout = () => {
     setUser(null);
     setUsername("");
     setBalance(0);
     setCart([]);
+    setInputUsername("");
     showToast("Logged out successfully");
   };
 
