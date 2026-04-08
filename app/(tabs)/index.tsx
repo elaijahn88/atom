@@ -207,7 +207,7 @@ export default function FoodOrderingApp() {
       {/* Header */}
       <View style={styles.headerContainer}>
         <View>
-          <Text style={styles.welcomeText}>Hello, {username} 👋</Text>
+          <Text style={styles.welcomeText}>{username} </Text>
           <Text style={styles.balanceText}>Balance: UGX {balance.toLocaleString()}</Text>
         </View>
         <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
