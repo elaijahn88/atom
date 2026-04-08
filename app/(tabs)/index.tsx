@@ -103,7 +103,7 @@ export default function FoodOrderingApp() {
       setUsername(u.username);
       setBalance(u.balance);
 
-      showToast(`Welcome back, ${u.username}!`);
+      showToast(`Welcome, ${u.username}!`);
     } catch (err: any) {
       showToast("Login failed. Try again.", "error");
     }
@@ -182,8 +182,8 @@ export default function FoodOrderingApp() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loginContainer}>
-          <Text style={styles.title}>🍔 Food Delivery</Text>
-          <Text style={styles.subtitle}>Order delicious meals instantly</Text>
+          <Text style={styles.title}>🍔 Delivery</Text>
+          <Text style={styles.subtitle}>coco</Text>
 
           <TextInput
             placeholder="Enter your username"
@@ -249,7 +249,7 @@ export default function FoodOrderingApp() {
         {/* Cart Section */}
         {cart.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>Your Orders ({cart.length})</Text>
+            <Text style={styles.sectionTitle}> Orders ({cart.length})</Text>
             {cart.map((item) => (
               <View key={item.id} style={styles.cartItem}>
                 <Image source={{ uri: item.image }} style={styles.cartImage} />
