@@ -54,7 +54,7 @@
           "defaultChannel": "default",
           "sounds": [
             "./sound.wav",
-            "./sound1.wav"
+            "./sound.wav"
           ],
           "enableBackgroundRemoteNotifications": false
         }
