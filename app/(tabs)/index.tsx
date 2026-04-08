@@ -22,18 +22,20 @@ import {
 export default function AgentScreen() {
   const [user, setUser] = useState<any>(null);
   const [amount, setAmount] = useState("");
-  const deviceId = getDeviceId();
+  const deviceId = getDeviceId();   // This is used as document ID (phone model)
 
   // ================= LOAD REAL USER =================
   const loadUser = async () => {
     try {
-      // ALWAYS create/load Elijah
+      // Ensure user exists (creates if not)
       await loginOrCreateUser("Elijah");
 
+      // Fetch user by deviceId (which is the document ID in Firestore)
       const freshUser = await getUser(deviceId);
       setUser(freshUser);
     } catch (err) {
       console.log("Load user error:", err);
+      Alert.alert("Error", "Failed to load user data");
     }
   };
 
@@ -49,20 +51,40 @@ export default function AgentScreen() {
       return Alert.alert("Error", "Enter a valid amount");
     }
 
+    if (!user) {
+      return Alert.alert("Error", "User not loaded yet");
+    }
+
     try {
-      if (!user) throw new Error("User not loaded");
+      let success = false;
 
-      if (type === "deposit") await depositMoney(deviceId, value);
-      if (type === "withdraw") await withdrawMoney(deviceId, value);
-      if (type === "freeze") await freezeMoney(deviceId, value);
-      if (type === "unfreeze") await unfreezeMoney(deviceId, value);
+      switch (type) {
+        case "deposit":
+          success = await depositMoney(deviceId, value);
+          break;
+        case "withdraw":
+          success = await withdrawMoney(deviceId, value);
+          break;
+        case "freeze":
+          success = await freezeMoney(deviceId, value);
+          break;
+        case "unfreeze":
+          success = await unfreezeMoney(deviceId, value);
+          break;
+        default:
+          return;
+      }
 
-      await loadUser(); // refresh from Firestore
-      setAmount("");
-
-    } catch (err) {
-      console.log(err);
-      Alert.alert("Error", "Transaction failed");
+      if (success) {
+        await loadUser();        // Refresh user data from Firestore
+        setAmount("");
+        Alert.alert("Success", `${type.charAt(0).toUpperCase() + type.slice(1)} successful!`);
+      } else {
+        Alert.alert("Error", "Transaction failed");
+      }
+    } catch (err: any) {
+      console.error("Transaction error:", err);
+      Alert.alert("Error", err.message || "Transaction failed");
     }
   };
 
@@ -79,7 +101,7 @@ export default function AgentScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0f172a" }}>
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>💼 </Text>
+        <Text style={styles.title}>💼 Agent Dashboard</Text>
 
         {/* USER CARD */}
         <View style={styles.card}>
@@ -91,15 +113,20 @@ export default function AgentScreen() {
             UGX {(user.balance || 0).toLocaleString()}
           </Text>
 
-          <Text style={styles.label}>Frozen</Text>
+          <Text style={styles.label}>Frozen Amount</Text>
           <Text style={styles.frozen}>
             UGX {(user.frozenBalance || 0).toLocaleString()}
+          </Text>
+
+          <Text style={styles.label}>Device ID (Document ID)</Text>
+          <Text style={{ color: "#64748b", fontSize: 12, marginTop: 4 }}>
+            {deviceId}
           </Text>
         </View>
 
         {/* INPUT */}
         <TextInput
-          placeholder="Enter Amount"
+          placeholder="Enter Amount (UGX)"
           placeholderTextColor="#999"
           keyboardType="numeric"
           value={amount}
@@ -109,26 +136,48 @@ export default function AgentScreen() {
 
         {/* ACTION BUTTONS */}
         <View style={styles.grid}>
-          <Btn title="Deposit" onPress={() => handleAction("deposit")} color="#16a34a" />
-          <Btn title="Withdraw" onPress={() => handleAction("withdraw")} color="#dc2626" />
-          <Btn title="Freeze" onPress={() => handleAction("freeze")} color="#f59e0b" />
-          <Btn title="Unfreeze" onPress={() => handleAction("unfreeze")} color="#3b82f6" />
+          <Btn 
+            title="Deposit" 
+            onPress={() => handleAction("deposit")} 
+            color="#16a34a" 
+          />
+          <Btn 
+            title="Withdraw" 
+            onPress={() => handleAction("withdraw")} 
+            color="#dc2626" 
+          />
+          <Btn 
+            title="Freeze" 
+            onPress={() => handleAction("freeze")} 
+            color="#f59e0b" 
+          />
+          <Btn 
+            title="Unfreeze" 
+            onPress={() => handleAction("unfreeze")} 
+            color="#3b82f6" 
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ================= BUTTON =================
+// ================= BUTTON COMPONENT =================
 const Btn = ({ title, onPress, color }: any) => (
-  <TouchableOpacity style={[styles.btn, { backgroundColor: color }]} onPress={onPress}>
+  <TouchableOpacity 
+    style={[styles.btn, { backgroundColor: color }]} 
+    onPress={onPress}
+  >
     <Text style={styles.btnText}>{title}</Text>
   </TouchableOpacity>
 );
 
 // ================= STYLES =================
 const styles = StyleSheet.create({
-  container: { padding: 20 },
+  container: { 
+    padding: 20,
+    paddingBottom: 40,
+  },
 
   center: {
     flex: 1,
@@ -138,49 +187,51 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    fontSize: 26,
+    fontSize: 28,
     color: "#fff",
     textAlign: "center",
-    marginBottom: 20,
+    marginBottom: 24,
     fontWeight: "bold",
   },
 
   card: {
     backgroundColor: "#1e293b",
     padding: 20,
-    borderRadius: 12,
-    marginBottom: 20,
+    borderRadius: 16,
+    marginBottom: 24,
   },
 
   label: {
     color: "#94a3b8",
-    marginTop: 10,
+    marginTop: 12,
+    fontSize: 14,
   },
 
   value: {
     color: "#fff",
     fontSize: 20,
-    fontWeight: "bold",
+    fontWeight: "600",
   },
 
   balance: {
     color: "#22c55e",
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "bold",
   },
 
   frozen: {
     color: "#38bdf8",
-    fontSize: 18,
-    fontWeight: "bold",
+    fontSize: 20,
+    fontWeight: "600",
   },
 
   input: {
     backgroundColor: "#1e293b",
-    padding: 14,
-    borderRadius: 10,
+    padding: 16,
+    borderRadius: 12,
     color: "#fff",
-    marginBottom: 20,
+    fontSize: 18,
+    marginBottom: 24,
   },
 
   grid: {
@@ -191,14 +242,15 @@ const styles = StyleSheet.create({
 
   btn: {
     width: "48%",
-    padding: 16,
+    paddingVertical: 18,
     borderRadius: 12,
-    marginBottom: 15,
+    marginBottom: 16,
     alignItems: "center",
   },
 
   btnText: {
     color: "#fff",
     fontWeight: "bold",
+    fontSize: 16,
   },
 });
