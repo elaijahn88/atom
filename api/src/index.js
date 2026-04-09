@@ -1,25 +1,21 @@
-// index.js
+"use strict";
 const express = require("express");
 const cors = require("cors");
+const dotenv = require("dotenv");
+
+dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Routes
 app.get("/", (req, res) => {
-  res.json({ message: "Hello from Render!" });
+  res.send("API is running 🚀");
 });
 
-// Example API endpoint
-app.get("/api/hello", (req, res) => {
-  res.json({ message: "This is your backend API running!" });
-});
+const PORT = process.env.PORT || 3000;
 
-// Start server
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
