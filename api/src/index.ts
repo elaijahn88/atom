@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import admin from "firebase-admin";
-import OpenAI from "openai";
+// import OpenAI from "openai"; // 👈 Commented out
 
 dotenv.config();
 
@@ -24,11 +24,11 @@ admin.initializeApp({
 const db = admin.firestore();
 
 // ------------------------
-// OpenAI Setup
+// OpenAI Setup (Commented Out)
 // ------------------------
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// const openai = new OpenAI({
+//   apiKey: process.env.OPENAI_API_KEY,
+// });
 
 // ------------------------
 // Routes
@@ -49,19 +49,19 @@ app.get("/users", async (req, res) => {
   }
 });
 
-// Example OpenAI route
-app.post("/chat", async (req, res) => {
-  try {
-    const { prompt } = req.body;
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-    });
-    res.json(response.choices[0].message);
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
+// Example OpenAI route (Commented Out)
+// app.post("/chat", async (req, res) => {
+//   try {
+//     const { prompt } = req.body;
+//     const response = await openai.chat.completions.create({
+//       model: "gpt-4o-mini",
+//       messages: [{ role: "user", content: prompt }],
+//     });
+//     res.json(response.choices[0].message);
+//   } catch (err) {
+//     res.status(500).json({ error: (err as Error).message });
+//   }
+// });
 
 // ------------------------
 // Start Server
