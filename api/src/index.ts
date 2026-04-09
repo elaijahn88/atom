@@ -1,4 +1,3 @@
-// app.ts
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -99,8 +98,6 @@ app.put("/users/:id/balance", async (req, res) => {
 // ------------------------
 // ===== TRANSACTIONS =====
 // ------------------------
-
-// Add transaction
 app.post("/transactions", async (req, res) => {
   try {
     const { userId, type, amount, description } = req.body;
@@ -109,7 +106,7 @@ app.post("/transactions", async (req, res) => {
 
     const transactionRef = await db.collection("transactions").add({
       userId,
-      type, // "credit" or "debit"
+      type,
       amount,
       description: description || "",
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -121,7 +118,6 @@ app.post("/transactions", async (req, res) => {
   }
 });
 
-// Get user transactions
 app.get("/users/:id/transactions", async (req, res) => {
   try {
     const snap = await db
@@ -142,8 +138,6 @@ app.get("/users/:id/transactions", async (req, res) => {
 // ------------------------
 // ===== FOOD ORDERS =====
 // ------------------------
-
-// Create order
 app.post("/orders", async (req, res) => {
   try {
     const { userId, items, totalPrice, status } = req.body;
@@ -164,7 +158,6 @@ app.post("/orders", async (req, res) => {
   }
 });
 
-// Get user orders
 app.get("/users/:id/orders", async (req, res) => {
   try {
     const snap = await db.collection("orders").where("userId", "==", req.params.id).get();
@@ -176,7 +169,6 @@ app.get("/users/:id/orders", async (req, res) => {
   }
 });
 
-// Update order status
 app.put("/orders/:id/status", async (req, res) => {
   try {
     const { status } = req.body;
@@ -192,8 +184,6 @@ app.put("/orders/:id/status", async (req, res) => {
 // ------------------------
 // ===== MARKETPLACE =====
 // ------------------------
-
-// Add product
 app.post("/products", async (req, res) => {
   try {
     const { sellerId, name, description, price, stock } = req.body;
@@ -215,7 +205,6 @@ app.post("/products", async (req, res) => {
   }
 });
 
-// Get all products
 app.get("/products", async (req, res) => {
   try {
     const snap = await db.collection("products").get();
@@ -227,7 +216,6 @@ app.get("/products", async (req, res) => {
   }
 });
 
-// Update product
 app.put("/products/:id", async (req, res) => {
   try {
     const { stock, price } = req.body;
