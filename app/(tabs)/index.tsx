@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from "react";
+import React from "react";
 import { View } from "react-native";
-
+import { GLView } from "expo-gl";
 import {
   Engine,
   Scene,
@@ -8,17 +8,12 @@ import {
   HemisphericLight,
   Vector3,
   MeshBuilder,
-} from "babylonjs";
+} from "@babylonjs/core";
 
 export default function App() {
-  const canvasRef = useRef<any>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    // Engine
-    const engine = new Engine(canvas, true);
+  const onContextCreate = async (gl) => {
+    // Create Babylon engine using Expo GL context
+    const engine = new Engine(gl, true);
     const scene = new Scene(engine);
 
     // Camera
@@ -30,19 +25,19 @@ export default function App() {
       new Vector3(0, 1, 0),
       scene
     );
-    camera.attachControl(canvas, true);
+    camera.attachControl(true);
 
     // Light
     new HemisphericLight("light", new Vector3(0, 1, 0), scene);
 
     // Ground
-    const ground = MeshBuilder.CreateGround(
+    MeshBuilder.CreateGround(
       "ground",
       { width: 20, height: 20 },
       scene
     );
 
-    // Sphere (player placeholder)
+    // Sphere
     const sphere = MeshBuilder.CreateSphere(
       "sphere",
       { diameter: 2 },
@@ -50,31 +45,23 @@ export default function App() {
     );
     sphere.position.y = 1;
 
-    // Simple animation
+    // Animation
     scene.onBeforeRenderObservable.add(() => {
-      sphere.rotation.y += 0.01;
+      sphere.rotation.y += 0.02;
     });
 
     // Render loop
     engine.runRenderLoop(() => {
       scene.render();
+      gl.endFrameEXP(); // VERY IMPORTANT for APK
     });
-
-    // Resize
-    const onResize = () => engine.resize();
-    window.addEventListener("resize", onResize);
-
-    return () => {
-      window.removeEventListener("resize", onResize);
-      engine.dispose();
-    };
-  }, []);
+  };
 
   return (
     <View style={{ flex: 1 }}>
-      <canvas
-        ref={canvasRef}
-        style={{ width: "100%", height: "100%" }}
+      <GLView
+        style={{ flex: 1 }}
+        onContextCreate={onContextCreate}
       />
     </View>
   );
