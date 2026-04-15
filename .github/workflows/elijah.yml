@@ -1,1 +1,7 @@
 
+name: Install Firebase Auth
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
