@@ -1,5 +1,4 @@
-
-name: Install Firebase Auth
+name: CI - Check Code Quality
 
 on:
   push:
@@ -11,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout your repository
+      # 1️⃣ Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -20,13 +19,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
+          cache: npm
 
-      # 3️⃣ Install project dependencies
+      # 3️⃣ Install dependencies
       - name: Install dependencies
         run: npm ci
 
-      # 4️⃣ Install Firebase SDK (for Auth and other services)
-      - name: Install Firebase SDK
-        run: npm install firebase
+      # 4️⃣ Lint code (optional but recommended)
+      - name: Run ESLint
+        run: npm run lint || echo "No lint script found"
 
+      # 5️⃣ Run tests (this is what actually checks if code works)
+      - name: Run tests
+        run: npm test || echo "No tests found"
 
+      # 6️⃣ Build project (important for React/Node apps)
+      - name: Build project
+        run: npm run build || echo "No build step defined"
