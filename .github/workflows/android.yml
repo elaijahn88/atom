@@ -2,7 +2,7 @@ name: CI - Check Code Quality
 
 on:
   push:
-    branches: [ main ]
+    branches: [ threed]
   pull_request:
 
 jobs:
