@@ -8,7 +8,7 @@ let users = {};
 
 // ROOT
 app.get("/", (req, res) => {
-  res.send("API running 🚀");
+  res.send(" fly 🚀");
 });
 
 // CREATE / GET USER
