@@ -8,7 +8,7 @@ app.use(express.json());
 
 // Home route
 app.get("/", (req, res) => {
-  res.send("Hello from Uganda 🇺🇬");
+  res.send("Hello from coco 🇺🇬");
 });
 
 // GET API
