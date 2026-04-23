@@ -1,91 +1,44 @@
-
 const express = require("express");
-const app = express();
 
+const app = express();
+const PORT = 3000;
+
+// Middleware to parse JSON
 app.use(express.json());
 
-// MULTI USERS
-let users = {};
-
-// ROOT
+// Home route
 app.get("/", (req, res) => {
-  res.send("Elijah....🚀");
+  res.send("Hello from Uganda 🇺🇬");
 });
 
-// CREATE / GET USER
-app.post("/user", (req, res) => {
-  const { uid, username, balance, frozenBalance } = req.body;
-
-  if (!uid) {
-    return res.status(400).json({ error: "UID required" });
-  }
-
-  if (!users[uid]) {
-    users[uid] = {
-      username: username || "Agent",
-      balance: balance || 0,
-      frozenBalance: frozenBalance || 0,
-    };
-  }
-
-  res.json(users[uid]);
+// GET API
+app.get("/api/users", (req, res) => {
+  const users = [
+    { id: 1, name: "Coco" },
+    { id: 2, name: "John" },
+  ];
+  res.json(users);
 });
 
-// DEPOSIT
-app.post("/deposit", (req, res) => {
-  const { uid, amount } = req.body;
-  const user = users[uid];
-
-  if (!user) return res.json({ success: false });
-
-  user.balance += amount;
-
-  res.json({ success: true, user });
+// POST API
+app.post("/api/users", (req, res) => {
+  const newUser = req.body;
+  res.json({
+    message: "User created successfully",
+    user: newUser,
+  });
 });
 
-// WITHDRAW
-app.post("/withdraw", (req, res) => {
-  const { uid, amount } = req.body;
-  const user = users[uid];
-
-  if (!user || user.balance < amount) {
-    return res.json({ success: false });
-  }
-
-  user.balance -= amount;
-
-  res.json({ success: true, user });
+// Dynamic route
+app.get("/api/users/:id", (req, res) => {
+  const userId = req.params.id;
+  res.json({
+    id: userId,
+    name: "Sample User",
+  });
 });
 
-// FREEZE
-app.post("/freeze", (req, res) => {
-  const { uid, amount } = req.body;
-  const user = users[uid];
-
-  if (!user || user.balance < amount) {
-    return res.json({ success: false });
-  }
-
-  user.balance -= amount;
-  user.frozenBalance += amount;
-
-  res.json({ success: true, user });
+// Start server
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
 });
-
-// UNFREEZE
-app.post("/unfreeze", (req, res) => {
-  const { uid, amount } = req.body;
-  const user = users[uid];
-
-  if (!user || user.frozenBalance < amount) {
-    return res.json({ success: false });
-  }
-
-  user.frozenBalance -= amount;
-  user.balance += amount;
-
-  res.json({ success: true, user });
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server running 🚀"));
