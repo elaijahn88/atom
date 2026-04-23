@@ -9,7 +9,7 @@ let users = {};
 
 // ROOT
 app.get("/", (req, res) => {
-  res.send("API running 🚀");
+  res.send("Elijah....🚀");
 });
 
 // CREATE / GET USER
