@@ -1,9 +1,9 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "main": "ap.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node ap.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2"
