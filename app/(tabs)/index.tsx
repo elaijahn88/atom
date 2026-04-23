@@ -14,43 +14,36 @@ import {
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 
-// 🌐 YOUR LIVE API
+import { auth, db } from "../firebase";
+import { signInAnonymously } from "firebase/auth";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+
+// 🌐 API
 const API_URL = "https://api-1-lbzf.onrender.com";
 
-// ================= API HELPER =================
+// ================= API =================
 const apiRequest = async (endpoint: string, method = "GET", body?: any) => {
-  const res = await fetch(`${API_URL}${endpoint}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  try {
+    const res = await fetch(`${API_URL}${endpoint}`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
 
-  if (!res.ok) throw new Error("Request failed");
+    if (!res.ok) throw new Error("Server error");
 
-  return res.json();
+    return res.json();
+  } catch (err) {
+    throw new Error("Network error (Render might be asleep)");
+  }
 };
 
-// ================= NOTIFICATION SETUP =================
+// ================= NOTIFICATIONS =================
 async function registerForPushNotificationsAsync() {
-  if (!Device.isDevice) {
-    Alert.alert("Error", "Use a real device");
-    return;
-  }
+  if (!Device.isDevice) return;
 
-  const { status: existingStatus } =
-    await Notifications.getPermissionsAsync();
-
-  let finalStatus = existingStatus;
-
-  if (existingStatus !== "granted") {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-
-  if (finalStatus !== "granted") {
-    Alert.alert("Permission denied");
-    return;
-  }
+  const { status } = await Notifications.requestPermissionsAsync();
+  if (status !== "granted") return;
 
   const token = (await Notifications.getExpoPushTokenAsync()).data;
   console.log("Push Token:", token);
@@ -65,10 +58,9 @@ async function registerForPushNotificationsAsync() {
   return token;
 }
 
-// 🔔 LOCAL NOTIFICATION
 const sendNotification = async (title: string, body: string) => {
   await Notifications.scheduleNotificationAsync({
-    content: { title, body, sound: true },
+    content: { title, body },
     trigger: null,
   });
 };
@@ -81,8 +73,36 @@ export default function AgentScreen() {
   // ================= LOAD USER =================
   const loadUser = async () => {
     try {
-      const data = await apiRequest("/user");
-      setUser(data);
+      // LOGIN
+      if (!auth.currentUser) {
+        await signInAnonymously(auth);
+      }
+
+      const uid = auth.currentUser?.uid;
+      const userRef = doc(db, "users", uid!);
+      const snap = await getDoc(userRef);
+
+      let firebaseUser;
+
+      if (!snap.exists()) {
+        firebaseUser = {
+          username: "Agent-" + uid!.slice(0, 5),
+          balance: 0,
+          frozenBalance: 0,
+        };
+
+        await setDoc(userRef, firebaseUser);
+      } else {
+        firebaseUser = snap.data();
+      }
+
+      // SYNC WITH BACKEND
+      const apiUser = await apiRequest("/user", "POST", {
+        uid,
+        ...firebaseUser,
+      });
+
+      setUser(apiUser);
     } catch (err) {
       console.log(err);
       Alert.alert("Error", "Failed to load user");
@@ -97,51 +117,38 @@ export default function AgentScreen() {
   // ================= ACTION =================
   const handleAction = async (type: string) => {
     const value = Number(amount);
+    const uid = auth.currentUser?.uid;
 
     if (!value || value <= 0) {
       return Alert.alert("Error", "Enter valid amount");
     }
 
     try {
-      let endpoint = "";
-
-      switch (type) {
-        case "deposit":
-          endpoint = "/deposit";
-          break;
-        case "withdraw":
-          endpoint = "/withdraw";
-          break;
-        case "freeze":
-          endpoint = "/freeze";
-          break;
-        case "unfreeze":
-          endpoint = "/unfreeze";
-          break;
-        default:
-          return;
-      }
-
-      const res = await apiRequest(endpoint, "POST", { amount: value });
+      const res = await apiRequest(`/${type}`, "POST", {
+        uid,
+        amount: value,
+      });
 
       if (res.success) {
         setUser(res.user);
         setAmount("");
 
+        // 🔥 Update Firebase too
+        const userRef = doc(db, "users", uid!);
+        await updateDoc(userRef, res.user);
+
         const msg = `${type.toUpperCase()} UGX ${value.toLocaleString()} successful`;
 
         Alert.alert("Success", msg);
-        await sendNotification("Transaction Successful", msg);
+        await sendNotification("Transaction", msg);
       } else {
         Alert.alert("Error", "Transaction failed");
       }
     } catch (err: any) {
-      console.error(err);
-      Alert.alert("Error", err.message || "Failed");
+      Alert.alert("Error", err.message);
     }
   };
 
-  // ================= LOADING =================
   if (!user) {
     return (
       <SafeAreaView style={styles.center}>
@@ -150,7 +157,6 @@ export default function AgentScreen() {
     );
   }
 
-  // ================= UI =================
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0f172a" }}>
       <ScrollView contentContainerStyle={styles.container}>
@@ -191,65 +197,23 @@ export default function AgentScreen() {
   );
 }
 
-// ================= BUTTON =================
 const Btn = ({ title, onPress, color }: any) => (
   <TouchableOpacity style={[styles.btn, { backgroundColor: color }]} onPress={onPress}>
     <Text style={styles.btnText}>{title}</Text>
   </TouchableOpacity>
 );
 
-// ================= STYLES =================
 const styles = StyleSheet.create({
   container: { padding: 20 },
-
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#0f172a",
-  },
-
-  title: {
-    fontSize: 28,
-    color: "#fff",
-    textAlign: "center",
-    marginBottom: 24,
-    fontWeight: "bold",
-  },
-
-  card: {
-    backgroundColor: "#1e293b",
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 24,
-  },
-
+  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#0f172a" },
+  title: { fontSize: 28, color: "#fff", textAlign: "center", marginBottom: 24, fontWeight: "bold" },
+  card: { backgroundColor: "#1e293b", padding: 20, borderRadius: 16, marginBottom: 24 },
   label: { color: "#94a3b8", marginTop: 12 },
   value: { color: "#fff", fontSize: 20 },
   balance: { color: "#22c55e", fontSize: 24, fontWeight: "bold" },
   frozen: { color: "#38bdf8", fontSize: 20 },
-
-  input: {
-    backgroundColor: "#1e293b",
-    padding: 16,
-    borderRadius: 12,
-    color: "#fff",
-    marginBottom: 24,
-  },
-
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-
-  btn: {
-    width: "48%",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    alignItems: "center",
-  },
-
+  input: { backgroundColor: "#1e293b", padding: 16, borderRadius: 12, color: "#fff", marginBottom: 24 },
+  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  btn: { width: "48%", padding: 16, borderRadius: 12, marginBottom: 12, alignItems: "center" },
   btnText: { color: "#fff", fontWeight: "bold" },
 });
