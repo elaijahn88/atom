@@ -1,4 +1,3 @@
-// AgentScreen.tsx
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -9,7 +8,11 @@ import {
   Alert,
   ScrollView,
   SafeAreaView,
+  Platform,
 } from "react-native";
+
+import * as Notifications from "expo-notifications";
+import * as Device from "expo-device";
 
 import { loginOrCreateUser, getDeviceId, getUser } from "../lib/acc";
 import {
@@ -19,18 +22,63 @@ import {
   unfreezeMoney,
 } from "../lib/agent";
 
+// ================= NOTIFICATION SETUP =================
+async function registerForPushNotificationsAsync() {
+  if (!Device.isDevice) {
+    Alert.alert("Error", "Use a real device for notifications");
+    return;
+  }
+
+  const { status: existingStatus } =
+    await Notifications.getPermissionsAsync();
+
+  let finalStatus = existingStatus;
+
+  if (existingStatus !== "granted") {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+
+  if (finalStatus !== "granted") {
+    Alert.alert("Permission denied", "Enable notifications in settings");
+    return;
+  }
+
+  const token = (await Notifications.getExpoPushTokenAsync()).data;
+  console.log("Push Token:", token);
+
+  if (Platform.OS === "android") {
+    await Notifications.setNotificationChannelAsync("default", {
+      name: "default",
+      importance: Notifications.AndroidImportance.MAX,
+    });
+  }
+
+  return token;
+}
+
+// 🔔 SEND LOCAL NOTIFICATION
+const sendNotification = async (title: string, body: string) => {
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title,
+      body,
+      sound: true,
+    },
+    trigger: null,
+  });
+};
+
+// ================= MAIN SCREEN =================
 export default function AgentScreen() {
   const [user, setUser] = useState<any>(null);
   const [amount, setAmount] = useState("");
-  const deviceId = getDeviceId();   // This is used as document ID (phone model)
+  const deviceId = getDeviceId();
 
-  // ================= LOAD REAL USER =================
+  // ================= LOAD USER =================
   const loadUser = async () => {
     try {
-      // Ensure user exists (creates if not)
       await loginOrCreateUser("Elijah");
-
-      // Fetch user by deviceId (which is the document ID in Firestore)
       const freshUser = await getUser(deviceId);
       setUser(freshUser);
     } catch (err) {
@@ -41,6 +89,7 @@ export default function AgentScreen() {
 
   useEffect(() => {
     loadUser();
+    registerForPushNotificationsAsync();
   }, []);
 
   // ================= ACTION HANDLER =================
@@ -76,9 +125,16 @@ export default function AgentScreen() {
       }
 
       if (success) {
-        await loadUser();        // Refresh user data from Firestore
+        await loadUser();
         setAmount("");
-        Alert.alert("Success", `${type.charAt(0).toUpperCase() + type.slice(1)} successful!`);
+
+        const msg = `${type.toUpperCase()} of UGX ${value.toLocaleString()} successful`;
+
+        // In-app alert
+        Alert.alert("Success", msg);
+
+        // 🔔 SYSTEM NOTIFICATION
+        await sendNotification("Transaction Successful", msg);
       } else {
         Alert.alert("Error", "Transaction failed");
       }
@@ -103,7 +159,6 @@ export default function AgentScreen() {
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>💼 Agent Dashboard</Text>
 
-        {/* USER CARD */}
         <View style={styles.card}>
           <Text style={styles.label}>Username</Text>
           <Text style={styles.value}>{user.username}</Text>
@@ -118,13 +173,10 @@ export default function AgentScreen() {
             UGX {(user.frozenBalance || 0).toLocaleString()}
           </Text>
 
-          <Text style={styles.label}>Device ID (Document ID)</Text>
-          <Text style={{ color: "#64748b", fontSize: 12, marginTop: 4 }}>
-            {deviceId}
-          </Text>
+          <Text style={styles.label}>Device ID</Text>
+          <Text style={styles.deviceId}>{deviceId}</Text>
         </View>
 
-        {/* INPUT */}
         <TextInput
           placeholder="Enter Amount (UGX)"
           placeholderTextColor="#999"
@@ -134,50 +186,27 @@ export default function AgentScreen() {
           style={styles.input}
         />
 
-        {/* ACTION BUTTONS */}
         <View style={styles.grid}>
-          <Btn 
-            title="Deposit" 
-            onPress={() => handleAction("deposit")} 
-            color="#16a34a" 
-          />
-          <Btn 
-            title="Withdraw" 
-            onPress={() => handleAction("withdraw")} 
-            color="#dc2626" 
-          />
-          <Btn 
-            title="Freeze" 
-            onPress={() => handleAction("freeze")} 
-            color="#f59e0b" 
-          />
-          <Btn 
-            title="Unfreeze" 
-            onPress={() => handleAction("unfreeze")} 
-            color="#3b82f6" 
-          />
+          <Btn title="Deposit" onPress={() => handleAction("deposit")} color="#16a34a" />
+          <Btn title="Withdraw" onPress={() => handleAction("withdraw")} color="#dc2626" />
+          <Btn title="Freeze" onPress={() => handleAction("freeze")} color="#f59e0b" />
+          <Btn title="Unfreeze" onPress={() => handleAction("unfreeze")} color="#3b82f6" />
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ================= BUTTON COMPONENT =================
+// ================= BUTTON =================
 const Btn = ({ title, onPress, color }: any) => (
-  <TouchableOpacity 
-    style={[styles.btn, { backgroundColor: color }]} 
-    onPress={onPress}
-  >
+  <TouchableOpacity style={[styles.btn, { backgroundColor: color }]} onPress={onPress}>
     <Text style={styles.btnText}>{title}</Text>
   </TouchableOpacity>
 );
 
 // ================= STYLES =================
 const styles = StyleSheet.create({
-  container: { 
-    padding: 20,
-    paddingBottom: 40,
-  },
+  container: { padding: 20, paddingBottom: 40 },
 
   center: {
     flex: 1,
@@ -201,29 +230,15 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
 
-  label: {
-    color: "#94a3b8",
-    marginTop: 12,
-    fontSize: 14,
-  },
+  label: { color: "#94a3b8", marginTop: 12 },
 
-  value: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "600",
-  },
+  value: { color: "#fff", fontSize: 20, fontWeight: "600" },
 
-  balance: {
-    color: "#22c55e",
-    fontSize: 24,
-    fontWeight: "bold",
-  },
+  balance: { color: "#22c55e", fontSize: 24, fontWeight: "bold" },
 
-  frozen: {
-    color: "#38bdf8",
-    fontSize: 20,
-    fontWeight: "600",
-  },
+  frozen: { color: "#38bdf8", fontSize: 20, fontWeight: "600" },
+
+  deviceId: { color: "#64748b", fontSize: 12, marginTop: 4 },
 
   input: {
     backgroundColor: "#1e293b",
