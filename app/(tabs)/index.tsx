@@ -15,7 +15,6 @@ import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// 🌐 API
 const API_URL = "https://api-1-lbzf.onrender.com";
 
 // ================= API =================
@@ -27,84 +26,99 @@ const apiRequest = async (endpoint: string, method = "GET", body?: any) => {
       body: body ? JSON.stringify(body) : undefined,
     });
 
-    if (!res.ok) throw new Error("Server error");
+    const data = await res.json().catch(() => ({}));
 
-    return res.json();
-  } catch (err) {
-    throw new Error("Network error (Render might be asleep)");
+    if (!res.ok) {
+      throw new Error(data.error || "Server error");
+    }
+
+    return data;
+  } catch (err: any) {
+    throw new Error(err.message || "Network error (server asleep)");
   }
 };
 
 // ================= UID =================
 const getUID = async () => {
-  let uid = await AsyncStorage.getItem("uid");
+  try {
+    let uid = await AsyncStorage.getItem("uid");
 
-  if (!uid) {
-    uid = "agent-" + Math.random().toString(36).slice(2);
-    await AsyncStorage.setItem("uid", uid);
+    if (!uid) {
+      uid = "agent-" + Math.random().toString(36).slice(2);
+      await AsyncStorage.setItem("uid", uid);
+    }
+
+    return uid;
+  } catch {
+    return "agent-fallback";
   }
-
-  return uid;
 };
 
 // ================= NOTIFICATIONS =================
 async function registerForPushNotificationsAsync() {
-  if (!Device.isDevice) return;
+  try {
+    if (!Device.isDevice) return null;
 
-  const { status } = await Notifications.requestPermissionsAsync();
-  if (status !== "granted") return;
+    const { status } = await Notifications.requestPermissionsAsync();
+    if (status !== "granted") return null;
 
-  const token = (await Notifications.getExpoPushTokenAsync()).data;
-  console.log("Push Token:", token);
+    const token = (await Notifications.getExpoPushTokenAsync()).data;
 
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("default", {
-      name: "default",
-      importance: Notifications.AndroidImportance.MAX,
-    });
+    if (Platform.OS === "android") {
+      await Notifications.setNotificationChannelAsync("default", {
+        name: "default",
+        importance: Notifications.AndroidImportance.MAX,
+      });
+    }
+
+    return token;
+  } catch {
+    return null;
   }
-
-  return token;
 }
 
 const sendNotification = async (title: string, body: string) => {
-  await Notifications.scheduleNotificationAsync({
-    content: { title, body },
-    trigger: null,
-  });
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: { title, body },
+      trigger: null,
+    });
+  } catch {}
 };
 
 // ================= MAIN =================
 export default function AgentScreen() {
   const [user, setUser] = useState<any>(null);
   const [amount, setAmount] = useState("");
-  const [uid, setUid] = useState<string>("");
-
-  const loadUser = async () => {
-    try {
-      const id = await getUID();
-      setUid(id);
-
-      const apiUser = await apiRequest("/user", "POST", {
-        uid: id,
-        username: "Agent",
-      });
-
-      setUser(apiUser);
-    } catch (err) {
-      Alert.alert("Error", "Failed to load user");
-    }
-  };
+  const [uid, setUid] = useState("");
 
   useEffect(() => {
-    loadUser();
-    registerForPushNotificationsAsync();
+    const init = async () => {
+      try {
+        const token = await registerForPushNotificationsAsync();
+        const id = await getUID();
+
+        setUid(id);
+
+        const apiUser = await apiRequest("/user", "POST", {
+          uid: id,
+          username: "Agent",
+          pushToken: token,
+        });
+
+        setUser(apiUser);
+      } catch (err) {
+        Alert.alert("Error", "Failed to connect to server");
+      }
+    };
+
+    init();
   }, []);
 
   const handleAction = async (type: string) => {
     const value = Number(amount);
 
-    if (!value || value <= 0) {
+    if (isNaN(value) || value <= 0) {
       return Alert.alert("Error", "Enter valid amount");
     }
 
@@ -123,7 +137,7 @@ export default function AgentScreen() {
         Alert.alert("Success", msg);
         await sendNotification("Transaction", msg);
       } else {
-        Alert.alert("Error", "Transaction failed");
+        Alert.alert("Error", res.error || "Transaction failed");
       }
     } catch (err: any) {
       Alert.alert("Error", err.message);
@@ -133,7 +147,7 @@ export default function AgentScreen() {
   if (!user) {
     return (
       <SafeAreaView style={styles.center}>
-        <Text style={{ color: "#fff" }}>Loading...</Text>
+        <Text style={{ color: "#fff" }}>Connecting...</Text>
       </SafeAreaView>
     );
   }
@@ -145,7 +159,7 @@ export default function AgentScreen() {
 
         <View style={styles.card}>
           <Text style={styles.label}>Username</Text>
-          <Text style={styles.value}>{user.username}</Text>
+          <Text style={styles.value}>{user.username || "Agent"}</Text>
 
           <Text style={styles.label}>Balance</Text>
           <Text style={styles.balance}>
