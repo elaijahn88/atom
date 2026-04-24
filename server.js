@@ -4,8 +4,8 @@ const admin = require("firebase-admin");
 const app = express();
 app.use(express.json());
 
-// 🔥 FIREBASE INIT
-const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+// 🔥 FIREBASE INIT (using local file)
+const serviceAccount = require("./servicekey.json");
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -20,113 +20,158 @@ app.get("/", (req, res) => {
 
 // CREATE / GET USER
 app.post("/user", async (req, res) => {
-  const { uid, username } = req.body;
+  try {
+    const { uid, username } = req.body;
 
-  if (!uid) return res.status(400).json({ error: "UID required" });
+    if (!uid) {
+      return res.status(400).json({ error: "UID required" });
+    }
 
-  const userRef = db.collection("users").doc(uid);
-  const snap = await userRef.get();
+    const userRef = db.collection("users").doc(uid);
+    const snap = await userRef.get();
 
-  if (!snap.exists) {
-    const newUser = {
-      username: username || "Agent",
-      balance: 0,
-      frozenBalance: 0,
-    };
+    if (!snap.exists) {
+      const newUser = {
+        username: username || "Agent",
+        balance: 0,
+        frozenBalance: 0,
+      };
 
-    await userRef.set(newUser);
-    return res.json(newUser);
+      await userRef.set(newUser);
+      return res.json(newUser);
+    }
+
+    res.json(snap.data());
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
-
-  res.json(snap.data());
 });
 
 // DEPOSIT
 app.post("/deposit", async (req, res) => {
-  const { uid, amount } = req.body;
+  try {
+    const { uid, amount } = req.body;
 
-  const userRef = db.collection("users").doc(uid);
+    if (!uid || typeof amount !== "number") {
+      return res.status(400).json({ error: "Invalid input" });
+    }
 
-  await db.runTransaction(async (t) => {
-    const doc = await t.get(userRef);
-    if (!doc.exists) throw "User not found";
+    const userRef = db.collection("users").doc(uid);
 
-    const user = doc.data();
-    user.balance += amount;
+    await db.runTransaction(async (t) => {
+      const doc = await t.get(userRef);
+      if (!doc.exists) throw new Error("User not found");
 
-    t.update(userRef, user);
+      const user = doc.data();
+      user.balance += amount;
 
-    res.json({ success: true, user });
-  }).catch(() => res.json({ success: false }));
+      t.update(userRef, user);
+
+      res.json({ success: true, user });
+    });
+  } catch (err) {
+    console.error(err);
+    res.json({ success: false });
+  }
 });
 
 // WITHDRAW
 app.post("/withdraw", async (req, res) => {
-  const { uid, amount } = req.body;
+  try {
+    const { uid, amount } = req.body;
 
-  const userRef = db.collection("users").doc(uid);
+    if (!uid || typeof amount !== "number") {
+      return res.status(400).json({ error: "Invalid input" });
+    }
 
-  await db.runTransaction(async (t) => {
-    const doc = await t.get(userRef);
-    if (!doc.exists) throw "User not found";
+    const userRef = db.collection("users").doc(uid);
 
-    const user = doc.data();
+    await db.runTransaction(async (t) => {
+      const doc = await t.get(userRef);
+      if (!doc.exists) throw new Error("User not found");
 
-    if (user.balance < amount) throw "Insufficient";
+      const user = doc.data();
 
-    user.balance -= amount;
+      if (user.balance < amount) throw new Error("Insufficient funds");
 
-    t.update(userRef, user);
+      user.balance -= amount;
 
-    res.json({ success: true, user });
-  }).catch(() => res.json({ success: false }));
+      t.update(userRef, user);
+
+      res.json({ success: true, user });
+    });
+  } catch (err) {
+    console.error(err);
+    res.json({ success: false });
+  }
 });
 
 // FREEZE
 app.post("/freeze", async (req, res) => {
-  const { uid, amount } = req.body;
+  try {
+    const { uid, amount } = req.body;
 
-  const userRef = db.collection("users").doc(uid);
+    if (!uid || typeof amount !== "number") {
+      return res.status(400).json({ error: "Invalid input" });
+    }
 
-  await db.runTransaction(async (t) => {
-    const doc = await t.get(userRef);
-    if (!doc.exists) throw "User not found";
+    const userRef = db.collection("users").doc(uid);
 
-    const user = doc.data();
+    await db.runTransaction(async (t) => {
+      const doc = await t.get(userRef);
+      if (!doc.exists) throw new Error("User not found");
 
-    if (user.balance < amount) throw "Insufficient";
+      const user = doc.data();
 
-    user.balance -= amount;
-    user.frozenBalance += amount;
+      if (user.balance < amount) throw new Error("Insufficient funds");
 
-    t.update(userRef, user);
+      user.balance -= amount;
+      user.frozenBalance += amount;
 
-    res.json({ success: true, user });
-  }).catch(() => res.json({ success: false }));
+      t.update(userRef, user);
+
+      res.json({ success: true, user });
+    });
+  } catch (err) {
+    console.error(err);
+    res.json({ success: false });
+  }
 });
 
 // UNFREEZE
 app.post("/unfreeze", async (req, res) => {
-  const { uid, amount } = req.body;
+  try {
+    const { uid, amount } = req.body;
 
-  const userRef = db.collection("users").doc(uid);
+    if (!uid || typeof amount !== "number") {
+      return res.status(400).json({ error: "Invalid input" });
+    }
 
-  await db.runTransaction(async (t) => {
-    const doc = await t.get(userRef);
-    if (!doc.exists) throw "User not found";
+    const userRef = db.collection("users").doc(uid);
 
-    const user = doc.data();
+    await db.runTransaction(async (t) => {
+      const doc = await t.get(userRef);
+      if (!doc.exists) throw new Error("User not found");
 
-    if (user.frozenBalance < amount) throw "Insufficient";
+      const user = doc.data();
 
-    user.frozenBalance -= amount;
-    user.balance += amount;
+      if (user.frozenBalance < amount)
+        throw new Error("Insufficient frozen balance");
 
-    t.update(userRef, user);
+      user.frozenBalance -= amount;
+      user.balance += amount;
 
-    res.json({ success: true, user });
-  }).catch(() => res.json({ success: false }));
+      t.update(userRef, user);
+
+      res.json({ success: true, user });
+    });
+  } catch (err) {
+    console.error(err);
+    res.json({ success: false });
+  }
 });
 
+// START SERVER
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server running 🚀"));
+app.listen(PORT, () => console.log(`Server running on port ${PORT} 🚀`));
