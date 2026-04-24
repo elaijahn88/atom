@@ -6,297 +6,174 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  ScrollView,
   SafeAreaView,
   Platform,
 } from "react-native";
 
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
+import * as Application from "expo-application";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API_URL = "https://api-1-lbzf.onrender.com";
 
 // ================= API =================
 const apiRequest = async (endpoint: string, method = "GET", body?: any) => {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const res = await fetch(`${API_URL}${endpoint}`, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
 
-  try {
-    const res = await fetch(`${API_URL}${endpoint}`, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: body ? JSON.stringify(body) : undefined,
-      signal: controller.signal,
-    });
+  const data = await res.json();
 
-    clearTimeout(timeout);
-
-    const text = await res.text();
-
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      console.log("❌ RAW RESPONSE:", text);
-      throw new Error("Invalid server response");
-    }
-
-    if (!res.ok) {
-      throw new Error(data.error || `Server error (${res.status})`);
-    }
-
-    return data;
-  } catch (err: any) {
-    if (err.name === "AbortError") {
-      throw new Error("Server timeout (Render sleeping)");
-    }
-    throw new Error(err.message || "Network error");
+  if (!res.ok) {
+    throw new Error(data.error || "Server error");
   }
+
+  return data;
 };
 
 // ================= UID =================
 const getUID = async () => {
-  try {
-    let uid = await AsyncStorage.getItem("uid");
+  let uid = await AsyncStorage.getItem("uid");
 
-    if (!uid) {
-      uid = "agent-" + Math.random().toString(36).slice(2);
-      await AsyncStorage.setItem("uid", uid);
-    }
-
-    return uid;
-  } catch {
-    return "agent-fallback";
+  if (!uid) {
+    uid = "agent-" + Math.random().toString(36).slice(2);
+    await AsyncStorage.setItem("uid", uid);
   }
+
+  return uid;
 };
 
 // ================= NOTIFICATIONS =================
 async function registerForPushNotificationsAsync() {
-  try {
-    if (!Device.isDevice) return null;
+  if (!Device.isDevice) return null;
 
-    const { status } = await Notifications.requestPermissionsAsync();
-    if (status !== "granted") return null;
+  const { status } = await Notifications.requestPermissionsAsync();
+  if (status !== "granted") return null;
 
-    const token = (await Notifications.getExpoPushTokenAsync()).data;
+  const token = (await Notifications.getExpoPushTokenAsync()).data;
 
-    if (Platform.OS === "android") {
-      await Notifications.setNotificationChannelAsync("default", {
-        name: "default",
-        importance: Notifications.AndroidImportance.MAX,
-      });
-    }
-
-    return token;
-  } catch {
-    return null;
-  }
-}
-
-const sendNotification = async (title: string, body: string) => {
-  try {
-    await Notifications.scheduleNotificationAsync({
-      content: { title, body },
-      trigger: null,
+  if (Platform.OS === "android") {
+    await Notifications.setNotificationChannelAsync("default", {
+      name: "default",
+      importance: Notifications.AndroidImportance.MAX,
     });
-  } catch {}
-};
+  }
+
+  return token;
+}
 
 // ================= MAIN =================
 export default function AgentScreen() {
-  const [user, setUser] = useState<any>(null);
-  const [amount, setAmount] = useState("");
   const [uid, setUid] = useState("");
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [receiverUid, setReceiverUid] = useState("");
+  const [amount, setAmount] = useState("");
 
   useEffect(() => {
     const init = async () => {
-      try {
-        setLoading(true);
+      const id = await getUID();
+      const token = await registerForPushNotificationsAsync();
 
-        // 🔥 Wake server
-        await fetch(API_URL);
+      const deviceId =
+        Platform.OS === "android"
+          ? Application.androidId
+          : await Application.getIosIdForVendorAsync();
 
-        // ⏳ Give Render time to wake
-        await new Promise((res) => setTimeout(res, 12000));
+      setUid(id);
 
-        const token = await registerForPushNotificationsAsync();
-        const id = await getUID();
-        setUid(id);
-
-        const apiUser = await apiRequest("/user", "POST", {
-          uid: id,
-          username: "Agent",
-          pushToken: token,
-        });
-
-        console.log("✅ USER:", apiUser);
-
-        // ✅ Safe (handles fallback + normal)
-        setUser(apiUser.user || apiUser);
-        setError("");
-      } catch (err: any) {
-        console.log("❌ INIT ERROR:", err.message);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
+      await apiRequest("/user", "POST", {
+        uid: id,
+        username: "Agent",
+        pushToken: token,
+        deviceId,
+      });
     };
 
     init();
   }, []);
 
-  const handleAction = async (type: string) => {
+  // ================= SEND =================
+  const sendMoney = async () => {
     const value = Number(amount);
 
-    if (isNaN(value) || value <= 0) {
-      return Alert.alert("Error", "Enter valid amount");
+    if (!receiverUid || isNaN(value) || value <= 0) {
+      return Alert.alert("Error", "Enter valid details");
     }
 
     try {
-      const res = await apiRequest(`/${type}`, "POST", {
-        uid,
+      await apiRequest("/send", "POST", {
+        fromUid: uid,
+        toUid: receiverUid,
         amount: value,
       });
 
-      if (res.success) {
-        setUser(res.user);
-        setAmount("");
-
-        const msg = `${type.toUpperCase()} UGX ${value.toLocaleString()} successful`;
-
-        Alert.alert("Success", msg);
-        await sendNotification("Transaction", msg);
-      } else {
-        Alert.alert("Error", res.error || "Transaction failed");
-      }
+      Alert.alert("Success", "Money sent + notification delivered");
+      setAmount("");
     } catch (err: any) {
       Alert.alert("Error", err.message);
     }
   };
 
-  // ================= UI STATES =================
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.center}>
-        <Text style={{ color: "#fff" }}>Connecting...</Text>
-      </SafeAreaView>
-    );
-  }
-
-  if (error) {
-    return (
-      <SafeAreaView style={styles.center}>
-        <Text style={{ color: "red", textAlign: "center" }}>{error}</Text>
-
-        <TouchableOpacity
-          style={[styles.btn, { marginTop: 20, backgroundColor: "#3b82f6" }]}
-          onPress={() => {
-            setError("");
-            setLoading(true);
-          }}
-        >
-          <Text style={styles.btnText}>Retry</Text>
-        </TouchableOpacity>
-      </SafeAreaView>
-    );
-  }
-
-  // ================= MAIN UI =================
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#0f172a" }}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>💼 Agent</Text>
+    <SafeAreaView style={styles.container}>
+      <Text style={styles.title}>💸 Send Money</Text>
 
-        <View style={styles.card}>
-          <Text style={styles.label}>Username</Text>
-          <Text style={styles.value}>{user.username}</Text>
+      <Text style={styles.label}>Your UID</Text>
+      <Text style={styles.uid}>{uid}</Text>
 
-          <Text style={styles.label}>Balance</Text>
-          <Text style={styles.balance}>
-            UGX {(user.balance || 0).toLocaleString()}
-          </Text>
+      <TextInput
+        placeholder="Receiver UID"
+        placeholderTextColor="#999"
+        value={receiverUid}
+        onChangeText={setReceiverUid}
+        style={styles.input}
+      />
 
-          <Text style={styles.label}>Frozen</Text>
-          <Text style={styles.frozen}>
-            UGX {(user.frozenBalance || 0).toLocaleString()}
-          </Text>
-        </View>
+      <TextInput
+        placeholder="Amount"
+        placeholderTextColor="#999"
+        value={amount}
+        onChangeText={setAmount}
+        keyboardType="numeric"
+        style={styles.input}
+      />
 
-        <TextInput
-          placeholder="Enter Amount"
-          placeholderTextColor="#999"
-          keyboardType="numeric"
-          value={amount}
-          onChangeText={setAmount}
-          style={styles.input}
-        />
-
-        <View style={styles.grid}>
-          <Btn title="Deposit" onPress={() => handleAction("deposit")} color="#16a34a" />
-          <Btn title="Withdraw" onPress={() => handleAction("withdraw")} color="#dc2626" />
-          <Btn title="Freeze" onPress={() => handleAction("freeze")} color="#f59e0b" />
-          <Btn title="Unfreeze" onPress={() => handleAction("unfreeze")} color="#3b82f6" />
-        </View>
-      </ScrollView>
+      <TouchableOpacity style={styles.btn} onPress={sendMoney}>
+        <Text style={styles.btnText}>Send</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
 
-// ================= BUTTON =================
-const Btn = ({ title, onPress, color }: any) => (
-  <TouchableOpacity style={[styles.btn, { backgroundColor: color }]} onPress={onPress}>
-    <Text style={styles.btnText}>{title}</Text>
-  </TouchableOpacity>
-);
-
 // ================= STYLES =================
 const styles = StyleSheet.create({
-  container: { padding: 20 },
-  center: {
+  container: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
     backgroundColor: "#0f172a",
     padding: 20,
   },
   title: {
-    fontSize: 28,
+    fontSize: 26,
     color: "#fff",
+    marginBottom: 20,
     textAlign: "center",
-    marginBottom: 24,
-    fontWeight: "bold",
   },
-  card: {
-    backgroundColor: "#1e293b",
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 24,
-  },
-  label: { color: "#94a3b8", marginTop: 12 },
-  value: { color: "#fff", fontSize: 20 },
-  balance: { color: "#22c55e", fontSize: 24, fontWeight: "bold" },
-  frozen: { color: "#38bdf8", fontSize: 20 },
+  label: { color: "#94a3b8", marginTop: 10 },
+  uid: { color: "#22c55e", marginBottom: 10 },
   input: {
     backgroundColor: "#1e293b",
-    padding: 16,
-    borderRadius: 12,
+    padding: 14,
+    borderRadius: 10,
     color: "#fff",
-    marginBottom: 24,
-  },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
+    marginTop: 10,
   },
   btn: {
-    width: "48%",
+    backgroundColor: "#3b82f6",
     padding: 16,
     borderRadius: 12,
-    marginBottom: 12,
+    marginTop: 20,
     alignItems: "center",
   },
   btnText: { color: "#fff", fontWeight: "bold" },
