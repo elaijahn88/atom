@@ -1,162 +1,165 @@
 const express = require("express");
 const admin = require("firebase-admin");
-const cors = require("cors");
+const fetch = require("node-fetch");
 
 const app = express();
 app.use(express.json());
-app.use(cors());
 
-// ================= FIREBASE INIT =================
-let db = null;
+// 🔥 FIREBASE INIT (SAFE FOR RENDER)
+let db;
 
 try {
-  if (process.env.FIREBASE_KEY) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+  const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
 
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
 
-    db = admin.firestore();
-    console.log("🔥 Firebase connected");
-  } else {
-    console.warn("⚠️ No FIREBASE_KEY → fallback mode");
-  }
+  db = admin.firestore();
+  console.log("🔥 Firebase connected");
 } catch (err) {
-  console.error("❌ Firebase init failed:", err.message);
+  console.error("❌ Firebase init error:", err.message);
 }
 
-// ================= HELPERS =================
-const safeUser = (u = {}) => ({
-  username: u.username || "Agent",
-  balance: Number(u.balance || 0),
-  frozenBalance: Number(u.frozenBalance || 0),
-  pushToken: u.pushToken || null,
-  createdAt: u.createdAt || Date.now(),
-});
-
-// fallback if DB missing
-const fallbackUser = () => ({
-  success: true,
-  user: safeUser(),
-  warning: "Running without database",
-});
-
-// ================= HEALTH =================
+// ✅ HEALTH CHECK (fix for Render sleeping)
 app.get("/", (req, res) => {
-  res.send("Backend running 🚀");
+  res.send("🚀 API running...");
 });
 
 // ================= USER =================
 app.post("/user", async (req, res) => {
   try {
-    if (!db) return res.json(fallbackUser());
-
-    const { uid, username, pushToken } = req.body || {};
+    const { uid, username, pushToken, deviceId } = req.body;
 
     if (!uid) {
-      return res.status(400).json({ success: false, error: "UID required" });
+      return res.status(400).json({ error: "UID required" });
     }
 
     const ref = db.collection("users").doc(uid);
-    const snap = await ref.get();
+    const doc = await ref.get();
 
-    let user;
+    const data = {
+      uid,
+      username: username || "User",
+      pushToken: pushToken || null,
+      deviceId: deviceId || null,
+      updatedAt: Date.now(),
+    };
 
-    if (!snap.exists) {
-      user = safeUser({ username, pushToken });
-      await ref.set(user);
+    if (!doc.exists) {
+      await ref.set({
+        ...data,
+        balance: 0,
+        frozenBalance: 0,
+        createdAt: Date.now(),
+      });
     } else {
-      user = safeUser(snap.data());
-
-      if (pushToken) {
-        await ref.update({ pushToken });
-        user.pushToken = pushToken;
-      }
+      await ref.update(data);
     }
 
-    res.json({ success: true, user });
+    const finalDoc = await ref.get();
+
+    res.json({ success: true, user: finalDoc.data() });
   } catch (err) {
-    console.error("❌ USER ERROR:", err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ================= SEND MONEY =================
+app.post("/send", async (req, res) => {
+  try {
+    const { fromUid, toUid, amount } = req.body;
+
+    if (!fromUid || !toUid || !amount) {
+      return res.status(400).json({ error: "Missing fields" });
+    }
+
+    const senderRef = db.collection("users").doc(fromUid);
+    const receiverRef = db.collection("users").doc(toUid);
+
+    const senderDoc = await senderRef.get();
+    const receiverDoc = await receiverRef.get();
+
+    if (!senderDoc.exists || !receiverDoc.exists) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const sender = senderDoc.data();
+    const receiver = receiverDoc.data();
+
+    if ((sender.balance || 0) < amount) {
+      return res.status(400).json({ error: "Insufficient balance" });
+    }
+
+    // 💸 Update balances
+    await senderRef.update({
+      balance: (sender.balance || 0) - amount,
+    });
+
+    await receiverRef.update({
+      balance: (receiver.balance || 0) + amount,
+    });
+
+    // 📜 SAVE TRANSACTION
+    const txRef = db.collection("transactions").doc();
+    await txRef.set({
+      id: txRef.id,
+      fromUid,
+      toUid,
+      amount,
+      createdAt: Date.now(),
+    });
+
+    // 🔔 PUSH NOTIFICATION
+    if (receiver.pushToken) {
+      await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: receiver.pushToken,
+          title: "💰 Money Received",
+          body: `You received UGX ${amount}`,
+        }),
+      });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
 // ================= TRANSACTIONS =================
-const validate = (uid, amount) => {
-  if (!uid) throw new Error("Invalid UID");
-  if (typeof amount !== "number" || amount <= 0) {
-    throw new Error("Invalid amount");
-  }
-};
-
-const runTransaction = async (uid, logic) => {
-  const ref = db.collection("users").doc(uid);
-
-  return db.runTransaction(async (t) => {
-    const doc = await t.get(ref);
-    if (!doc.exists) throw new Error("User not found");
-
-    let user = safeUser(doc.data());
-    const updated = await logic({ ...user });
-
-    t.set(ref, updated, { merge: true });
-    return updated;
-  });
-};
-
-const handle = async (req, res, logic) => {
+app.get("/transactions/:uid", async (req, res) => {
   try {
-    if (!db) return res.json(fallbackUser());
+    const { uid } = req.params;
 
-    const { uid, amount } = req.body;
-    validate(uid, amount);
+    const sent = await db
+      .collection("transactions")
+      .where("fromUid", "==", uid)
+      .get();
 
-    const user = await runTransaction(uid, logic);
-    res.json({ success: true, user });
+    const received = await db
+      .collection("transactions")
+      .where("toUid", "==", uid)
+      .get();
+
+    const txs = [];
+
+    sent.forEach((doc) => txs.push(doc.data()));
+    received.forEach((doc) => txs.push(doc.data()));
+
+    txs.sort((a, b) => b.createdAt - a.createdAt);
+
+    res.json({ success: true, transactions: txs });
   } catch (err) {
-    console.error("❌ ACTION ERROR:", err.message);
-    res.status(400).json({ success: false, error: err.message });
+    res.status(500).json({ error: err.message });
   }
-};
-
-app.post("/deposit", (req, res) =>
-  handle(req, res, (u) => {
-    u.balance += req.body.amount;
-    return u;
-  })
-);
-
-app.post("/withdraw", (req, res) =>
-  handle(req, res, (u) => {
-    if (u.balance < req.body.amount) throw new Error("Insufficient funds");
-    u.balance -= req.body.amount;
-    return u;
-  })
-);
-
-app.post("/freeze", (req, res) =>
-  handle(req, res, (u) => {
-    if (u.balance < req.body.amount) throw new Error("Insufficient funds");
-    u.balance -= req.body.amount;
-    u.frozenBalance += req.body.amount;
-    return u;
-  })
-);
-
-app.post("/unfreeze", (req, res) =>
-  handle(req, res, (u) => {
-    if (u.frozenBalance < req.body.amount)
-      throw new Error("Insufficient frozen");
-    u.frozenBalance -= req.body.amount;
-    u.balance += req.body.amount;
-    return u;
-  })
-);
+});
 
 // ================= START =================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
