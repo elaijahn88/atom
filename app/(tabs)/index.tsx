@@ -111,7 +111,7 @@ export default function AgentScreen() {
         Alert.alert("Error", "Failed to connect to server");
       }
     };
-
+l
     init();
   }, []);
 
