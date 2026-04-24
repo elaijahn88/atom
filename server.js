@@ -6,7 +6,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// 🔥 FIREBASE INIT
+// ================= FIREBASE INIT =================
 let db;
 
 try {
@@ -20,53 +20,15 @@ try {
   console.log("🔥 Firebase connected");
 } catch (err) {
   console.error("❌ Firebase init error:", err.message);
-  process.exit(1);
+  // ❌ DON'T crash server on Render
 }
 
-// ✅ HEALTH CHECK
+// ================= HEALTH =================
 app.get("/", (req, res) => {
   res.status(200).send("Backend running 🚀");
 });
 
-// ================= USER =================
-app.post("/user", async (req, res) => {
-  try {
-    const { uid, username, pushToken } = req.body || {};
-
-    console.log("👉 /user:", uid);
-
-    if (!uid) {
-      return res.status(400).json({ error: "UID required" });
-    }
-
-    const ref = db.collection("users").doc(uid);
-    const snap = await ref.get();
-
-    if (!snap.exists) {
-      const newUser = {
-        username: username || "Agent",
-        balance: 0,
-        frozenBalance: 0,
-        pushToken: pushToken || null,
-        createdAt: Date.now(),
-      };
-
-      await ref.set(newUser);
-      return res.json(newUser);
-    }
-
-    if (pushToken) {
-      await ref.update({ pushToken });
-    }
-
-    return res.json(snap.data());
-  } catch (err) {
-    console.error("USER ERROR:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-// ================= CORE =================
+// ================= HELPERS =================
 const validate = (uid, amount) => {
   if (!uid) throw new Error("Invalid UID");
   if (typeof amount !== "number" || isNaN(amount) || amount <= 0) {
@@ -74,14 +36,24 @@ const validate = (uid, amount) => {
   }
 };
 
+const safeUser = (u = {}) => ({
+  username: u.username || "Agent",
+  balance: Number(u.balance || 0),
+  frozenBalance: Number(u.frozenBalance || 0),
+  pushToken: u.pushToken || null,
+  createdAt: u.createdAt || Date.now(),
+});
+
 const runTransaction = async (uid, logic) => {
   const ref = db.collection("users").doc(uid);
 
   return db.runTransaction(async (t) => {
     const doc = await t.get(ref);
+
     if (!doc.exists) throw new Error("User not found");
 
-    const user = doc.data();
+    let user = safeUser(doc.data());
+
     const updated = await logic({ ...user });
 
     if (
@@ -96,6 +68,48 @@ const runTransaction = async (uid, logic) => {
   });
 };
 
+// ================= USER =================
+app.post("/user", async (req, res) => {
+  try {
+    const { uid, username, pushToken } = req.body || {};
+
+    console.log("👉 /user:", uid);
+
+    if (!uid) {
+      return res.status(400).json({ success: false, error: "UID required" });
+    }
+
+    const ref = db.collection("users").doc(uid);
+    const snap = await ref.get();
+
+    let user;
+
+    if (!snap.exists) {
+      user = safeUser({
+        username,
+        pushToken,
+      });
+
+      await ref.set(user);
+    } else {
+      user = safeUser(snap.data());
+
+      if (pushToken) {
+        await ref.update({ pushToken });
+        user.pushToken = pushToken;
+      }
+    }
+
+    return res.json({
+      success: true,
+      user,
+    });
+  } catch (err) {
+    console.error("❌ USER ERROR:", err);
+    res.status(500).json({ success: false, error: "Server error" });
+  }
+});
+
 // ================= ROUTES =================
 app.post("/deposit", async (req, res) => {
   try {
@@ -109,6 +123,7 @@ app.post("/deposit", async (req, res) => {
 
     res.json({ success: true, user });
   } catch (err) {
+    console.error("❌ DEPOSIT ERROR:", err.message);
     res.status(400).json({ success: false, error: err.message });
   }
 });
@@ -126,6 +141,7 @@ app.post("/withdraw", async (req, res) => {
 
     res.json({ success: true, user });
   } catch (err) {
+    console.error("❌ WITHDRAW ERROR:", err.message);
     res.status(400).json({ success: false, error: err.message });
   }
 });
@@ -144,6 +160,7 @@ app.post("/freeze", async (req, res) => {
 
     res.json({ success: true, user });
   } catch (err) {
+    console.error("❌ FREEZE ERROR:", err.message);
     res.status(400).json({ success: false, error: err.message });
   }
 });
@@ -162,10 +179,14 @@ app.post("/unfreeze", async (req, res) => {
 
     res.json({ success: true, user });
   } catch (err) {
+    console.error("❌ UNFREEZE ERROR:", err.message);
     res.status(400).json({ success: false, error: err.message });
   }
 });
 
-// START
+// ================= START =================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Server running on ${PORT}`));
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on ${PORT}`);
+});
