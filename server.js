@@ -15,7 +15,7 @@ const db = admin.firestore();
 
 // ROOT
 app.get("/", (req, res) => {
-  res.send("Elijah....🚀");
+  res.send("$$$$$....🚀");
 });
 
 // CREATE / GET USER
