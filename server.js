@@ -154,4 +154,18 @@ app.post("/unfreeze", async (req, res) => {
     validate(uid, amount);
 
     const user = await runTransaction(uid, (u) => {
-      if (u
+      if (u.frozenBalance < amount) throw new Error("Insufficient frozen");
+      u.frozenBalance -= amount;
+      u.balance += amount;
+      return u;
+    });
+
+    res.json({ success: true, user });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// START
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Server running on ${PORT}`));
