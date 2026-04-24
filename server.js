@@ -7,35 +7,26 @@ app.use(express.json());
 app.use(cors());
 
 // ================= FIREBASE INIT =================
-let db;
+let db = null;
 
 try {
-  const serviceAccount = require("./servicekey.json");
+  if (process.env.FIREBASE_KEY) {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
 
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+    });
 
-  db = admin.firestore();
-  console.log("🔥 Firebase connected");
+    db = admin.firestore();
+    console.log("🔥 Firebase connected");
+  } else {
+    console.warn("⚠️ No FIREBASE_KEY → fallback mode");
+  }
 } catch (err) {
-  console.error("❌ Firebase init error:", err.message);
-  // ❌ DON'T crash server on Render
+  console.error("❌ Firebase init failed:", err.message);
 }
 
-// ================= HEALTH =================
-app.get("/", (req, res) => {
-  res.status(200).send("Backend running 🚀");
-});
-
 // ================= HELPERS =================
-const validate = (uid, amount) => {
-  if (!uid) throw new Error("Invalid UID");
-  if (typeof amount !== "number" || isNaN(amount) || amount <= 0) {
-    throw new Error("Invalid amount");
-  }
-};
-
 const safeUser = (u = {}) => ({
   username: u.username || "Agent",
   balance: Number(u.balance || 0),
@@ -44,36 +35,24 @@ const safeUser = (u = {}) => ({
   createdAt: u.createdAt || Date.now(),
 });
 
-const runTransaction = async (uid, logic) => {
-  const ref = db.collection("users").doc(uid);
+// fallback if DB missing
+const fallbackUser = () => ({
+  success: true,
+  user: safeUser(),
+  warning: "Running without database",
+});
 
-  return db.runTransaction(async (t) => {
-    const doc = await t.get(ref);
-
-    if (!doc.exists) throw new Error("User not found");
-
-    let user = safeUser(doc.data());
-
-    const updated = await logic({ ...user });
-
-    if (
-      typeof updated.balance !== "number" ||
-      typeof updated.frozenBalance !== "number"
-    ) {
-      throw new Error("Invalid balance state");
-    }
-
-    t.set(ref, updated, { merge: true });
-    return updated;
-  });
-};
+// ================= HEALTH =================
+app.get("/", (req, res) => {
+  res.send("Backend running 🚀");
+});
 
 // ================= USER =================
 app.post("/user", async (req, res) => {
   try {
-    const { uid, username, pushToken } = req.body || {};
+    if (!db) return res.json(fallbackUser());
 
-    console.log("👉 /user:", uid);
+    const { uid, username, pushToken } = req.body || {};
 
     if (!uid) {
       return res.status(400).json({ success: false, error: "UID required" });
@@ -85,11 +64,7 @@ app.post("/user", async (req, res) => {
     let user;
 
     if (!snap.exists) {
-      user = safeUser({
-        username,
-        pushToken,
-      });
-
+      user = safeUser({ username, pushToken });
       await ref.set(user);
     } else {
       user = safeUser(snap.data());
@@ -100,89 +75,84 @@ app.post("/user", async (req, res) => {
       }
     }
 
-    return res.json({
-      success: true,
-      user,
-    });
+    res.json({ success: true, user });
   } catch (err) {
     console.error("❌ USER ERROR:", err);
-    res.status(500).json({ success: false, error: "Server error" });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// ================= ROUTES =================
-app.post("/deposit", async (req, res) => {
+// ================= TRANSACTIONS =================
+const validate = (uid, amount) => {
+  if (!uid) throw new Error("Invalid UID");
+  if (typeof amount !== "number" || amount <= 0) {
+    throw new Error("Invalid amount");
+  }
+};
+
+const runTransaction = async (uid, logic) => {
+  const ref = db.collection("users").doc(uid);
+
+  return db.runTransaction(async (t) => {
+    const doc = await t.get(ref);
+    if (!doc.exists) throw new Error("User not found");
+
+    let user = safeUser(doc.data());
+    const updated = await logic({ ...user });
+
+    t.set(ref, updated, { merge: true });
+    return updated;
+  });
+};
+
+const handle = async (req, res, logic) => {
   try {
+    if (!db) return res.json(fallbackUser());
+
     const { uid, amount } = req.body;
     validate(uid, amount);
 
-    const user = await runTransaction(uid, (u) => {
-      u.balance += amount;
-      return u;
-    });
-
+    const user = await runTransaction(uid, logic);
     res.json({ success: true, user });
   } catch (err) {
-    console.error("❌ DEPOSIT ERROR:", err.message);
+    console.error("❌ ACTION ERROR:", err.message);
     res.status(400).json({ success: false, error: err.message });
   }
-});
+};
 
-app.post("/withdraw", async (req, res) => {
-  try {
-    const { uid, amount } = req.body;
-    validate(uid, amount);
+app.post("/deposit", (req, res) =>
+  handle(req, res, (u) => {
+    u.balance += req.body.amount;
+    return u;
+  })
+);
 
-    const user = await runTransaction(uid, (u) => {
-      if (u.balance < amount) throw new Error("Insufficient funds");
-      u.balance -= amount;
-      return u;
-    });
+app.post("/withdraw", (req, res) =>
+  handle(req, res, (u) => {
+    if (u.balance < req.body.amount) throw new Error("Insufficient funds");
+    u.balance -= req.body.amount;
+    return u;
+  })
+);
 
-    res.json({ success: true, user });
-  } catch (err) {
-    console.error("❌ WITHDRAW ERROR:", err.message);
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
+app.post("/freeze", (req, res) =>
+  handle(req, res, (u) => {
+    if (u.balance < req.body.amount) throw new Error("Insufficient funds");
+    u.balance -= req.body.amount;
+    u.frozenBalance += req.body.amount;
+    return u;
+  })
+);
 
-app.post("/freeze", async (req, res) => {
-  try {
-    const { uid, amount } = req.body;
-    validate(uid, amount);
-
-    const user = await runTransaction(uid, (u) => {
-      if (u.balance < amount) throw new Error("Insufficient funds");
-      u.balance -= amount;
-      u.frozenBalance += amount;
-      return u;
-    });
-
-    res.json({ success: true, user });
-  } catch (err) {
-    console.error("❌ FREEZE ERROR:", err.message);
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
-
-app.post("/unfreeze", async (req, res) => {
-  try {
-    const { uid, amount } = req.body;
-    validate(uid, amount);
-
-    const user = await runTransaction(uid, (u) => {
-      if (u.frozenBalance < amount) throw new Error("Insufficient frozen");
-      u.frozenBalance -= amount;
-      u.balance += amount;
-      return u;
-    });
-
-    res.json({ success: true, user });
-  } catch (err) {
-    console.error("❌ UNFREEZE ERROR:", err.message);
-    res.status(400).json({ success: false, error: err.message });
-  }
-});
+app.post("/unfreeze", (req, res) =>
+  handle(req, res, (u) => {
+    if (u.frozenBalance < req.body.amount)
+      throw new Error("Insufficient frozen");
+    u.frozenBalance -= req.body.amount;
+    u.balance += req.body.amount;
+    return u;
+  })
+);
 
 // ================= START =================
 const PORT = process.env.PORT || 3000;
