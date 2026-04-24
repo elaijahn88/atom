@@ -13,10 +13,7 @@ import {
 
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
-
-import { auth, db } from "../firebase";
-import { signInAnonymously } from "firebase/auth";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // 🌐 API
 const API_URL = "https://api-1-lbzf.onrender.com";
@@ -36,6 +33,18 @@ const apiRequest = async (endpoint: string, method = "GET", body?: any) => {
   } catch (err) {
     throw new Error("Network error (Render might be asleep)");
   }
+};
+
+// ================= UID =================
+const getUID = async () => {
+  let uid = await AsyncStorage.getItem("uid");
+
+  if (!uid) {
+    uid = "agent-" + Math.random().toString(36).slice(2);
+    await AsyncStorage.setItem("uid", uid);
+  }
+
+  return uid;
 };
 
 // ================= NOTIFICATIONS =================
@@ -69,42 +78,20 @@ const sendNotification = async (title: string, body: string) => {
 export default function AgentScreen() {
   const [user, setUser] = useState<any>(null);
   const [amount, setAmount] = useState("");
+  const [uid, setUid] = useState<string>("");
 
-  // ================= LOAD USER =================
   const loadUser = async () => {
     try {
-      // LOGIN
-      if (!auth.currentUser) {
-        await signInAnonymously(auth);
-      }
+      const id = await getUID();
+      setUid(id);
 
-      const uid = auth.currentUser?.uid;
-      const userRef = doc(db, "users", uid!);
-      const snap = await getDoc(userRef);
-
-      let firebaseUser;
-
-      if (!snap.exists()) {
-        firebaseUser = {
-          username: "Agent-" + uid!.slice(0, 5),
-          balance: 0,
-          frozenBalance: 0,
-        };
-
-        await setDoc(userRef, firebaseUser);
-      } else {
-        firebaseUser = snap.data();
-      }
-
-      // SYNC WITH BACKEND
       const apiUser = await apiRequest("/user", "POST", {
-        uid,
-        ...firebaseUser,
+        uid: id,
+        username: "Agent",
       });
 
       setUser(apiUser);
     } catch (err) {
-      console.log(err);
       Alert.alert("Error", "Failed to load user");
     }
   };
@@ -114,10 +101,8 @@ export default function AgentScreen() {
     registerForPushNotificationsAsync();
   }, []);
 
-  // ================= ACTION =================
   const handleAction = async (type: string) => {
     const value = Number(amount);
-    const uid = auth.currentUser?.uid;
 
     if (!value || value <= 0) {
       return Alert.alert("Error", "Enter valid amount");
@@ -132,10 +117,6 @@ export default function AgentScreen() {
       if (res.success) {
         setUser(res.user);
         setAmount("");
-
-        // 🔥 Update Firebase too
-        const userRef = doc(db, "users", uid!);
-        await updateDoc(userRef, res.user);
 
         const msg = `${type.toUpperCase()} UGX ${value.toLocaleString()} successful`;
 
