@@ -20,7 +20,7 @@ try {
   } else {
     // ✅ LOCAL (serviceAccountKey.json)
     console.log("📁 Using local serviceAccountKey.json");
-    serviceAccount = require("./serviceAccountKey.json");
+    serviceAccount = require("./servicekey.json");
   }
 
   admin.initializeApp({
