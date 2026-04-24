@@ -20,7 +20,7 @@ const API_URL = "https://api-1-lbzf.onrender.com";
 // ================= API =================
 const apiRequest = async (endpoint: string, method = "GET", body?: any) => {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  const timeout = setTimeout(() => controller.abort(), 15000);
 
   try {
     const res = await fetch(`${API_URL}${endpoint}`, {
@@ -32,16 +32,25 @@ const apiRequest = async (endpoint: string, method = "GET", body?: any) => {
 
     clearTimeout(timeout);
 
-    const data = await res.json().catch(() => ({}));
+    const text = await res.text();
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      console.log("❌ RAW RESPONSE:", text);
+      throw new Error("Invalid server response");
+    }
 
     if (!res.ok) {
-      throw new Error(data.error || "Server error");
+      console.log("❌ SERVER ERROR:", data);
+      throw new Error(data.error || `Server error (${res.status})`);
     }
 
     return data;
   } catch (err: any) {
     if (err.name === "AbortError") {
-      throw new Error("Server timeout (waking up)");
+      throw new Error("Server timeout (Render sleeping)");
     }
     throw new Error(err.message || "Network error");
   }
@@ -104,8 +113,11 @@ export default function AgentScreen() {
   useEffect(() => {
     const init = async (retries = 3) => {
       try {
-        // 🔥 wake server (important for Render)
+        // 🔥 wake server
         await fetch(API_URL);
+
+        // ⏳ wait for Render to wake
+        await new Promise((res) => setTimeout(res, 4000));
 
         const token = await registerForPushNotificationsAsync();
         const id = await getUID();
@@ -118,14 +130,15 @@ export default function AgentScreen() {
           pushToken: token,
         });
 
-        console.log("USER:", apiUser);
+        console.log("✅ USER:", apiUser);
 
-        setUser(apiUser.user || apiUser);
+        // ✅ FIXED: always expect wrapped response
+        setUser(apiUser.user);
       } catch (err: any) {
-        console.log("INIT ERROR:", err.message);
+        console.log("❌ INIT ERROR:", err.message);
 
         if (retries > 0) {
-          setTimeout(() => init(retries - 1), 3000);
+          setTimeout(() => init(retries - 1), 4000);
         } else {
           Alert.alert("Error", err.message);
         }
