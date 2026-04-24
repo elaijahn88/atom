@@ -19,12 +19,18 @@ const API_URL = "https://api-1-lbzf.onrender.com";
 
 // ================= API =================
 const apiRequest = async (endpoint: string, method = "GET", body?: any) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
   try {
     const res = await fetch(`${API_URL}${endpoint}`, {
       method,
       headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
     });
+
+    clearTimeout(timeout);
 
     const data = await res.json().catch(() => ({}));
 
@@ -34,7 +40,10 @@ const apiRequest = async (endpoint: string, method = "GET", body?: any) => {
 
     return data;
   } catch (err: any) {
-    throw new Error(err.message || "Network error (server asleep)");
+    if (err.name === "AbortError") {
+      throw new Error("Server timeout (waking up)");
+    }
+    throw new Error(err.message || "Network error");
   }
 };
 
@@ -93,8 +102,11 @@ export default function AgentScreen() {
   const [uid, setUid] = useState("");
 
   useEffect(() => {
-    const init = async () => {
+    const init = async (retries = 3) => {
       try {
+        // 🔥 wake server (important for Render)
+        await fetch(API_URL);
+
         const token = await registerForPushNotificationsAsync();
         const id = await getUID();
 
@@ -106,12 +118,20 @@ export default function AgentScreen() {
           pushToken: token,
         });
 
-        setUser(apiUser);
-      } catch (err) {
-        Alert.alert("Error", "Failed to connect to server");
+        console.log("USER:", apiUser);
+
+        setUser(apiUser.user || apiUser);
+      } catch (err: any) {
+        console.log("INIT ERROR:", err.message);
+
+        if (retries > 0) {
+          setTimeout(() => init(retries - 1), 3000);
+        } else {
+          Alert.alert("Error", err.message);
+        }
       }
     };
-l
+
     init();
   }, []);
 
@@ -155,11 +175,11 @@ l
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0f172a" }}>
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>💼 </Text>
+        <Text style={styles.title}>💼 Agent</Text>
 
         <View style={styles.card}>
           <Text style={styles.label}>Username</Text>
-          <Text style={styles.value}>{user.username || "Agent"}</Text>
+          <Text style={styles.value}>{user.username}</Text>
 
           <Text style={styles.label}>Balance</Text>
           <Text style={styles.balance}>
