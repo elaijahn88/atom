@@ -43,7 +43,6 @@ const apiRequest = async (endpoint: string, method = "GET", body?: any) => {
     }
 
     if (!res.ok) {
-      console.log("❌ SERVER ERROR:", data);
       throw new Error(data.error || `Server error (${res.status})`);
     }
 
@@ -110,18 +109,22 @@ export default function AgentScreen() {
   const [amount, setAmount] = useState("");
   const [uid, setUid] = useState("");
 
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
   useEffect(() => {
-    const init = async (retries = 3) => {
+    const init = async () => {
       try {
-        // 🔥 wake server
+        setLoading(true);
+
+        // 🔥 Wake server
         await fetch(API_URL);
 
-        // ⏳ wait for Render to wake
-        await new Promise((res) => setTimeout(res, 4000));
+        // ⏳ Give Render time to wake
+        await new Promise((res) => setTimeout(res, 12000));
 
         const token = await registerForPushNotificationsAsync();
         const id = await getUID();
-
         setUid(id);
 
         const apiUser = await apiRequest("/user", "POST", {
@@ -132,16 +135,14 @@ export default function AgentScreen() {
 
         console.log("✅ USER:", apiUser);
 
-        // ✅ FIXED: always expect wrapped response
-        setUser(apiUser.user);
+        // ✅ Safe (handles fallback + normal)
+        setUser(apiUser.user || apiUser);
+        setError("");
       } catch (err: any) {
         console.log("❌ INIT ERROR:", err.message);
-
-        if (retries > 0) {
-          setTimeout(() => init(retries - 1), 4000);
-        } else {
-          Alert.alert("Error", err.message);
-        }
+        setError(err.message);
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -177,7 +178,8 @@ export default function AgentScreen() {
     }
   };
 
-  if (!user) {
+  // ================= UI STATES =================
+  if (loading) {
     return (
       <SafeAreaView style={styles.center}>
         <Text style={{ color: "#fff" }}>Connecting...</Text>
@@ -185,6 +187,25 @@ export default function AgentScreen() {
     );
   }
 
+  if (error) {
+    return (
+      <SafeAreaView style={styles.center}>
+        <Text style={{ color: "red", textAlign: "center" }}>{error}</Text>
+
+        <TouchableOpacity
+          style={[styles.btn, { marginTop: 20, backgroundColor: "#3b82f6" }]}
+          onPress={() => {
+            setError("");
+            setLoading(true);
+          }}
+        >
+          <Text style={styles.btnText}>Retry</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
+  // ================= MAIN UI =================
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#0f172a" }}>
       <ScrollView contentContainerStyle={styles.container}>
@@ -225,23 +246,58 @@ export default function AgentScreen() {
   );
 }
 
+// ================= BUTTON =================
 const Btn = ({ title, onPress, color }: any) => (
   <TouchableOpacity style={[styles.btn, { backgroundColor: color }]} onPress={onPress}>
     <Text style={styles.btnText}>{title}</Text>
   </TouchableOpacity>
 );
 
+// ================= STYLES =================
 const styles = StyleSheet.create({
   container: { padding: 20 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#0f172a" },
-  title: { fontSize: 28, color: "#fff", textAlign: "center", marginBottom: 24, fontWeight: "bold" },
-  card: { backgroundColor: "#1e293b", padding: 20, borderRadius: 16, marginBottom: 24 },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#0f172a",
+    padding: 20,
+  },
+  title: {
+    fontSize: 28,
+    color: "#fff",
+    textAlign: "center",
+    marginBottom: 24,
+    fontWeight: "bold",
+  },
+  card: {
+    backgroundColor: "#1e293b",
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 24,
+  },
   label: { color: "#94a3b8", marginTop: 12 },
   value: { color: "#fff", fontSize: 20 },
   balance: { color: "#22c55e", fontSize: 24, fontWeight: "bold" },
   frozen: { color: "#38bdf8", fontSize: 20 },
-  input: { backgroundColor: "#1e293b", padding: 16, borderRadius: 12, color: "#fff", marginBottom: 24 },
-  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
-  btn: { width: "48%", padding: 16, borderRadius: 12, marginBottom: 12, alignItems: "center" },
+  input: {
+    backgroundColor: "#1e293b",
+    padding: 16,
+    borderRadius: 12,
+    color: "#fff",
+    marginBottom: 24,
+  },
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  btn: {
+    width: "48%",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    alignItems: "center",
+  },
   btnText: { color: "#fff", fontWeight: "bold" },
 });
