@@ -1,27 +1,41 @@
 const express = require("express");
 const admin = require("firebase-admin");
 const fetch = require("node-fetch");
+const cors = require("cors");
 
 const app = express();
 app.use(express.json());
+app.use(cors());
 
-// 🔥 FIREBASE INIT (SAFE FOR RENDER)
+// ================= FIREBASE INIT (HYBRID) =================
 let db;
 
 try {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+  let serviceAccount;
+
+  if (process.env.FIREBASE_KEY) {
+    // ✅ PRODUCTION (Render)
+    console.log("🔐 Using FIREBASE_KEY from ENV");
+    serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+  } else {
+    // ✅ LOCAL (serviceAccountKey.json)
+    console.log("📁 Using local serviceAccountKey.json");
+    serviceAccount = require("./serviceAccountKey.json");
+  }
 
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
   });
 
   db = admin.firestore();
-  console.log("🔥 Firebase connected");
+
+  console.log("🔥 Firebase initialized successfully");
 } catch (err) {
-  console.error("❌ Firebase init error:", err.message);
+  console.error("❌ Firebase init failed:", err.message);
+  process.exit(1); // STOP server if Firebase fails
 }
 
-// ✅ HEALTH CHECK (fix for Render sleeping)
+// ================= ROOT =================
 app.get("/", (req, res) => {
   res.send("🚀 API running...");
 });
@@ -61,6 +75,7 @@ app.post("/user", async (req, res) => {
 
     res.json({ success: true, user: finalDoc.data() });
   } catch (err) {
+    console.error("❌ /user error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -114,7 +129,9 @@ app.post("/send", async (req, res) => {
     if (receiver.pushToken) {
       await fetch("https://exp.host/--/api/v2/push/send", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           to: receiver.pushToken,
           title: "💰 Money Received",
@@ -125,6 +142,7 @@ app.post("/send", async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
+    console.error("❌ /send error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -153,6 +171,7 @@ app.get("/transactions/:uid", async (req, res) => {
 
     res.json({ success: true, transactions: txs });
   } catch (err) {
+    console.error("❌ /transactions error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
