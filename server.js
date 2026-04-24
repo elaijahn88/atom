@@ -4,27 +4,35 @@ const admin = require("firebase-admin");
 const app = express();
 app.use(express.json());
 
-// 🔥 FIREBASE INIT (using local file)
-const serviceAccount = require("./servicekey.json");
+// 🔥 FIREBASE INIT (SAFE)
+let db;
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+try {
+  const serviceAccount = require("./servicekey.json");
 
-const db = admin.firestore();
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+
+  db = admin.firestore();
+  console.log("🔥 Firebase connected");
+} catch (err) {
+  console.error("❌ Firebase init error:", err.message);
+  process.exit(1); // stop app if firebase fails
+}
 
 // ROOT
 app.get("/", (req, res) => {
-  res.send("$$$$$....🚀");
+  res.send("Backend running 🚀");
 });
 
-// CREATE / GET USER
+// ================= USER =================
 app.post("/user", async (req, res) => {
   try {
-    const { uid, username } = req.body;
+    const { uid, username, pushToken } = req.body || {};
 
-    if (!uid) {
-      return res.status(400).json({ error: "UID required" });
+    if (!uid || typeof uid !== "string") {
+      return res.status(400).json({ error: "Valid UID required" });
     }
 
     const userRef = db.collection("users").doc(uid);
@@ -35,143 +43,154 @@ app.post("/user", async (req, res) => {
         username: username || "Agent",
         balance: 0,
         frozenBalance: 0,
+        pushToken: pushToken || null,
+        createdAt: Date.now(),
       };
 
       await userRef.set(newUser);
       return res.json(newUser);
     }
 
-    res.json(snap.data());
+    if (pushToken) {
+      await userRef.update({ pushToken });
+    }
+
+    return res.json(snap.data());
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
+    console.error("USER ERROR:", err);
+    return res.status(500).json({ error: "Server error" });
   }
 });
 
-// DEPOSIT
+// ================= TRANSACTION CORE =================
+const runTransaction = async (uid, logic) => {
+  const userRef = db.collection("users").doc(uid);
+
+  return db.runTransaction(async (t) => {
+    const doc = await t.get(userRef);
+
+    if (!doc.exists) throw new Error("User not found");
+
+    const user = doc.data() || {
+      balance: 0,
+      frozenBalance: 0,
+    };
+
+    const updated = await logic({ ...user });
+
+    // prevent NaN corruption
+    if (
+      typeof updated.balance !== "number" ||
+      typeof updated.frozenBalance !== "number"
+    ) {
+      throw new Error("Invalid balance state");
+    }
+
+    t.set(userRef, updated, { merge: true });
+
+    return updated;
+  });
+};
+
+// ================= VALIDATOR =================
+const validate = (uid, amount) => {
+  if (!uid || typeof uid !== "string") {
+    throw new Error("Invalid UID");
+  }
+
+  if (typeof amount !== "number" || isNaN(amount) || amount <= 0) {
+    throw new Error("Invalid amount");
+  }
+};
+
+// ================= DEPOSIT =================
 app.post("/deposit", async (req, res) => {
   try {
-    const { uid, amount } = req.body;
+    const { uid, amount } = req.body || {};
+    validate(uid, amount);
 
-    if (!uid || typeof amount !== "number") {
-      return res.status(400).json({ error: "Invalid input" });
-    }
-
-    const userRef = db.collection("users").doc(uid);
-
-    await db.runTransaction(async (t) => {
-      const doc = await t.get(userRef);
-      if (!doc.exists) throw new Error("User not found");
-
-      const user = doc.data();
-      user.balance += amount;
-
-      t.update(userRef, user);
-
-      res.json({ success: true, user });
+    const user = await runTransaction(uid, (u) => {
+      u.balance = (u.balance || 0) + amount;
+      return u;
     });
+
+    return res.json({ success: true, user });
   } catch (err) {
-    console.error(err);
-    res.json({ success: false });
+    console.error("DEPOSIT ERROR:", err.message);
+    return res.status(400).json({ success: false, error: err.message });
   }
 });
 
-// WITHDRAW
+// ================= WITHDRAW =================
 app.post("/withdraw", async (req, res) => {
   try {
-    const { uid, amount } = req.body;
+    const { uid, amount } = req.body || {};
+    validate(uid, amount);
 
-    if (!uid || typeof amount !== "number") {
-      return res.status(400).json({ error: "Invalid input" });
-    }
+    const user = await runTransaction(uid, (u) => {
+      if ((u.balance || 0) < amount) {
+        throw new Error("Insufficient funds");
+      }
 
-    const userRef = db.collection("users").doc(uid);
-
-    await db.runTransaction(async (t) => {
-      const doc = await t.get(userRef);
-      if (!doc.exists) throw new Error("User not found");
-
-      const user = doc.data();
-
-      if (user.balance < amount) throw new Error("Insufficient funds");
-
-      user.balance -= amount;
-
-      t.update(userRef, user);
-
-      res.json({ success: true, user });
+      u.balance -= amount;
+      return u;
     });
+
+    return res.json({ success: true, user });
   } catch (err) {
-    console.error(err);
-    res.json({ success: false });
+    console.error("WITHDRAW ERROR:", err.message);
+    return res.status(400).json({ success: false, error: err.message });
   }
 });
 
-// FREEZE
+// ================= FREEZE =================
 app.post("/freeze", async (req, res) => {
   try {
-    const { uid, amount } = req.body;
+    const { uid, amount } = req.body || {};
+    validate(uid, amount);
 
-    if (!uid || typeof amount !== "number") {
-      return res.status(400).json({ error: "Invalid input" });
-    }
+    const user = await runTransaction(uid, (u) => {
+      if ((u.balance || 0) < amount) {
+        throw new Error("Insufficient funds");
+      }
 
-    const userRef = db.collection("users").doc(uid);
+      u.balance -= amount;
+      u.frozenBalance = (u.frozenBalance || 0) + amount;
 
-    await db.runTransaction(async (t) => {
-      const doc = await t.get(userRef);
-      if (!doc.exists) throw new Error("User not found");
-
-      const user = doc.data();
-
-      if (user.balance < amount) throw new Error("Insufficient funds");
-
-      user.balance -= amount;
-      user.frozenBalance += amount;
-
-      t.update(userRef, user);
-
-      res.json({ success: true, user });
+      return u;
     });
+
+    return res.json({ success: true, user });
   } catch (err) {
-    console.error(err);
-    res.json({ success: false });
+    console.error("FREEZE ERROR:", err.message);
+    return res.status(400).json({ success: false, error: err.message });
   }
 });
 
-// UNFREEZE
+// ================= UNFREEZE =================
 app.post("/unfreeze", async (req, res) => {
   try {
-    const { uid, amount } = req.body;
+    const { uid, amount } = req.body || {};
+    validate(uid, amount);
 
-    if (!uid || typeof amount !== "number") {
-      return res.status(400).json({ error: "Invalid input" });
-    }
-
-    const userRef = db.collection("users").doc(uid);
-
-    await db.runTransaction(async (t) => {
-      const doc = await t.get(userRef);
-      if (!doc.exists) throw new Error("User not found");
-
-      const user = doc.data();
-
-      if (user.frozenBalance < amount)
+    const user = await runTransaction(uid, (u) => {
+      if ((u.frozenBalance || 0) < amount) {
         throw new Error("Insufficient frozen balance");
+      }
 
-      user.frozenBalance -= amount;
-      user.balance += amount;
+      u.frozenBalance -= amount;
+      u.balance += amount;
 
-      t.update(userRef, user);
-
-      res.json({ success: true, user });
+      return u;
     });
+
+    return res.json({ success: true, user });
   } catch (err) {
-    console.error(err);
-    res.json({ success: false });
+    console.error("UNFREEZE ERROR:", err.message);
+    return res.status(400).json({ success: false, error: err.message });
   }
 });
 
 // START SERVER
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT} 🚀`));
+app.listen(PORT, () => console.log(`🚀 Server running on ${PORT}`));
