@@ -24,7 +24,36 @@ try {
   console.log("🔥 Firebase initialized successfully");
 } catch (err) {
   console.error("❌ Firebase init failed:", err.message);
-  process.exit(1); // STOP server if Firebase fails
+  process.exit(1);
+}
+
+// ================= DEFAULT USER SETUP =================
+async function createDefaultUser() {
+  try {
+    const defaultUid = "default_user_001";
+
+    const ref = db.collection("users").doc(defaultUid);
+    const doc = await ref.get();
+
+    if (!doc.exists) {
+      await ref.set({
+        uid: defaultUid,
+        username: "Default User",
+        balance: 1000,
+        frozenBalance: 0,
+        pushToken: null,
+        deviceId: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      console.log("✅ Default user created");
+    } else {
+      console.log("ℹ️ Default user already exists");
+    }
+  } catch (err) {
+    console.error("❌ Default user error:", err.message);
+  }
 }
 
 // ================= ROOT =================
@@ -171,6 +200,9 @@ app.get("/transactions/:uid", async (req, res) => {
 // ================= START =================
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
+
+  // 👇 AUTO CREATE DEFAULT USER ON START
+  await createDefaultUser();
 });
