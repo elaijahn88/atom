@@ -2,229 +2,260 @@ const express = require("express");
 const admin = require("firebase-admin");
 const fetch = require("node-fetch");
 const cors = require("cors");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ================= FIREBASE INIT =================
-let db;
+// ================= CONFIG =================
+const JWT_SECRET = process.env.JWT_SECRET || "secret123";
+const JWT_REFRESH_SECRET =
+  process.env.JWT_REFRESH_SECRET || "refresh_secret";
 
-try {
-  if (!process.env.FIREBASE_KEY) {
-    throw new Error("FIREBASE_KEY is missing");
-  }
+// ================= FIREBASE =================
+const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
 
-  console.log("🔐 Using FIREBASE_KEY from ENV");
-
-  let serviceAccount;
-
-  try {
-    serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
-  } catch (err) {
-    throw new Error("FIREBASE_KEY is not valid JSON");
-  }
-
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
-
-  db = admin.firestore();
-
-  console.log("🔥 Firebase initialized");
-} catch (err) {
-  console.error("❌ Firebase init failed:", err.message);
-  process.exit(1);
-}
-
-// ================= HELPERS =================
-const clean = (val) => (typeof val === "string" ? val.trim() : val);
-
-// ================= DEFAULT USER =================
-async function createDefaultUser() {
-  const uid = "default_user_001";
-
-  const ref = db.collection("users").doc(uid);
-  const doc = await ref.get();
-
-  if (!doc.exists) {
-    await ref.set({
-      uid,
-      username: "Default User",
-      balance: 1000,
-      frozenBalance: 0,
-      pushToken: null,
-      deviceId: null,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-
-    console.log("✅ Default user created");
-  } else {
-    console.log("ℹ️ Default user exists");
-  }
-}
-
-// ================= ROOT =================
-app.get("/", (req, res) => {
-  res.send("🚀 API running...");
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
 });
 
-// ================= USER =================
-app.post("/user", async (req, res) => {
+const db = admin.firestore();
+
+// ================= HELPERS =================
+const clean = (v) =>
+  typeof v === "string" ? v.trim().replace(/\s+/g, "") : v;
+
+const generateUID = () =>
+  "user-" + Math.random().toString(36).slice(2, 10);
+
+const sendPush = async (token, title, body) => {
+  if (!token) return;
+
   try {
-    let { uid, username, pushToken, deviceId } = req.body;
+    await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: token,
+        title,
+        body,
+        sound: "default",
+      }),
+    });
+  } catch {}
+};
 
-    uid = clean(uid);
+// ================= TOKENS =================
+const generateAccessToken = (user) =>
+  jwt.sign(user, JWT_SECRET, { expiresIn: "1h" });
 
-    if (!uid) {
-      return res.status(400).json({ error: "UID required" });
+const generateRefreshToken = (user) =>
+  jwt.sign(user, JWT_REFRESH_SECRET, { expiresIn: "7d" });
+
+// ================= AUTH =================
+const auth = (req, res, next) => {
+  const header = req.headers.authorization;
+
+  if (!header) return res.status(401).json({ error: "No token" });
+
+  const token = header.split(" ")[1];
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch {
+    res.status(401).json({ error: "Invalid token" });
+  }
+};
+
+// ================= REGISTER =================
+app.post("/register", async (req, res) => {
+  try {
+    let { username, pin } = req.body;
+
+    username = clean(username);
+
+    if (!username || !pin || pin.length < 4) {
+      return res.status(400).json({ error: "Invalid data" });
     }
 
-    const ref = db.collection("users").doc(uid);
-    const doc = await ref.get();
+    const uid = generateUID();
+    const hashedPin = await bcrypt.hash(pin, 10);
 
-    const data = {
+    await db.collection("users").doc(uid).set({
       uid,
-      username: username || "User",
-      pushToken: pushToken || null,
-      deviceId: deviceId || null,
-      updatedAt: Date.now(),
-    };
+      username,
+      pin: hashedPin,
+      balance: 100,
+      createdAt: Date.now(),
+    });
 
-    if (!doc.exists) {
-      await ref.set({
-        ...data,
-        balance: 100,
-        frozenBalance: 0,
-        createdAt: Date.now(),
-      });
-    } else {
-      await ref.update(data);
-    }
-
-    const finalDoc = await ref.get();
-
-    res.json({ success: true, user: finalDoc.data() });
+    res.json({ success: true });
   } catch (err) {
-    console.error("❌ /user error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ================= SEND MONEY =================
-app.post("/send", async (req, res) => {
+// ================= LOGIN =================
+app.post("/login", async (req, res) => {
   try {
-    let { fromUid, toUid, amount } = req.body;
+    let { username, pin, pushToken } = req.body;
 
-    // ✅ Clean inputs
-    fromUid = clean(fromUid);
-    toUid = clean(toUid);
-    amount = Number(amount);
+    username = clean(username);
 
-    console.log("📥 REQUEST:", { fromUid, toUid, amount });
+    const snap = await db
+      .collection("users")
+      .where("username", "==", username)
+      .limit(1)
+      .get();
 
-    // ✅ Validate
-    if (!fromUid || !toUid) {
-      return res.status(400).json({ error: "UIDs are required" });
+    if (snap.empty) {
+      return res.status(404).json({ error: "User not found" });
     }
 
-    if (fromUid === toUid) {
-      return res.status(400).json({ error: "Cannot send to yourself" });
+    const user = snap.docs[0].data();
+
+    const valid = await bcrypt.compare(pin, user.pin);
+    if (!valid) {
+      return res.status(401).json({ error: "Wrong PIN" });
     }
 
-    if (!amount || isNaN(amount) || amount <= 0) {
-      return res.status(400).json({ error: "Invalid amount" });
+    if (pushToken) {
+      await db.collection("users").doc(user.uid).update({
+        pushToken,
+      });
+    }
+
+    const payload = { uid: user.uid, username: user.username };
+
+    const accessToken = generateAccessToken(payload);
+    const refreshToken = generateRefreshToken(payload);
+
+    res.json({
+      success: true,
+      accessToken,
+      refreshToken,
+      user: {
+        username: user.username,
+        balance: user.balance,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ================= REFRESH =================
+app.post("/refresh", (req, res) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(401).json({ error: "No refresh token" });
+  }
+
+  try {
+    const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
+
+    const newAccessToken = generateAccessToken({
+      uid: decoded.uid,
+      username: decoded.username,
+    });
+
+    res.json({ accessToken: newAccessToken });
+  } catch {
+    res.status(401).json({ error: "Invalid refresh token" });
+  }
+});
+
+// ================= ME =================
+app.get("/me", auth, async (req, res) => {
+  const doc = await db.collection("users").doc(req.user.uid).get();
+  res.json({ user: doc.data() });
+});
+
+// ================= SEND =================
+app.post("/send", auth, async (req, res) => {
+  try {
+    const { toUid, amount } = req.body;
+    const fromUid = req.user.uid;
+
+    const value = Number(amount);
+
+    if (!toUid || value <= 0) {
+      return res.status(400).json({ error: "Invalid data" });
     }
 
     const senderRef = db.collection("users").doc(fromUid);
     const receiverRef = db.collection("users").doc(toUid);
 
-    const [senderDoc, receiverDoc] = await Promise.all([
-      senderRef.get(),
-      receiverRef.get(),
-    ]);
+    await db.runTransaction(async (t) => {
+      const s = await t.get(senderRef);
+      const r = await t.get(receiverRef);
 
-    if (!senderDoc.exists) {
-      return res.status(404).json({ error: "Sender not found" });
-    }
+      if (!s.exists) throw new Error("Sender not found");
 
-    // ✅ Auto-create receiver
-    if (!receiverDoc.exists) {
-      await receiverRef.set({
-        uid: toUid,
-        username: "New User",
-        balance: 0,
-        frozenBalance: 0,
-        pushToken: null,
-        deviceId: null,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+      if (s.data().balance < value) {
+        throw new Error("Insufficient balance");
+      }
+
+      if (!r.exists) {
+        t.set(receiverRef, {
+          uid: toUid,
+          username: "New User",
+          balance: 0,
+        });
+      }
+
+      t.update(senderRef, {
+        balance: s.data().balance - value,
       });
-    }
 
-    const sender = senderDoc.data();
-    const receiver = (await receiverRef.get()).data();
+      t.update(receiverRef, {
+        balance: (r.data()?.balance || 0) + value,
+      });
+    });
 
-    if ((sender.balance || 0) < amount) {
-      return res.status(400).json({ error: "Insufficient balance" });
-    }
-
-    // 💸 Update balances
-    await Promise.all([
-      senderRef.update({
-        balance: sender.balance - amount,
-        updatedAt: Date.now(),
-      }),
-      receiverRef.update({
-        balance: (receiver.balance || 0) + amount,
-        updatedAt: Date.now(),
-      }),
-    ]);
-
-    // 📜 Save transaction
     const txRef = db.collection("transactions").doc();
 
-    await txRef.set({
+    const receipt = {
       id: txRef.id,
       fromUid,
       toUid,
-      amount,
+      amount: value,
+      reference: "TX-" + Date.now(),
       createdAt: Date.now(),
-    });
+    };
 
-    // 🔔 Push notification
-    if (receiver.pushToken) {
-      try {
-        await fetch("https://exp.host/--/api/v2/push/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            to: receiver.pushToken,
-            title: "💰 Money Received",
-            body: `You received UGX ${amount}`,
-          }),
-        });
-      } catch (err) {
-        console.log("⚠️ Push failed:", err.message);
-      }
-    }
+    await txRef.set(receipt);
 
-    res.json({ success: true });
+    const sender = (await senderRef.get()).data();
+    const receiver = (await receiverRef.get()).data();
+
+    await sendPush(
+      receiver.pushToken,
+      "💰 Money Received",
+      `UGX ${value} received from ${sender.username}`
+    );
+
+    await sendPush(
+      sender.pushToken,
+      "📤 Money Sent",
+      `UGX ${value} sent to ${receiver.username}`
+    );
+
+    res.json({ success: true, receipt });
   } catch (err) {
-    console.error("❌ /send error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 
 // ================= TRANSACTIONS =================
-app.get("/transactions/:uid", async (req, res) => {
+app.get("/transactions", auth, async (req, res) => {
   try {
-    const uid = clean(req.params.uid);
-
-    if (!uid) {
-      return res.status(400).json({ error: "UID required" });
-    }
+    const uid = req.user.uid;
 
     const sent = await db
       .collection("transactions")
@@ -238,14 +269,13 @@ app.get("/transactions/:uid", async (req, res) => {
 
     const txs = [];
 
-    sent.forEach((doc) => txs.push(doc.data()));
-    received.forEach((doc) => txs.push(doc.data()));
+    sent.forEach((d) => txs.push(d.data()));
+    received.forEach((d) => txs.push(d.data()));
 
     txs.sort((a, b) => b.createdAt - a.createdAt);
 
-    res.json({ success: true, transactions: txs });
+    res.json({ transactions: txs });
   } catch (err) {
-    console.error("❌ /transactions error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -253,7 +283,4 @@ app.get("/transactions/:uid", async (req, res) => {
 // ================= START =================
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, async () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  await createDefaultUser();
-});
+app.listen(PORT, () => console.log("🚀 Server running"));
