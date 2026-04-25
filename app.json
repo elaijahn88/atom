@@ -1,6 +1,5 @@
 {
   "expo": {
-   
     "name": "coco",
     "slug": "jovan",
     "version": "1.0.0",
@@ -14,6 +13,7 @@
     },
     "android": {
       "package": "com.xlijah.Atom",
+      "googleServicesFile": "./google-services.json",   ✅ ADD THIS LINE
       "adaptiveIcon": {
         "backgroundColor": "#000000",
         "foregroundImage": "./android-icon-foreground.png.png",
