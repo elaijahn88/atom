@@ -7,17 +7,23 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ================= FIREBASE INIT (ENV ONLY) =================
+// ================= FIREBASE INIT =================
 let db;
 
 try {
   if (!process.env.FIREBASE_KEY) {
-    throw new Error("FIREBASE_KEY is missing in environment variables");
+    throw new Error("FIREBASE_KEY is missing");
   }
 
   console.log("🔐 Using FIREBASE_KEY from ENV");
 
-  const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+  let serviceAccount;
+
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+  } catch (err) {
+    throw new Error("FIREBASE_KEY is not valid JSON");
+  }
 
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
@@ -25,38 +31,37 @@ try {
 
   db = admin.firestore();
 
-  console.log("🔥 Firebase initialized successfully");
+  console.log("🔥 Firebase initialized");
 } catch (err) {
   console.error("❌ Firebase init failed:", err.message);
   process.exit(1);
 }
 
+// ================= HELPERS =================
+const clean = (val) => (typeof val === "string" ? val.trim() : val);
+
 // ================= DEFAULT USER =================
 async function createDefaultUser() {
-  try {
-    const defaultUid = "default_user_001";
+  const uid = "default_user_001";
 
-    const ref = db.collection("users").doc(defaultUid);
-    const doc = await ref.get();
+  const ref = db.collection("users").doc(uid);
+  const doc = await ref.get();
 
-    if (!doc.exists) {
-      await ref.set({
-        uid: defaultUid,
-        username: "Default User",
-        balance: 1000,
-        frozenBalance: 0,
-        pushToken: null,
-        deviceId: null,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
+  if (!doc.exists) {
+    await ref.set({
+      uid,
+      username: "Default User",
+      balance: 1000,
+      frozenBalance: 0,
+      pushToken: null,
+      deviceId: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
 
-      console.log("✅ Default user created");
-    } else {
-      console.log("ℹ️ Default user already exists");
-    }
-  } catch (err) {
-    console.error("❌ Default user error:", err.message);
+    console.log("✅ Default user created");
+  } else {
+    console.log("ℹ️ Default user exists");
   }
 }
 
@@ -68,7 +73,9 @@ app.get("/", (req, res) => {
 // ================= USER =================
 app.post("/user", async (req, res) => {
   try {
-    const { uid, username, pushToken, deviceId } = req.body;
+    let { uid, username, pushToken, deviceId } = req.body;
+
+    uid = clean(uid);
 
     if (!uid) {
       return res.status(400).json({ error: "UID required" });
@@ -88,7 +95,7 @@ app.post("/user", async (req, res) => {
     if (!doc.exists) {
       await ref.set({
         ...data,
-        balance: 0,
+        balance: 100,
         frozenBalance: 0,
         createdAt: Date.now(),
       });
@@ -108,21 +115,25 @@ app.post("/user", async (req, res) => {
 // ================= SEND MONEY =================
 app.post("/send", async (req, res) => {
   try {
-    console.log("📥 BODY:", req.body);
-
     let { fromUid, toUid, amount } = req.body;
 
     // ✅ Clean inputs
-    fromUid = fromUid?.trim();
-    toUid = toUid?.trim();
+    fromUid = clean(fromUid);
+    toUid = clean(toUid);
     amount = Number(amount);
+
+    console.log("📥 REQUEST:", { fromUid, toUid, amount });
 
     // ✅ Validate
     if (!fromUid || !toUid) {
       return res.status(400).json({ error: "UIDs are required" });
     }
 
-    if (isNaN(amount) || amount <= 0) {
+    if (fromUid === toUid) {
+      return res.status(400).json({ error: "Cannot send to yourself" });
+    }
+
+    if (!amount || isNaN(amount) || amount <= 0) {
       return res.status(400).json({ error: "Invalid amount" });
     }
 
@@ -138,7 +149,7 @@ app.post("/send", async (req, res) => {
       return res.status(404).json({ error: "Sender not found" });
     }
 
-    // ✅ Auto-create receiver if missing
+    // ✅ Auto-create receiver
     if (!receiverDoc.exists) {
       await receiverRef.set({
         uid: toUid,
@@ -162,7 +173,7 @@ app.post("/send", async (req, res) => {
     // 💸 Update balances
     await Promise.all([
       senderRef.update({
-        balance: (sender.balance || 0) - amount,
+        balance: sender.balance - amount,
         updatedAt: Date.now(),
       }),
       receiverRef.update({
@@ -173,6 +184,7 @@ app.post("/send", async (req, res) => {
 
     // 📜 Save transaction
     const txRef = db.collection("transactions").doc();
+
     await txRef.set({
       id: txRef.id,
       fromUid,
@@ -208,7 +220,11 @@ app.post("/send", async (req, res) => {
 // ================= TRANSACTIONS =================
 app.get("/transactions/:uid", async (req, res) => {
   try {
-    const { uid } = req.params;
+    const uid = clean(req.params.uid);
+
+    if (!uid) {
+      return res.status(400).json({ error: "UID required" });
+    }
 
     const sent = await db
       .collection("transactions")
