@@ -31,7 +31,7 @@ try {
   process.exit(1);
 }
 
-// ================= DEFAULT USER SETUP =================
+// ================= DEFAULT USER =================
 async function createDefaultUser() {
   try {
     const defaultUid = "default_user_001";
@@ -108,39 +108,70 @@ app.post("/user", async (req, res) => {
 // ================= SEND MONEY =================
 app.post("/send", async (req, res) => {
   try {
-    const { fromUid, toUid, amount } = req.body;
+    console.log("📥 BODY:", req.body);
 
-    if (!fromUid || !toUid || !amount) {
-      return res.status(400).json({ error: "Missing fields" });
+    let { fromUid, toUid, amount } = req.body;
+
+    // ✅ Clean inputs
+    fromUid = fromUid?.trim();
+    toUid = toUid?.trim();
+    amount = Number(amount);
+
+    // ✅ Validate
+    if (!fromUid || !toUid) {
+      return res.status(400).json({ error: "UIDs are required" });
+    }
+
+    if (isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ error: "Invalid amount" });
     }
 
     const senderRef = db.collection("users").doc(fromUid);
     const receiverRef = db.collection("users").doc(toUid);
 
-    const senderDoc = await senderRef.get();
-    const receiverDoc = await receiverRef.get();
+    const [senderDoc, receiverDoc] = await Promise.all([
+      senderRef.get(),
+      receiverRef.get(),
+    ]);
 
-    if (!senderDoc.exists || !receiverDoc.exists) {
-      return res.status(404).json({ error: "User not found" });
+    if (!senderDoc.exists) {
+      return res.status(404).json({ error: "Sender not found" });
+    }
+
+    // ✅ Auto-create receiver if missing
+    if (!receiverDoc.exists) {
+      await receiverRef.set({
+        uid: toUid,
+        username: "New User",
+        balance: 0,
+        frozenBalance: 0,
+        pushToken: null,
+        deviceId: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
     }
 
     const sender = senderDoc.data();
-    const receiver = receiverDoc.data();
+    const receiver = (await receiverRef.get()).data();
 
     if ((sender.balance || 0) < amount) {
       return res.status(400).json({ error: "Insufficient balance" });
     }
 
     // 💸 Update balances
-    await senderRef.update({
-      balance: (sender.balance || 0) - amount,
-    });
+    await Promise.all([
+      senderRef.update({
+        balance: (sender.balance || 0) - amount,
+        updatedAt: Date.now(),
+      }),
+      receiverRef.update({
+        balance: (receiver.balance || 0) + amount,
+        updatedAt: Date.now(),
+      }),
+    ]);
 
-    await receiverRef.update({
-      balance: (receiver.balance || 0) + amount,
-    });
-
-    // 📜 SAVE TRANSACTION
+    // 📜 Save transaction
     const txRef = db.collection("transactions").doc();
     await txRef.set({
       id: txRef.id,
@@ -150,25 +181,27 @@ app.post("/send", async (req, res) => {
       createdAt: Date.now(),
     });
 
-    // 🔔 PUSH NOTIFICATION
+    // 🔔 Push notification
     if (receiver.pushToken) {
-      await fetch("https://exp.host/--/api/v2/push/send", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          to: receiver.pushToken,
-          title: "💰 Money Received",
-          body: `You received UGX ${amount}`,
-        }),
-      });
+      try {
+        await fetch("https://exp.host/--/api/v2/push/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: receiver.pushToken,
+            title: "💰 Money Received",
+            body: `You received UGX ${amount}`,
+          }),
+        });
+      } catch (err) {
+        console.log("⚠️ Push failed:", err.message);
+      }
     }
 
     res.json({ success: true });
   } catch (err) {
-    console.error("❌ /send error:", err.message);
-    res.status(500).json({ error: err.message });
+    console.error("❌ /send error:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
