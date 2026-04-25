@@ -7,21 +7,13 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ================= FIREBASE INIT (HYBRID) =================
+// ================= FIREBASE INIT (LOCAL ONLY) =================
 let db;
 
 try {
-  let serviceAccount;
+  console.log("📁 Using local serviceAccountKey.json");
 
-  if (process.env.FIREBASE_KEY) {
-    // ✅ PRODUCTION (Render)
-    console.log("🔐 Using FIREBASE_KEY from ENV");
-    serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
-  } else {
-    // ✅ LOCAL (serviceAccountKey.json)
-    console.log("📁 Using local serviceAccountKey.json");
-    serviceAccount = require("./servicekey.json");
-  }
+  const serviceAccount = require("./servicekey.json");
 
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
