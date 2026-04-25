@@ -7,13 +7,17 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ================= FIREBASE INIT (LOCAL ONLY) =================
+// ================= FIREBASE INIT (ENV ONLY) =================
 let db;
 
 try {
-  console.log("📁 Using local serviceAccountKey.json");
+  if (!process.env.FIREBASE_KEY) {
+    throw new Error("FIREBASE_KEY is missing in environment variables");
+  }
 
-  const serviceAccount = require("./servicekey.json");
+  console.log("🔐 Using FIREBASE_KEY from ENV");
+
+  const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
 
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
@@ -202,7 +206,5 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
-
-  // 👇 AUTO CREATE DEFAULT USER ON START
   await createDefaultUser();
 });
