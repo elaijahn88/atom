@@ -8,25 +8,28 @@
     "scheme": "unique",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+
     "ios": {
       "supportsTablet": true
     },
+
     "android": {
       "package": "com.xlijah.Atom",
-      "googleServicesFile": "./google-services.json",   ✅ ADD THIS LINE
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#000000",
-        "foregroundImage": "./android-icon-foreground.png.png",
-        "backgroundImage": "./android-icon-background.png.png",
-        "monochromeImage": "./android-icon-monochrome.png"
+        "foregroundImage": "./android-icon-foreground.png",
+        "backgroundImage": "./android-icon-background.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
+
     "web": {
       "output": "static",
       "favicon": "./favicon.png"
     },
+
     "plugins": [
       "expo-router",
       [
@@ -42,10 +45,12 @@
         }
       ]
     ],
+
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
+
     "extra": {
       "eas": {
         "projectId": "4e00a33e-59c6-42f7-bf5f-8955b8e7cecc"
