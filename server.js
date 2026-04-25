@@ -15,11 +15,13 @@ app.use(cors());
 
 // ================= SECURITY =================
 const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error("JWT_SECRET missing in environment variables");
-}
+if (!JWT_SECRET) throw new Error("JWT_SECRET missing");
 
 // ================= FIREBASE =================
+if (!process.env.FIREBASE_KEY) {
+  throw new Error("FIREBASE_KEY missing");
+}
+
 const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
 
 admin.initializeApp({
@@ -58,20 +60,20 @@ const sendPush = async (token, title, body) => {
       body: JSON.stringify({ to: token, title, body, sound: "default" }),
     });
   } catch (err) {
-    console.error("Push notification failed:", err.message);
+    console.error("Push failed:", err.message);
   }
 };
 
 // ================= AUTH =================
 const auth = (req, res, next) => {
   const header = req.headers.authorization;
+
   if (!header || !header.startsWith("Bearer ")) {
     return res.status(401).json({ error: "No token" });
   }
 
-  const token = header.split(" ")[1];
-
   try {
+    const token = header.split(" ")[1];
     req.user = jwt.verify(token, JWT_SECRET);
     next();
   } catch {
@@ -79,38 +81,16 @@ const auth = (req, res, next) => {
   }
 };
 
-// ================= REGISTER (kept for completeness) =================
-app.post("/register", async (req, res) => {
+// ================= LOGIN (AUTO REGISTER) =================
+app.post("/login", async (req, res) => {
   try {
-    let { username, pin } = req.body;
-    username = clean(username);
+    let { username, pin, pushToken } = req.body;
+
+    username = clean(username)?.toLowerCase();
 
     if (!username || !pin || pin.length < 4) {
       return res.status(400).json({ error: "Invalid data" });
     }
-
-    const uid = generateUID();
-    const hashedPin = await bcrypt.hash(pin, 10);
-
-    await db.ref("users/" + uid).set({
-      uid,
-      username,
-      usernameKey: username.toLowerCase(),
-      pin: hashedPin,
-      createdAt: Date.now(),
-    });
-
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ================= LOGIN =================
-app.post("/login", async (req, res) => {
-  try {
-    let { username, pin, pushToken } = req.body;
-    username = clean(username).toLowerCase();
 
     const snap = await db
       .ref("users")
@@ -118,20 +98,36 @@ app.post("/login", async (req, res) => {
       .equalTo(username)
       .once("value");
 
+    let user;
+
+    // ===== CREATE USER IF NOT EXISTS =====
     if (!snap.exists()) {
-      return res.status(404).json({ error: "User not found" });
-    }
+      const uid = generateUID();
+      const hashedPin = await bcrypt.hash(pin, 10);
 
-    const userData = snap.val();
-    const user = Object.values(userData)[0];
+      user = {
+        uid,
+        username,
+        usernameKey: username,
+        pin: hashedPin,
+        pushToken: pushToken || null,
+        createdAt: Date.now(),
+      };
 
-    const valid = await bcrypt.compare(pin, user.pin);
-    if (!valid) {
-      return res.status(401).json({ error: "Wrong PIN" });
-    }
+      await db.ref("users/" + uid).set(user);
+    } else {
+      // ===== LOGIN EXISTING USER =====
+      const data = snap.val();
+      user = Object.values(data)[0];
 
-    if (pushToken) {
-      await db.ref("users/" + user.uid).update({ pushToken });
+      const valid = await bcrypt.compare(pin, user.pin);
+      if (!valid) {
+        return res.status(401).json({ error: "Wrong PIN" });
+      }
+
+      if (pushToken) {
+        await db.ref("users/" + user.uid).update({ pushToken });
+      }
     }
 
     const token = jwt.sign(
@@ -172,26 +168,27 @@ app.post("/send-message", auth, async (req, res) => {
     await msgRef.set(message);
 
     const meta = {
-      lastMessage: type === "text" ? text.trim().substring(0, 100) : "📎 File",
+      lastMessage:
+        type === "text" ? text.trim().slice(0, 100) : "📎 File",
       lastSender: fromUid,
       updatedAt: Date.now(),
     };
 
     await db.ref(`chats/${chatId}/meta`).update(meta);
 
-    await db.ref(`userChats/\( {fromUid}/ \){chatId}`).update({
+    await db.ref(`userChats/${fromUid}/${chatId}`).update({
       chatId,
       with: toUid,
       ...meta,
     });
 
-    await db.ref(`userChats/\( {toUid}/ \){chatId}`).update({
+    await db.ref(`userChats/${toUid}/${chatId}`).update({
       chatId,
       with: fromUid,
       ...meta,
     });
 
-    // Send push notification
+    // ===== PUSH =====
     const receiverSnap = await db.ref("users/" + toUid).once("value");
     const senderSnap = await db.ref("users/" + fromUid).once("value");
 
@@ -206,30 +203,28 @@ app.post("/send-message", auth, async (req, res) => {
 
     res.json({ success: true, message });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ================= Other endpoints (unchanged but with minor robustness) =================
-app.post("/send-file", auth, upload.single("file"), async (req, res) => {
-  // ... (keep as is, or implement if needed)
-  res.status(501).json({ error: "File upload not fully implemented in this fix" });
-});
-
+// ================= GET CHATS =================
 app.get("/chats", auth, async (req, res) => {
   try {
     const uid = req.user.uid;
     const snap = await db.ref("userChats/" + uid).once("value");
+
     const chats = [];
     snap.forEach((c) => chats.push(c.val()));
+
     chats.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
     res.json({ chats });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// ================= SEEN =================
 app.post("/seen/:chatId", auth, async (req, res) => {
   try {
     const uid = req.user.uid;
@@ -245,7 +240,7 @@ app.post("/seen/:chatId", auth, async (req, res) => {
       }
     });
 
-    if (Object.keys(updates).length > 0) {
+    if (Object.keys(updates).length) {
       await db.ref(`chats/${chatId}/messages`).update(updates);
     }
 
@@ -255,13 +250,14 @@ app.post("/seen/:chatId", auth, async (req, res) => {
   }
 });
 
+// ================= TYPING =================
 app.post("/typing", auth, async (req, res) => {
   try {
     const { toUid, typing } = req.body;
     const fromUid = req.user.uid;
     const chatId = getChatId(fromUid, toUid);
 
-    await db.ref(`typing/\( {chatId}/ \){fromUid}`).set({
+    await db.ref(`typing/${chatId}/${fromUid}`).set({
       typing: !!typing,
       updatedAt: Date.now(),
     });
@@ -272,19 +268,30 @@ app.post("/typing", auth, async (req, res) => {
   }
 });
 
+// ================= PRESENCE =================
 app.post("/presence", auth, async (req, res) => {
   try {
     const uid = req.user.uid;
+
     await db.ref("presence/" + uid).set({
       online: true,
       lastSeen: Date.now(),
     });
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// ================= FILE (PLACEHOLDER) =================
+app.post("/send-file", auth, upload.single("file"), async (req, res) => {
+  res.status(501).json({ error: "File upload not implemented yet" });
+});
+
 // ================= START =================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Chat server running on port ${PORT}`));
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
