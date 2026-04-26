@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,53 +6,54 @@ import {
   TouchableOpacity,
   FlatList,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
 } from "react-native";
 
 export default function App() {
+  const [tab, setTab] = useState("chat");
+
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
 
+  const [amount, setAmount] = useState("");
+
+  const products = [
+    { id: "1", name: "iPhone 13 Pro", price: "UGX 2,800,000", place: "Kampala" },
+    { id: "2", name: "Gaming Laptop", price: "UGX 3,500,000", place: "Entebbe" },
+    { id: "3", name: "Nike Sneakers", price: "UGX 250,000", place: "Nairobi" },
+  ];
+
   const API_URL = "https://your-api.com/messages";
 
+  /* ---------- CHAT ---------- */
   const fetchMessages = async () => {
     try {
       const res = await fetch(API_URL);
       const data = await res.json();
       setMessages(data);
-    } catch (err) {
-      console.log(err);
-    }
-  };
-
-  const sendMessage = async () => {
-    if (!text.trim()) return;
-
-    try {
-      await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text,
-          sender: "me",
-        }),
-      });
-
-      setText("");
-      fetchMessages();
-    } catch (err) {
-      console.log(err);
-    }
+    } catch (e) {}
   };
 
   useEffect(() => {
     fetchMessages();
-    const interval = setInterval(fetchMessages, 2500);
+    const interval = setInterval(fetchMessages, 3000);
     return () => clearInterval(interval);
   }, []);
 
-  const renderItem = ({ item }) => (
+  const sendMessage = async () => {
+    if (!text) return;
+
+    await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, sender: "me" }),
+    });
+
+    setText("");
+    fetchMessages();
+  };
+
+  /* ---------- RENDER CHAT ---------- */
+  const renderMsg = ({ item }) => (
     <View
       style={[
         styles.msg,
@@ -63,130 +64,184 @@ export default function App() {
     </View>
   );
 
+  /* ---------- SHOP ITEM ---------- */
+  const renderProduct = ({ item }) => (
+    <View style={styles.productCard}>
+      <View style={styles.imageBox} />
+
+      <Text style={styles.productName}>{item.name}</Text>
+      <Text style={styles.productPrice}>{item.price}</Text>
+      <Text style={styles.productPlace}>📍 {item.place}</Text>
+
+      <TouchableOpacity style={styles.buyBtn}>
+        <Text style={styles.buyText}>Buy Now</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  /* ---------- SCREEN SWITCH ---------- */
+  const renderScreen = () => {
+    if (tab === "chat") {
+      return (
+        <>
+          <FlatList
+            data={messages}
+            renderItem={renderMsg}
+            keyExtractor={(i, idx) => idx.toString()}
+            contentContainerStyle={styles.chat}
+          />
+
+          <View style={styles.inputBar}>
+            <TextInput
+              value={text}
+              onChangeText={setText}
+              placeholder="Message..."
+              placeholderTextColor="#888"
+              style={styles.input}
+            />
+
+            <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
+              <Text style={styles.sendText}>➤</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      );
+    }
+
+    if (tab === "money") {
+      return (
+        <View style={styles.center}>
+          <Text style={styles.title}>💸 Money Transfer</Text>
+
+          <TextInput
+            placeholder="Amount"
+            placeholderTextColor="#888"
+            value={amount}
+            onChangeText={setAmount}
+            style={styles.moneyInput}
+          />
+
+          <TouchableOpacity style={styles.greenBtn}>
+            <Text style={styles.btnText}>Send Money</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.blueBtn}>
+            <Text style={styles.btnText}>Request Money</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (tab === "shop") {
+      return (
+        <FlatList
+          data={products}
+          renderItem={renderProduct}
+          keyExtractor={(i) => i.id}
+          contentContainerStyle={styles.shop}
+        />
+      );
+    }
+
+    if (tab === "others") {
+      return (
+        <View style={styles.center}>
+          <Text style={styles.title}>⚙️ Settings</Text>
+        </View>
+      );
+    }
+  };
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
+    <View style={styles.container}>
       {/* HEADER */}
       <View style={styles.header}>
-        <View style={styles.avatar} />
-        <View>
-          <Text style={styles.title}>API Chat</Text>
-          <Text style={styles.subtitle}>Online • chatting now</Text>
-        </View>
+        <Text style={styles.headerText}>My Super App</Text>
       </View>
 
-      {/* CHAT */}
-      <FlatList
-        data={messages}
-        renderItem={renderItem}
-        keyExtractor={(item, i) => i.toString()}
-        contentContainerStyle={styles.chat}
-      />
+      {/* TABS */}
+      <View style={styles.tabs}>
+        <TouchableOpacity onPress={() => setTab("chat")}>
+          <Text style={[styles.tab, tab === "chat" && styles.active]}>
+            Chats
+          </Text>
+        </TouchableOpacity>
 
-      {/* INPUT */}
-      <View style={styles.inputBar}>
-        <TextInput
-          value={text}
-          onChangeText={setText}
-          placeholder="Message..."
-          placeholderTextColor="#888"
-          style={styles.input}
-        />
+        <TouchableOpacity onPress={() => setTab("money")}>
+          <Text style={[styles.tab, tab === "money" && styles.active]}>
+            Money
+          </Text>
+        </TouchableOpacity>
 
-        <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
-          <Text style={styles.sendText}>➤</Text>
+        <TouchableOpacity onPress={() => setTab("shop")}>
+          <Text style={[styles.tab, tab === "shop" && styles.active]}>
+            Shop 🛒
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => setTab("others")}>
+          <Text style={[styles.tab, tab === "others" && styles.active]}>
+            Others
+          </Text>
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+
+      {/* SCREEN */}
+      {renderScreen()}
+    </View>
   );
 }
 
 /* ---------- STYLES ---------- */
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#0b141a",
-  },
+  container: { flex: 1, backgroundColor: "#0b141a" },
 
   header: {
-    flexDirection: "row",
-    alignItems: "center",
     paddingTop: 60,
     paddingBottom: 15,
-    paddingHorizontal: 15,
     backgroundColor: "#075e54",
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    alignItems: "center",
   },
 
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#25d366",
-    marginRight: 10,
+  headerText: { color: "#fff", fontWeight: "700", fontSize: 18 },
+
+  tabs: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    backgroundColor: "#111b21",
+    paddingVertical: 10,
   },
 
-  title: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "700",
-  },
+  tab: { color: "#888", fontWeight: "600" },
 
-  subtitle: {
-    color: "#d1fae5",
-    fontSize: 12,
-  },
+  active: { color: "#25d366" },
 
-  chat: {
-    padding: 12,
-    paddingBottom: 80,
-  },
+  chat: { padding: 12, paddingBottom: 80 },
 
   msg: {
-    padding: 12,
-    borderRadius: 18,
+    padding: 10,
+    borderRadius: 15,
     marginBottom: 10,
-    maxWidth: "80%",
+    maxWidth: "75%",
   },
 
-  me: {
-    backgroundColor: "#22c55e",
-    alignSelf: "flex-end",
-    borderBottomRightRadius: 5,
-  },
+  me: { backgroundColor: "#22c55e", alignSelf: "flex-end" },
+  them: { backgroundColor: "#1f2c34", alignSelf: "flex-start" },
 
-  them: {
-    backgroundColor: "#1f2c34",
-    alignSelf: "flex-start",
-    borderBottomLeftRadius: 5,
-  },
-
-  msgText: {
-    color: "#fff",
-    fontSize: 15,
-  },
+  msgText: { color: "#fff" },
 
   inputBar: {
     flexDirection: "row",
-    alignItems: "center",
     padding: 10,
-    position: "absolute",
-    bottom: 0,
-    width: "100%",
-    backgroundColor: "#0b141a",
   },
 
   input: {
     flex: 1,
     backgroundColor: "#1f2c34",
+    borderRadius: 20,
     padding: 12,
-    borderRadius: 25,
     color: "#fff",
-    paddingHorizontal: 15,
   },
 
   sendBtn: {
@@ -199,9 +254,69 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  sendText: {
-    color: "#000",
-    fontSize: 18,
-    fontWeight: "bold",
+  sendText: { fontSize: 18, fontWeight: "bold" },
+
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+
+  title: { color: "#fff", fontSize: 18, marginBottom: 15 },
+
+  moneyInput: {
+    width: "80%",
+    backgroundColor: "#1f2c34",
+    padding: 12,
+    borderRadius: 10,
+    color: "#fff",
+    marginBottom: 10,
   },
+
+  greenBtn: {
+    backgroundColor: "#22c55e",
+    padding: 12,
+    width: "80%",
+    borderRadius: 10,
+    marginBottom: 10,
+    alignItems: "center",
+  },
+
+  blueBtn: {
+    backgroundColor: "#3b82f6",
+    padding: 12,
+    width: "80%",
+    borderRadius: 10,
+    alignItems: "center",
+  },
+
+  btnText: { color: "#000", fontWeight: "700" },
+
+  shop: { padding: 12 },
+
+  productCard: {
+    backgroundColor: "#1f2c34",
+    padding: 15,
+    borderRadius: 15,
+    marginBottom: 15,
+  },
+
+  imageBox: {
+    height: 120,
+    backgroundColor: "#111b21",
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+
+  productName: { color: "#fff", fontWeight: "700" },
+
+  productPrice: { color: "#25d366", marginTop: 5 },
+
+  productPlace: { color: "#aaa", marginTop: 3 },
+
+  buyBtn: {
+    marginTop: 10,
+    backgroundColor: "#25d366",
+    padding: 10,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+
+  buyText: { color: "#000", fontWeight: "700" },
 });
