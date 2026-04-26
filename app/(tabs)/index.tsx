@@ -5,63 +5,9 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
+  ScrollView,
 } from "react-native";
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Notifications from "expo-notifications";
-import * as Device from "expo-device";
-
-const API_URL = "https://api-1-lbzf.onrender.com";
-
-// ================= PUSH TOKEN =================
-const getPushToken = async () => {
-  if (!Device.isDevice) return null;
-
-  const { status } = await Notifications.requestPermissionsAsync();
-  if (status !== "granted") return null;
-
-  const token = (await Notifications.getExpoPushTokenAsync()).data;
-  return token;
-};
-
-// ================= API =================
-const api = async (endpoint: string, method = "GET", body?: any) => {
-  let token = await AsyncStorage.getItem("accessToken");
-  const refreshToken = await AsyncStorage.getItem("refreshToken");
-
-  let res = await fetch(API_URL + endpoint, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: token ? `Bearer ${token}` : "",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  // 🔁 Auto token refresh
-  if (res.status === 401 && refreshToken) {
-    const r = await fetch(API_URL + "/refresh", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
-    });
-
-    const d = await r.json();
-
-    if (d.accessToken) {
-      await AsyncStorage.setItem("accessToken", d.accessToken);
-      return api(endpoint, method, body); // Retry with new token
-    }
-  }
-
-  const data = await res.json();
-
-  if (!res.ok) throw new Error(data.error || "Something went wrong");
-  return data;
-};
-
-// ================= MAIN APP =================
 export default function App() {
   const [username, setUsername] = useState("");
   const [pin, setPin] = useState("");
@@ -69,106 +15,69 @@ export default function App() {
   const [amount, setAmount] = useState("");
   const [balance, setBalance] = useState(0);
 
-  useEffect(() => {
-    loadUser();
-  }, []);
-
-  const loadUser = async () => {
-    try {
-      const res = await api("/me");
-      setBalance(res.user.balance);
-    } catch (e) {
-      // Silent fail or handle appropriately
-      console.log("Failed to load user", e);
-    }
-  };
-
-  const register = async () => {
-    try {
-      await api("/register", "POST", { username, pin });
-      Alert.alert("Success", "Account created successfully");
-    } catch (e: any) {
-      Alert.alert("Error", e.message);
-    }
-  };
-
-  const login = async () => {
-    try {
-      const pushToken = await getPushToken();
-
-      const res = await api("/login", "POST", {
-        username,
-        pin,
-        pushToken,
-      });
-
-      await AsyncStorage.setItem("accessToken", res.accessToken);
-      await AsyncStorage.setItem("refreshToken", res.refreshToken);
-
-      setBalance(res.user.balance);
-
-      Alert.alert("Welcome", `Hello, ${res.user.username}`);
-    } catch (e: any) {
-      Alert.alert("Error", e.message);
-    }
-  };
-
-  const send = async () => {
-    try {
-      const res = await api("/send", "POST", {
-        toUid,
-        amount: Number(amount),
-      });
-
-      Alert.alert("Success", `Receipt: ${res.receipt.reference}`);
-
-      loadUser(); // Refresh balance
-    } catch (e: any) {
-      Alert.alert("Error", e.message);
-    }
-  };
-
   return (
     <View style={styles.container}>
-      <TextInput
-        placeholder="Username"
-        onChangeText={setUsername}
-        style={styles.input}
-      />
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerText}>My Wallet</Text>
+        <Text style={styles.balance}>UGX {balance}</Text>
+      </View>
 
-      <TextInput
-        placeholder="PIN"
-        secureTextEntry
-        onChangeText={setPin}
-        style={styles.input}
-      />
+      <ScrollView contentContainerStyle={styles.content}>
+        {/* Auth Card */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Account</Text>
 
-      <TouchableOpacity onPress={register} style={styles.btn}>
-        <Text style={styles.text}>Register</Text>
-      </TouchableOpacity>
+          <TextInput
+            placeholder="Username"
+            placeholderTextColor="#aaa"
+            onChangeText={setUsername}
+            style={styles.input}
+          />
 
-      <TouchableOpacity onPress={login} style={styles.btn}>
-        <Text style={styles.text}>Login</Text>
-      </TouchableOpacity>
+          <TextInput
+            placeholder="PIN"
+            placeholderTextColor="#aaa"
+            secureTextEntry
+            onChangeText={setPin}
+            style={styles.input}
+          />
 
-      <Text style={styles.balance}>Balance: UGX {balance}</Text>
+          <View style={styles.row}>
+            <TouchableOpacity style={styles.secondaryBtn}>
+              <Text style={styles.secondaryText}>Register</Text>
+            </TouchableOpacity>
 
-      <TextInput
-        placeholder="Receiver UID"
-        onChangeText={setToUid}
-        style={styles.input}
-      />
+            <TouchableOpacity style={styles.primaryBtn}>
+              <Text style={styles.primaryText}>Login</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
-      <TextInput
-        placeholder="Amount"
-        onChangeText={setAmount}
-        keyboardType="numeric"
-        style={styles.input}
-      />
+        {/* Send Money Card */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Send Money</Text>
 
-      <TouchableOpacity onPress={send} style={styles.btn}>
-        <Text style={styles.text}>Send Money</Text>
-      </TouchableOpacity>
+          <TextInput
+            placeholder="Receiver UID"
+            placeholderTextColor="#aaa"
+            onChangeText={setToUid}
+            style={styles.input}
+          />
+
+          <TextInput
+            placeholder="Amount"
+            placeholderTextColor="#aaa"
+            keyboardType="numeric"
+            onChangeText={setAmount}
+            style={styles.input}
+          />
+
+          <TouchableOpacity style={styles.sendBtn}>
+            <Text style={styles.sendText}>Send</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -176,31 +85,73 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    backgroundColor: "#0f172a",
+    backgroundColor: "#111b21",
   },
-  input: {
-    backgroundColor: "#1e293b",
-    marginTop: 10,
-    padding: 12,
+
+  header: {
+    backgroundColor: "#075e54",
+    paddingTop: 50,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+
+  headerText: {
     color: "#fff",
-    borderRadius: 8,
-  },
-  btn: {
-    backgroundColor: "#3b82f6",
-    padding: 14,
-    marginTop: 15,
-    borderRadius: 8,
-  },
-  text: {
-    color: "#fff",
-    textAlign: "center",
+    fontSize: 20,
     fontWeight: "bold",
   },
+
   balance: {
-    color: "#22c55e",
-    marginTop: 20,
-    fontSize: 18,
+    color: "#d1fae5",
+    marginTop: 5,
+    fontSize: 16,
+  },
+
+  content: {
+    padding: 15,
+  },
+
+  card: {
+    backgroundColor: "#202c33",
+    padding: 15,
+    borderRadius: 15,
+    marginBottom: 15,
+  },
+
+  cardTitle: {
+    color: "#e9edef",
+    fontSize: 16,
+    marginBottom: 10,
+    fontWeight: "bold",
+  },
+
+  input: {
+    backgroundColor: "#2a3942",
+    padding: 12,
+    borderRadius: 10,
+    color: "#fff",
+    marginTop: 10,
+  },
+
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 15,
+  },
+
+  primaryBtn: {
+    backgroundColor: "#25d366",
+    padding: 12,
+    borderRadius: 10,
+    flex: 1,
+    marginLeft: 5,
+  },
+
+  primaryText: {
+    textAlign: "center",
+    color: "#000",
     fontWeight: "bold",
   },
 });
