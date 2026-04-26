@@ -1,157 +1,207 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
+  FlatList,
   StyleSheet,
-  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 
 export default function App() {
-  const [username, setUsername] = useState("");
-  const [pin, setPin] = useState("");
-  const [toUid, setToUid] = useState("");
-  const [amount, setAmount] = useState("");
-  const [balance, setBalance] = useState(0);
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerText}>My Wallet</Text>
-        <Text style={styles.balance}>UGX {balance}</Text>
-      </View>
+  const API_URL = "https://your-api.com/messages";
 
-      <ScrollView contentContainerStyle={styles.content}>
-        {/* Auth Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Account</Text>
+  const fetchMessages = async () => {
+    try {
+      const res = await fetch(API_URL);
+      const data = await res.json();
+      setMessages(data);
+    } catch (err) {
+      console.log(err);
+    }
+  };
 
-          <TextInput
-            placeholder="Username"
-            placeholderTextColor="#aaa"
-            onChangeText={setUsername}
-            style={styles.input}
-          />
+  const sendMessage = async () => {
+    if (!text.trim()) return;
 
-          <TextInput
-            placeholder="PIN"
-            placeholderTextColor="#aaa"
-            secureTextEntry
-            onChangeText={setPin}
-            style={styles.input}
-          />
+    try {
+      await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          sender: "me",
+        }),
+      });
 
-          <View style={styles.row}>
-            <TouchableOpacity style={styles.secondaryBtn}>
-              <Text style={styles.secondaryText}>Register</Text>
-            </TouchableOpacity>
+      setText("");
+      fetchMessages();
+    } catch (err) {
+      console.log(err);
+    }
+  };
 
-            <TouchableOpacity style={styles.primaryBtn}>
-              <Text style={styles.primaryText}>Login</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+  useEffect(() => {
+    fetchMessages();
+    const interval = setInterval(fetchMessages, 2500);
+    return () => clearInterval(interval);
+  }, []);
 
-        {/* Send Money Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Send Money</Text>
-
-          <TextInput
-            placeholder="Receiver UID"
-            placeholderTextColor="#aaa"
-            onChangeText={setToUid}
-            style={styles.input}
-          />
-
-          <TextInput
-            placeholder="Amount"
-            placeholderTextColor="#aaa"
-            keyboardType="numeric"
-            onChangeText={setAmount}
-            style={styles.input}
-          />
-
-          <TouchableOpacity style={styles.sendBtn}>
-            <Text style={styles.sendText}>Send</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+  const renderItem = ({ item }) => (
+    <View
+      style={[
+        styles.msg,
+        item.sender === "me" ? styles.me : styles.them,
+      ]}
+    >
+      <Text style={styles.msgText}>{item.text}</Text>
     </View>
   );
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      {/* HEADER */}
+      <View style={styles.header}>
+        <View style={styles.avatar} />
+        <View>
+          <Text style={styles.title}>API Chat</Text>
+          <Text style={styles.subtitle}>Online • chatting now</Text>
+        </View>
+      </View>
+
+      {/* CHAT */}
+      <FlatList
+        data={messages}
+        renderItem={renderItem}
+        keyExtractor={(item, i) => i.toString()}
+        contentContainerStyle={styles.chat}
+      />
+
+      {/* INPUT */}
+      <View style={styles.inputBar}>
+        <TextInput
+          value={text}
+          onChangeText={setText}
+          placeholder="Message..."
+          placeholderTextColor="#888"
+          style={styles.input}
+        />
+
+        <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
+          <Text style={styles.sendText}>➤</Text>
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
+  );
 }
+
+/* ---------- STYLES ---------- */
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#111b21",
+    backgroundColor: "#0b141a",
   },
 
   header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingTop: 60,
+    paddingBottom: 15,
+    paddingHorizontal: 15,
     backgroundColor: "#075e54",
-    paddingTop: 50,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
   },
 
-  headerText: {
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#25d366",
+    marginRight: 10,
+  },
+
+  title: {
     color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
+    fontSize: 18,
+    fontWeight: "700",
   },
 
-  balance: {
+  subtitle: {
     color: "#d1fae5",
-    marginTop: 5,
-    fontSize: 16,
+    fontSize: 12,
   },
 
-  content: {
-    padding: 15,
+  chat: {
+    padding: 12,
+    paddingBottom: 80,
   },
 
-  card: {
-    backgroundColor: "#202c33",
-    padding: 15,
-    borderRadius: 15,
-    marginBottom: 15,
-  },
-
-  cardTitle: {
-    color: "#e9edef",
-    fontSize: 16,
+  msg: {
+    padding: 12,
+    borderRadius: 18,
     marginBottom: 10,
-    fontWeight: "bold",
+    maxWidth: "80%",
+  },
+
+  me: {
+    backgroundColor: "#22c55e",
+    alignSelf: "flex-end",
+    borderBottomRightRadius: 5,
+  },
+
+  them: {
+    backgroundColor: "#1f2c34",
+    alignSelf: "flex-start",
+    borderBottomLeftRadius: 5,
+  },
+
+  msgText: {
+    color: "#fff",
+    fontSize: 15,
+  },
+
+  inputBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    position: "absolute",
+    bottom: 0,
+    width: "100%",
+    backgroundColor: "#0b141a",
   },
 
   input: {
-    backgroundColor: "#2a3942",
-    padding: 12,
-    borderRadius: 10,
-    color: "#fff",
-    marginTop: 10,
-  },
-
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 15,
-  },
-
-  primaryBtn: {
-    backgroundColor: "#25d366",
-    padding: 12,
-    borderRadius: 10,
     flex: 1,
-    marginLeft: 5,
+    backgroundColor: "#1f2c34",
+    padding: 12,
+    borderRadius: 25,
+    color: "#fff",
+    paddingHorizontal: 15,
   },
 
-  primaryText: {
-    textAlign: "center",
+  sendBtn: {
+    marginLeft: 10,
+    backgroundColor: "#25d366",
+    width: 45,
+    height: 45,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  sendText: {
     color: "#000",
+    fontSize: 18,
     fontWeight: "bold",
   },
 });
