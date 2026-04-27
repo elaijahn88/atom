@@ -11,10 +11,18 @@ import {
 export default function App() {
   const [tab, setTab] = useState("chat");
 
+  // CHAT
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
 
+  // MONEY
   const [amount, setAmount] = useState("");
+
+  // LAB
+  const [selectedExperiment, setSelectedExperiment] = useState(null);
+  const [voltage, setVoltage] = useState("");
+  const [resistance, setResistance] = useState("");
+  const [current, setCurrent] = useState(null);
 
   const products = [
     { id: "1", name: "iPhone 13 Pro", price: "UGX 2,800,000", place: "Kampala" },
@@ -52,6 +60,14 @@ export default function App() {
     fetchMessages();
   };
 
+  /* ---------- LAB FUNCTION ---------- */
+  const calculateCurrent = () => {
+    if (voltage && resistance) {
+      const result = parseFloat(voltage) / parseFloat(resistance);
+      setCurrent(result.toFixed(2));
+    }
+  };
+
   /* ---------- RENDER CHAT ---------- */
   const renderMsg = ({ item }) => (
     <View
@@ -64,11 +80,10 @@ export default function App() {
     </View>
   );
 
-  /* ---------- SHOP ITEM ---------- */
+  /* ---------- SHOP ---------- */
   const renderProduct = ({ item }) => (
     <View style={styles.productCard}>
       <View style={styles.imageBox} />
-
       <Text style={styles.productName}>{item.name}</Text>
       <Text style={styles.productPrice}>{item.price}</Text>
       <Text style={styles.productPlace}>📍 {item.place}</Text>
@@ -79,8 +94,27 @@ export default function App() {
     </View>
   );
 
+  /* ---------- LAB LIST ---------- */
+  const experiments = [
+    { id: "1", name: "Ohm’s Law" },
+    { id: "2", name: "Projectile Motion" },
+    { id: "3", name: "Pendulum" },
+    { id: "4", name: "Wave Simulator" },
+  ];
+
+  const renderExperiment = ({ item }) => (
+    <TouchableOpacity
+      style={styles.labCard}
+      onPress={() => setSelectedExperiment(item.name)}
+    >
+      <Text style={styles.labTitle}>🧪 {item.name}</Text>
+      <Text style={styles.labDesc}>Tap to run experiment</Text>
+    </TouchableOpacity>
+  );
+
   /* ---------- SCREEN SWITCH ---------- */
   const renderScreen = () => {
+    // CHAT
     if (tab === "chat") {
       return (
         <>
@@ -108,6 +142,7 @@ export default function App() {
       );
     }
 
+    // MONEY
     if (tab === "money") {
       return (
         <View style={styles.center}>
@@ -115,7 +150,6 @@ export default function App() {
 
           <TextInput
             placeholder="Amount"
-            placeholderTextColor="#888"
             value={amount}
             onChangeText={setAmount}
             style={styles.moneyInput}
@@ -132,6 +166,7 @@ export default function App() {
       );
     }
 
+    // SHOP
     if (tab === "shop") {
       return (
         <FlatList
@@ -143,10 +178,62 @@ export default function App() {
       );
     }
 
+    // PHYSICS LAB
     if (tab === "others") {
+      // 🔬 Ohm’s Law Screen
+      if (selectedExperiment === "Ohm’s Law") {
+        return (
+          <View style={styles.center}>
+            <Text style={styles.title}>⚡ Ohm's Law Lab</Text>
+
+            <TextInput
+              placeholder="Voltage (V)"
+              value={voltage}
+              onChangeText={setVoltage}
+              style={styles.moneyInput}
+            />
+
+            <TextInput
+              placeholder="Resistance (Ω)"
+              value={resistance}
+              onChangeText={setResistance}
+              style={styles.moneyInput}
+            />
+
+            <TouchableOpacity
+              style={styles.greenBtn}
+              onPress={calculateCurrent}
+            >
+              <Text style={styles.btnText}>Calculate</Text>
+            </TouchableOpacity>
+
+            {current && (
+              <Text style={{ color: "#25d366", marginTop: 10 }}>
+                Current = {current} A
+              </Text>
+            )}
+
+            <TouchableOpacity
+              style={styles.blueBtn}
+              onPress={() => setSelectedExperiment(null)}
+            >
+              <Text style={styles.btnText}>Back</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
+      // 🔬 LAB LIST
       return (
-        <View style={styles.center}>
-          <Text style={styles.title}>⚙️ Settings</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>🔬 Physics Lab</Text>
+
+          <FlatList
+            data={experiments}
+            renderItem={renderExperiment}
+            keyExtractor={(i) => i.id}
+            contentContainerStyle={{ padding: 12 }}
+          />
         </View>
       );
     }
@@ -181,7 +268,7 @@ export default function App() {
 
         <TouchableOpacity onPress={() => setTab("others")}>
           <Text style={[styles.tab, tab === "others" && styles.active]}>
-            Others
+            Lab 🔬
           </Text>
         </TouchableOpacity>
       </View>
@@ -214,7 +301,6 @@ const styles = StyleSheet.create({
   },
 
   tab: { color: "#888", fontWeight: "600" },
-
   active: { color: "#25d366" },
 
   chat: { padding: 12, paddingBottom: 80 },
@@ -305,9 +391,7 @@ const styles = StyleSheet.create({
   },
 
   productName: { color: "#fff", fontWeight: "700" },
-
   productPrice: { color: "#25d366", marginTop: 5 },
-
   productPlace: { color: "#aaa", marginTop: 3 },
 
   buyBtn: {
@@ -319,4 +403,23 @@ const styles = StyleSheet.create({
   },
 
   buyText: { color: "#000", fontWeight: "700" },
+
+  // LAB
+  labCard: {
+    backgroundColor: "#1f2c34",
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 12,
+  },
+
+  labTitle: {
+    color: "#25d366",
+    fontWeight: "700",
+    fontSize: 16,
+  },
+
+  labDesc: {
+    color: "#aaa",
+    marginTop: 5,
+  },
 });
