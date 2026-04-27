@@ -8,6 +8,9 @@ import {
   StyleSheet,
 } from "react-native";
 
+// ================= API =================
+const API = "https://sms-fn0s.onrender.com";
+
 export default function App() {
   const [tab, setTab] = useState("chat");
 
@@ -30,15 +33,16 @@ export default function App() {
     { id: "3", name: "Nike Sneakers", price: "UGX 250,000", place: "Nairobi" },
   ];
 
-  const API_URL = "https://your-api.com/messages";
+  /* ================= CHAT ================= */
 
-  /* ---------- CHAT ---------- */
   const fetchMessages = async () => {
     try {
-      const res = await fetch(API_URL);
+      const res = await fetch(`${API}/chat/messages`);
       const data = await res.json();
-      setMessages(data);
-    } catch (e) {}
+      setMessages(data.messages || []);
+    } catch (e) {
+      console.log("Fetch error:", e);
+    }
   };
 
   useEffect(() => {
@@ -50,17 +54,47 @@ export default function App() {
   const sendMessage = async () => {
     if (!text) return;
 
-    await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, sender: "me" }),
-    });
+    try {
+      await fetch(`${API}/chat/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toUid: "demo-user",
+          text,
+        }),
+      });
 
-    setText("");
-    fetchMessages();
+      setText("");
+      fetchMessages();
+    } catch (e) {
+      console.log(e);
+    }
   };
 
-  /* ---------- LAB FUNCTION ---------- */
+  /* ================= MONEY ================= */
+
+  const sendMoney = async () => {
+    if (!amount) return;
+
+    try {
+      await fetch(`${API}/wallet/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toUid: "demo-user",
+          amount: Number(amount),
+        }),
+      });
+
+      setAmount("");
+      alert("Money sent successfully");
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  /* ================= LAB ================= */
+
   const calculateCurrent = () => {
     if (voltage && resistance) {
       const result = parseFloat(voltage) / parseFloat(resistance);
@@ -68,7 +102,8 @@ export default function App() {
     }
   };
 
-  /* ---------- RENDER CHAT ---------- */
+  /* ================= RENDER CHAT ================= */
+
   const renderMsg = ({ item }) => (
     <View
       style={[
@@ -80,7 +115,8 @@ export default function App() {
     </View>
   );
 
-  /* ---------- SHOP ---------- */
+  /* ================= PRODUCTS ================= */
+
   const renderProduct = ({ item }) => (
     <View style={styles.productCard}>
       <View style={styles.imageBox} />
@@ -94,7 +130,8 @@ export default function App() {
     </View>
   );
 
-  /* ---------- LAB LIST ---------- */
+  /* ================= LAB ================= */
+
   const experiments = [
     { id: "1", name: "Ohm’s Law" },
     { id: "2", name: "Projectile Motion" },
@@ -112,9 +149,9 @@ export default function App() {
     </TouchableOpacity>
   );
 
-  /* ---------- SCREEN SWITCH ---------- */
+  /* ================= SCREEN SWITCH ================= */
+
   const renderScreen = () => {
-    // CHAT
     if (tab === "chat") {
       return (
         <>
@@ -142,7 +179,6 @@ export default function App() {
       );
     }
 
-    // MONEY
     if (tab === "money") {
       return (
         <View style={styles.center}>
@@ -155,18 +191,13 @@ export default function App() {
             style={styles.moneyInput}
           />
 
-          <TouchableOpacity style={styles.greenBtn}>
+          <TouchableOpacity style={styles.greenBtn} onPress={sendMoney}>
             <Text style={styles.btnText}>Send Money</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.blueBtn}>
-            <Text style={styles.btnText}>Request Money</Text>
           </TouchableOpacity>
         </View>
       );
     }
 
-    // SHOP
     if (tab === "shop") {
       return (
         <FlatList
@@ -178,9 +209,7 @@ export default function App() {
       );
     }
 
-    // PHYSICS LAB
     if (tab === "others") {
-      // 🔬 Ohm’s Law Screen
       if (selectedExperiment === "Ohm’s Law") {
         return (
           <View style={styles.center}>
@@ -223,7 +252,6 @@ export default function App() {
         );
       }
 
-      // 🔬 LAB LIST
       return (
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>🔬 Physics Lab</Text>
@@ -241,12 +269,10 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      {/* HEADER */}
       <View style={styles.header}>
         <Text style={styles.headerText}>My Super App</Text>
       </View>
 
-      {/* TABS */}
       <View style={styles.tabs}>
         <TouchableOpacity onPress={() => setTab("chat")}>
           <Text style={[styles.tab, tab === "chat" && styles.active]}>
@@ -273,13 +299,12 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* SCREEN */}
       {renderScreen()}
     </View>
   );
 }
 
-/* ---------- STYLES ---------- */
+/* ================= STYLES ================= */
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0b141a" },
@@ -317,10 +342,7 @@ const styles = StyleSheet.create({
 
   msgText: { color: "#fff" },
 
-  inputBar: {
-    flexDirection: "row",
-    padding: 10,
-  },
+  inputBar: { flexDirection: "row", padding: 10 },
 
   input: {
     flex: 1,
@@ -404,7 +426,6 @@ const styles = StyleSheet.create({
 
   buyText: { color: "#000", fontWeight: "700" },
 
-  // LAB
   labCard: {
     backgroundColor: "#1f2c34",
     padding: 16,
@@ -418,8 +439,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 
-  labDesc: {
-    color: "#aaa",
-    marginTop: 5,
-  },
+  labDesc: { color: "#aaa", marginTop: 5 },
 });
