@@ -1,28 +1,21 @@
-// ================= DEPLOYABLE FULL SERVER =================
-// Chat + Wallet + Realtime + Calls + File ready
-
+// ================= SERVER =================
 const express = require("express");
 const http = require("http");
 const admin = require("firebase-admin");
 const cors = require("cors");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const fetch = require("node-fetch");
 const { Server } = require("socket.io");
 
-// ================= APP =================
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// ================= SERVER =================
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*" },
-  pingTimeout: 60000,
 });
 
-// ================= CONFIG =================
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
@@ -45,9 +38,6 @@ const generateUID = () =>
 
 const getChatId = (a, b) => [a, b].sort().join("_");
 
-// ================= SOCKET STATE =================
-const onlineUsers = {};
-
 // ================= AUTH MIDDLEWARE =================
 const auth = (req, res, next) => {
   const header = req.headers.authorization;
@@ -61,57 +51,17 @@ const auth = (req, res, next) => {
   }
 };
 
-// ================= SOCKET.IO =================
-io.on("connection", (socket) => {
-  console.log("⚡ Connected:", socket.id);
+// ================= SOCKET =================
+const onlineUsers = {};
 
-  // JOIN USER
-  socket.on("join", async (uid) => {
+io.on("connection", (socket) => {
+  socket.on("join", (uid) => {
     onlineUsers[uid] = socket.id;
     socket.uid = uid;
-
-    await db.collection("presence").doc(uid).set({
-      online: true,
-      lastSeen: Date.now(),
-    });
-
-    socket.broadcast.emit("userOnline", uid);
   });
 
-  // CHAT REALTIME
-  socket.on("sendMessage", ({ toUid, message }) => {
-    const target = onlineUsers[toUid];
-    if (target) io.to(target).emit("newMessage", message);
-  });
-
-  // CALL SIGNALING
-  socket.on("offer", ({ toUid, offer }) => {
-    const target = onlineUsers[toUid];
-    if (target) io.to(target).emit("offer", { offer, from: socket.uid });
-  });
-
-  socket.on("answer", ({ toUid, answer }) => {
-    const target = onlineUsers[toUid];
-    if (target) io.to(target).emit("answer", { answer });
-  });
-
-  socket.on("ice-candidate", ({ toUid, candidate }) => {
-    const target = onlineUsers[toUid];
-    if (target) io.to(target).emit("ice-candidate", { candidate });
-  });
-
-  // DISCONNECT
-  socket.on("disconnect", async () => {
-    if (socket.uid) {
-      delete onlineUsers[socket.uid];
-
-      await db.collection("presence").doc(socket.uid).set({
-        online: false,
-        lastSeen: Date.now(),
-      });
-
-      socket.broadcast.emit("userOffline", socket.uid);
-    }
+  socket.on("disconnect", () => {
+    if (socket.uid) delete onlineUsers[socket.uid];
   });
 });
 
@@ -133,13 +83,7 @@ app.post("/auth/login", async (req, res) => {
       const uid = generateUID();
       const hash = await bcrypt.hash(pin, 10);
 
-      user = {
-        uid,
-        username,
-        pin: hash,
-        balance: 100,
-        createdAt: Date.now(),
-      };
+      user = { uid, username, pin: hash, balance: 100 };
 
       await db.collection("users").doc(uid).set(user);
     } else {
@@ -151,25 +95,15 @@ app.post("/auth/login", async (req, res) => {
 
     const payload = { uid: user.uid, username: user.username };
 
-    const accessToken = jwt.sign(payload, JWT_SECRET, {
-      expiresIn: "1h",
-    });
+    const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: "1h" });
 
-    const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, {
-      expiresIn: "7d",
-    });
-
-    res.json({
-      accessToken,
-      refreshToken,
-      user: payload,
-    });
+    res.json({ accessToken, user: payload });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// ================= CHAT =================
+// ================= CHAT SEND =================
 app.post("/chat/send", auth, async (req, res) => {
   try {
     const { toUid, text } = req.body;
@@ -192,6 +126,23 @@ app.post("/chat/send", auth, async (req, res) => {
       .add(msg);
 
     res.json({ success: true, message: msg });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ================= CHAT FETCH (FIXED MISSING ROUTE) =================
+app.get("/chat/messages", auth, async (req, res) => {
+  try {
+    const snapshot = await db
+      .collectionGroup("messages")
+      .orderBy("createdAt", "desc")
+      .limit(50)
+      .get();
+
+    const messages = snapshot.docs.map((d) => d.data());
+
+    res.json({ messages });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -228,17 +179,7 @@ app.post("/wallet/send", auth, async (req, res) => {
   }
 });
 
-// ================= PRESENCE =================
-app.get("/presence/:uid", auth, async (req, res) => {
-  const doc = await db
-    .collection("presence")
-    .doc(req.params.uid)
-    .get();
-
-  res.json(doc.data() || { online: false });
-});
-
-// ================= START SERVER =================
+// ================= START =================
 server.listen(PORT, () => {
-  console.log("🚀 DEPLOYED SERVER RUNNING ON PORT", PORT);
+  console.log("🚀 Server running on port", PORT);
 });
